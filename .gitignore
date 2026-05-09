@@ -1,0 +1,12 @@
+# local notes
+to_do_later/
+
+# env files
+.env
+.env.local
+.env.*.local
+
+# dependencies/build
+node_modules/
+.next/
+dist/
