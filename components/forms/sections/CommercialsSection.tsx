@@ -1,0 +1,43 @@
+import type { InvoiceIntakeFormValues } from "../types";
+
+type Props = {
+  values: InvoiceIntakeFormValues;
+  totalAmount: string;
+  onChange: <K extends keyof InvoiceIntakeFormValues>(key: K, value: InvoiceIntakeFormValues[K]) => void;
+};
+
+export function CommercialsSection({ values, totalAmount, onChange }: Props) {
+  const isInfluencerMarketing = values.businessLine === "IM";
+
+  return (
+    <section className="intake-section">
+      <div className="intake-section-header">
+        <div>
+          <h3 className="intake-section-title">Commercials</h3>
+          <p className="text-muted intake-section-copy">The total is derived from SC and MC line items, while IM requires an explicit total amount.</p>
+        </div>
+      </div>
+
+      <div className="intake-section-body intake-form-grid">
+        <label className="intake-field">
+          <span className="intake-label">{isInfluencerMarketing ? "Commercials / Total Amount (INR)" : "Total Amount (INR)"}</span>
+          <input
+            className="intake-input"
+            type="number"
+            min={0}
+            step="0.01"
+            value={isInfluencerMarketing ? values.imCommercials : totalAmount}
+            readOnly={!isInfluencerMarketing}
+            placeholder={isInfluencerMarketing ? "Enter commercials" : "Auto-calculated from rows"}
+            onChange={(e) => onChange("imCommercials", e.target.value)}
+          />
+        </label>
+
+        <label className="intake-field">
+          <span className="intake-label">Additional Agency Commission (INR)</span>
+          <input className="intake-input" type="number" min={0} step="0.01" value={values.commission} onChange={(e) => onChange("commission", e.target.value)} />
+        </label>
+      </div>
+    </section>
+  );
+}
