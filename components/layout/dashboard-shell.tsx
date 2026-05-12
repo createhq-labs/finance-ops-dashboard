@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useMemo } from 'react';
-import { canAccessDashboardPath, getDefaultDashboardPath, getSubmissionsLabel } from '../../lib/client/dashboard-access';
+import { FilePlus } from 'lucide-react';
+import { canAccessDashboardPath, getDefaultDashboardPath, getInvoiceIntakePath, getSubmissionsLabel } from '../../lib/client/dashboard-access';
 import { ThemeToggle } from './theme-toggle';
 import { DashboardSessionProvider, useDashboardSession } from './dashboard-session';
 
@@ -31,6 +32,7 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
     const role = user?.role;
     const base = [
       { href: '/dashboard', label: 'Overview' },
+      { href: getInvoiceIntakePath(), label: 'Submit Invoice', icon: FilePlus },
       { href: '/dashboard/submissions', label: getSubmissionsLabel(role) },
       { href: '/dashboard/finance', label: 'Finance Review' },
       { href: '/dashboard/users', label: 'Users' },
@@ -64,19 +66,24 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
 
         <nav style={{ display: 'grid', gap: 8 }}>
           {items.map((item) => {
-            const active = pathname === item.href;
+            const active = pathname === item.href || (item.href === getInvoiceIntakePath() && pathname === '/dashboard/submit');
+            const Icon = item.icon;
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className="btn"
                 style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
                   textDecoration: 'none',
                   background: active ? 'linear-gradient(135deg, var(--primary), var(--accent))' : 'var(--card)',
                   color: active ? '#fff' : 'var(--fg)',
                   border: active ? 'none' : '1px solid var(--border)',
                 }}
               >
+                {Icon ? <Icon size={16} /> : null}
                 {item.label}
               </Link>
             );
