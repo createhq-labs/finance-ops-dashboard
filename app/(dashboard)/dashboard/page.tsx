@@ -1,11 +1,12 @@
 "use client";
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { KpiCard } from '../../../components/dashboard/kpi-card';
 import { SubmissionDrawer } from '../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../components/layout/dashboard-session';
-import { canResubmitSubmission, canViewTeamSubmissions, getDrawerViewerRole, getOverviewTitle, isEmployeeRole, isTeamLeadRole } from '../../../lib/client/dashboard-access';
+import { canResubmitSubmission, canSubmitInvoice, canViewTeamSubmissions, getDrawerViewerRole, getInvoiceIntakePath, getOverviewTitle, isEmployeeRole, isTeamLeadRole } from '../../../lib/client/dashboard-access';
 
 const ALL_ROWS: SubmissionRow[] = [
   {
@@ -101,13 +102,28 @@ export default function DashboardHomePage() {
             <h1 style={{ margin: 0 }}>{getOverviewTitle(user.role)}</h1>
             <p className="text-muted">Only your submissions, statuses, rejection notes, and next actions appear here.</p>
           </div>
-          <button className="btn btn-primary" type="button">Submit New Intake</button>
+          {canSubmitInvoice(user.role) ? (
+            <Link href={getInvoiceIntakePath()} className="btn btn-primary" style={{ textDecoration: 'none' }}>
+              Submit Invoice
+            </Link>
+          ) : null}
         </header>
 
         <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
           <KpiCard title="Submitted by Me" value={String(submittedCount)} hint="Awaiting finance review" />
           <KpiCard title="Accepted" value={String(acceptedCount)} hint="Approved and in processing" />
           <KpiCard title="Rejected" value={String(rejectedCount)} hint="Needs correction and resubmission" />
+        </section>
+
+        <section>
+            <Link
+            href={getInvoiceIntakePath()}
+            className="surface"
+            style={{ display: 'block', padding: 16, textDecoration: 'none', color: 'inherit' }}
+          >
+            <strong>Need a new invoice intake?</strong>
+            <p className="text-muted" style={{ marginBottom: 0 }}>Open the invoice submission form and prepare a new intake for finance review.</p>
+          </Link>
         </section>
 
         <section>
@@ -140,9 +156,16 @@ export default function DashboardHomePage() {
 
     return (
       <div style={{ display: 'grid', gap: 16 }}>
-        <header>
-          <h1 style={{ margin: 0 }}>{getOverviewTitle(user.role)}</h1>
-          <p className="text-muted">Team leads see their own work plus their team pipeline, not company-wide finance metrics.</p>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ margin: 0 }}>{getOverviewTitle(user.role)}</h1>
+            <p className="text-muted">Team leads see their own work plus their team pipeline, not company-wide finance metrics.</p>
+          </div>
+          {canSubmitInvoice(user.role) ? (
+            <Link href={getInvoiceIntakePath()} className="btn btn-primary" style={{ textDecoration: 'none' }}>
+              Submit Invoice
+            </Link>
+          ) : null}
         </header>
 
         <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
