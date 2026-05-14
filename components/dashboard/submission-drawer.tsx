@@ -16,7 +16,7 @@ export function SubmissionDrawer({
 
   const canSeeFinanceFields = canViewFinanceFields(viewer);
   const canSeeSystemFields = canViewSystemFields(viewer);
-  const canSeeInvoice = canViewInvoiceStatus(viewer);
+  const canSeeInvoice = canViewInvoiceStatus(viewer) || viewer === 'employee';
   const canResubmit = canResubmitSubmission(viewer, row);
 
   return (
@@ -24,7 +24,7 @@ export function SubmissionDrawer({
       <aside className="drawer" onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ margin: 0 }}>Submission Details</h3>
-          <button className="btn" onClick={onClose}>Close</button>
+          <button className="btn" type="button" onClick={onClose}>Close</button>
         </div>
 
         <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
@@ -37,10 +37,66 @@ export function SubmissionDrawer({
             <div style={{ fontWeight: 600 }}>{row.entity}</div>
           </div>
           <div className="surface" style={{ padding: 12 }}>
-            <div className="text-muted" style={{ fontSize: 12 }}>Amount</div>
+            <div className="text-muted" style={{ fontSize: 12 }}>Commercials / Total Amount</div>
             <div style={{ fontWeight: 600 }}>
               {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(row.amount)}
             </div>
+          </div>
+          <div className="surface" style={{ padding: 12 }}>
+            <div className="text-muted" style={{ fontSize: 12 }}>Submitted At</div>
+            <div style={{ fontWeight: 600 }}>{new Date(row.submitted_at).toLocaleString()}</div>
+          </div>
+          <div className="surface" style={{ padding: 12 }}>
+            <div className="text-muted" style={{ fontSize: 12 }}>Trade Name</div>
+            <div style={{ fontWeight: 600 }}>{row.trade_name || '-'}</div>
+          </div>
+          <div className="surface" style={{ padding: 12 }}>
+            <div className="text-muted" style={{ fontSize: 12 }}>GST Number</div>
+            <div style={{ fontWeight: 600 }}>{row.gst_number || '-'}</div>
+          </div>
+          <div className="surface" style={{ padding: 12 }}>
+            <div className="text-muted" style={{ fontSize: 12 }}>Address</div>
+            <div style={{ fontWeight: 600 }}>{row.address || '-'}</div>
+          </div>
+          <div className="surface" style={{ padding: 12 }}>
+            <div className="text-muted" style={{ fontSize: 12 }}>Bill Due</div>
+            <div style={{ fontWeight: 600 }}>{row.bill_due || '-'}</div>
+          </div>
+          <div className="surface" style={{ padding: 12 }}>
+            <div className="text-muted" style={{ fontSize: 12 }}>Invoice Type</div>
+            <div style={{ fontWeight: 600 }}>{row.invoice_type || '-'}</div>
+          </div>
+          <div className="surface" style={{ padding: 12 }}>
+            <div className="text-muted" style={{ fontSize: 12 }}>Creator/Creators Name</div>
+            <div style={{ fontWeight: 600 }}>{row.creator_creators_name || '-'}</div>
+          </div>
+          <div className="surface" style={{ padding: 12 }}>
+            <div className="text-muted" style={{ fontSize: 12 }}>Brand Name</div>
+            <div style={{ fontWeight: 600 }}>{row.brand_name || '-'}</div>
+          </div>
+          <div className="surface" style={{ padding: 12 }}>
+            <div className="text-muted" style={{ fontSize: 12 }}>Deliverables</div>
+            <div style={{ fontWeight: 600 }}>{row.deliverables || '-'}</div>
+          </div>
+          <div className="surface" style={{ padding: 12 }}>
+            <div className="text-muted" style={{ fontSize: 12 }}>Additional Agency Commission</div>
+            <div style={{ fontWeight: 600 }}>
+              {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(row.additional_agency_commission || 0)}
+            </div>
+          </div>
+          <div className="surface" style={{ padding: 12 }}>
+            <div className="text-muted" style={{ fontSize: 12 }}>Reimbursement Amount</div>
+            <div style={{ fontWeight: 600 }}>
+              {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(row.reimbursement_amount || 0)}
+            </div>
+          </div>
+          <div className="surface" style={{ padding: 12 }}>
+            <div className="text-muted" style={{ fontSize: 12 }}>Reimbursement Receipts</div>
+            <div style={{ fontWeight: 600 }}>{row.reimbursement_receipts || '-'}</div>
+          </div>
+          <div className="surface" style={{ padding: 12 }}>
+            <div className="text-muted" style={{ fontSize: 12 }}>Additional Information</div>
+            <div style={{ fontWeight: 600 }}>{row.additional_information || '-'}</div>
           </div>
           <div className="surface" style={{ padding: 12 }}>
             <div className="text-muted" style={{ fontSize: 12 }}>Intake Status</div>

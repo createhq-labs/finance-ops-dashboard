@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../lib/server/supabase';
-import { setAuthCookies } from '../../../../lib/server/services/authCookies';
+import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '@/lib/server/supabase';
+import { setAuthCookies } from '@/lib/server/services/authCookies';
 
 function isCreateDomainEmail(email: string) {
   return email.toLowerCase().endsWith('@create.wtf');

@@ -39,40 +39,35 @@ export function SingleCreatorRows({
         <div className="grid gap-3 md:grid-cols-2">
           <label className="intake-field">
             <span className="intake-label">Creator Name</span>
-            <select className="intake-input" value={scCreator} onChange={(e) => onCreatorChange(e.target.value)}>
-              <option value="">Select creator</option>
+            <input className="intake-input" list="creator-options-sc" value={scCreator} onChange={(e) => onCreatorChange(e.target.value)} placeholder="Select or type creator" />
+            <datalist id="creator-options-sc">
               {creatorOptions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
+                <option key={item} value={item} />
               ))}
-            </select>
+            </datalist>
           </label>
 
           <label className="intake-field">
             <span className="intake-label">Brand Name</span>
-            <select className="intake-input" value={scBrand} onChange={(e) => onBrandChange(e.target.value)}>
-              <option value="">Select brand</option>
+            <input className="intake-input" list="brand-options-sc" value={scBrand} onChange={(e) => onBrandChange(e.target.value)} placeholder="Select or type brand" />
+            <datalist id="brand-options-sc">
               {brandOptions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
+                <option key={item} value={item} />
               ))}
-            </select>
+            </datalist>
           </label>
         </div>
 
         <div className="intake-row-stack">
           {rows.map((row, idx) => (
             <div key={`sc-${idx}`} className="intake-row-grid">
-              <select className="intake-input" value={row.deliverable} onChange={(e) => onRowChange(idx, { deliverable: e.target.value })}>
-                <option value="">Select deliverable</option>
-                {deliverableOptions.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
+              <input
+                className="intake-input"
+                list="deliverable-options-sc"
+                value={row.deliverable}
+                onChange={(e) => onRowChange(idx, { deliverable: e.target.value })}
+                placeholder="Select or type deliverable"
+              />
 
               <input
                 className="intake-input"
@@ -94,6 +89,11 @@ export function SingleCreatorRows({
         <button className="btn" type="button" onClick={onAddRow}>
           + Add Deliverable
         </button>
+        <datalist id="deliverable-options-sc">
+          {deliverableOptions.map((item) => (
+            <option key={item} value={item} />
+          ))}
+        </datalist>
       </div>
     </section>
   );
@@ -123,32 +123,34 @@ export function MultiCreatorRows({ rows, onAddRow, onRemoveRow, onRowChange }: M
         <div className="intake-row-stack">
           {rows.map((row, idx) => (
             <div key={`mc-${idx}`} className="intake-row-grid intake-row-grid-multi">
-              <select className="intake-input" value={row.creator} onChange={(e) => onRowChange(idx, { creator: e.target.value })}>
-                <option value="">Select creator</option>
-                {creatorOptions.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
+              <input
+                className="intake-input"
+                list="creator-options-mc"
+                value={row.creator}
+                onChange={(e) => onRowChange(idx, { creator: e.target.value })}
+                placeholder="Select or type creator"
+              />
 
-              <select className="intake-input" value={row.brand} onChange={(e) => onRowChange(idx, { brand: e.target.value })}>
-                <option value="">Select brand</option>
+              <input
+                className="intake-input"
+                list={`brand-options-mc-${idx}`}
+                value={row.brand}
+                onChange={(e) => onRowChange(idx, { brand: e.target.value })}
+                placeholder="Select or type brand"
+              />
+              <datalist id={`brand-options-mc-${idx}`}>
                 {getBrandsForCreator(row.creator).map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
+                  <option key={item} value={item} />
                 ))}
-              </select>
+              </datalist>
 
-              <select className="intake-input" value={row.deliverable} onChange={(e) => onRowChange(idx, { deliverable: e.target.value })}>
-                <option value="">Select deliverable</option>
-                {deliverableOptions.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
+              <input
+                className="intake-input"
+                list="deliverable-options-mc"
+                value={row.deliverable}
+                onChange={(e) => onRowChange(idx, { deliverable: e.target.value })}
+                placeholder="Select or type deliverable"
+              />
 
               <input
                 className="intake-input"
@@ -170,6 +172,16 @@ export function MultiCreatorRows({ rows, onAddRow, onRemoveRow, onRowChange }: M
         <button className="btn" type="button" onClick={onAddRow}>
           + Add Creator Row
         </button>
+        <datalist id="creator-options-mc">
+          {creatorOptions.map((item) => (
+            <option key={item} value={item} />
+          ))}
+        </datalist>
+        <datalist id="deliverable-options-mc">
+          {deliverableOptions.map((item) => (
+            <option key={item} value={item} />
+          ))}
+        </datalist>
       </div>
     </section>
   );

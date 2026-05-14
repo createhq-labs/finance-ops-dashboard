@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../lib/server/auth';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../lib/server/supabase';
 import { logSubmissionCreated } from '../../../../lib/server/services/activityLog';
+import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
 import { createSubmissionWithLineItems } from '../../../../lib/server/services/submissions';
 import type { CreateSubmissionInput } from '../../../../lib/server/types/submissions';
 import { sanitizeLineItems, sanitizeSubmissionInput } from '../../../../lib/server/validators/submissions';
@@ -10,7 +11,14 @@ export async function POST(req: NextRequest) {
   try {
     assertSupabaseEnv();
 
-    const token = getBearerToken(req);
+    let token = '';
+    try {
+      token = getBearerToken(req);
+    } catch {
+      token = getAccessTokenFromCookieHeader(req.cookies) ?? '';
+    }
+    if (!token) throw new Error('Missing auth token');
+
     const userClient = createUserScopedClient(token);
     const adminClient = createServiceClient();
 

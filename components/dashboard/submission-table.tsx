@@ -14,6 +14,18 @@ export type SubmissionRow = {
   payment_made?: 'paid' | 'pending';
   closed_status?: 'open' | 'closed';
   comments?: string;
+  trade_name?: string | null;
+  gst_number?: string | null;
+  address?: string | null;
+  bill_due?: string | null;
+  invoice_type?: string | null;
+  creator_creators_name?: string | null;
+  brand_name?: string | null;
+  deliverables?: string | null;
+  additional_agency_commission?: number | null;
+  reimbursement_amount?: number | null;
+  reimbursement_receipts?: string | null;
+  additional_information?: string | null;
 };
 
 export type SubmissionTableColumn =
