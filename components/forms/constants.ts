@@ -13,19 +13,22 @@ export const ENTRY_TYPES = [
 export const ENTITY_TYPES = ["Agency", "Brand"] as const;
 
 export const INVOICE_TYPES = [
-  "Performa",
-  "Reimbursement with GST",
-  "Reimbursement without GST",
+  "Proforma Invoice & Tax Invoice",
+  "Reimbursement Invoice (With GST)",
+  "Reimbursement Invoice (Without GST)",
 ] as const;
 
 export const BILL_DUE_OPTIONS = [
-  "Due on billing",
+  "Due on receipt",
   "Net 5",
   "Net 10",
   "Net 15",
   "Net 20",
-  "Net 25",
   "Net 30",
+  "Net 45",
+  "Net 60",
+  "Due end of month",
+  "Due end of next month",
 ] as const;
 
 export const MASTER_BRANDS: MasterBrand[] = [
@@ -50,11 +53,33 @@ export const MASTER_CREATORS: MasterCreator[] = [
 
 export const MASTER_DELIVERABLES: MasterDeliverable[] = [
   { name: "Instagram Reel Collaboration" },
+  { name: "Instagram Story Collaboration" },
+  { name: "Instagram Posts Collaboration" },
+  { name: "Instagram IP Creation" },
+  { name: "Ads/Usage Rights" },
   { name: "Campaign Activation" },
-  { name: "Video Story" },
-  { name: "YouTube Integration" },
-  { name: "Instagram Story Set" },
-  { name: "Usage Rights Extension" },
+  { name: "Youtube Long Form Collaboration" },
+  { name: "Youtube Shorts Collaboration" },
+  { name: "Youtube Podcast Collaboration" },
+  { name: "Youtube Community Post Collaboration" },
+  { name: "Youtube Comment Collaboration" },
+  { name: "Youtube IP Creation Long Form" },
+  { name: "Youtube IP Creation Short Form" },
+  { name: "Offline Campaign Activation" },
+  { name: "Online / Offline Session" },
+  { name: "Platform's Clubbed Collaboration" },
+  { name: "Service Charged Against Brand Deal" },
+  { name: "Service Charged Against Campaign" },
+  { name: "Twitter Tweet Collaboration" },
+  { name: "Twitter Retweet Collaboration" },
+  { name: "Twitter Comment Collaboration" },
+  { name: "LinkedIn Post Collaboration" },
+  { name: "LinkedIn Reshare Collaboration" },
+  { name: "Twitter Spaces Collaboration" },
+  { name: "LinkedIn Comment Collaboration" },
+  { name: "Video Deliverables" },
+  { name: "Product Reimbursement" },
+  { name: "Exclusivity Fee" },
 ];
 
 export function getBrandOptions() {

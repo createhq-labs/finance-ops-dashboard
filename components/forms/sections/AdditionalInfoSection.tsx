@@ -11,7 +11,15 @@ export function AdditionalInfoSection({ values, onChange }: Props) {
       <div className="intake-section-header">
         <div>
           <h3 className="intake-section-title">Additional Information</h3>
-          <p className="text-muted intake-section-copy">Use this space for the internal notes and supporting context that finance should see with the submission.</p>
+          <p className="text-muted intake-section-copy">
+            Here add any additional information important for the finance team to know. It could be:
+            <br />- Purchase Order Number
+            <br />- Additional information or deliverables which need to be mentioned by us or which the brand has asked for
+            <br />- If invoice needs to be made in another currency, mention it here like USD, AED, etc.
+            <br />
+            <br />Note:
+            <br />Do not add the deliverable already selected above. For example, if reel is selected, do not add reel + story here. Do not add amount here either.
+          </p>
         </div>
       </div>
 

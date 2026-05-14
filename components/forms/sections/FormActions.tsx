@@ -18,7 +18,7 @@ export function FormActions({ onReset, submitting, submitEnabled }: Props) {
               Reset Form
             </button>
             <button className="btn btn-primary" type="submit" disabled={submitting || !submitEnabled}>
-              {submitting ? "Submitting..." : submitEnabled ? "Submit Record" : "Backend Wiring Pending"}
+              {submitting ? "Submitting..." : "Submit Record"}
             </button>
           </div>
         </div>

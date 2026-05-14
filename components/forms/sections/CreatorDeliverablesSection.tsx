@@ -64,26 +64,22 @@ export function CreatorDeliverablesSection({
 
         <label className="intake-field">
           <span className="intake-label">Campaign Brand</span>
-          <select className="intake-input" value={values.campaignBrand} onChange={(e) => onChange("campaignBrand", e.target.value)}>
-            <option value="">Select brand</option>
+          <input className="intake-input" list="campaign-brand-options" value={values.campaignBrand} onChange={(e) => onChange("campaignBrand", e.target.value)} placeholder="Select or type brand" />
+          <datalist id="campaign-brand-options">
             {getBrandOptions().map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
+              <option key={item} value={item} />
             ))}
-          </select>
+          </datalist>
         </label>
 
         <label className="intake-field">
           <span className="intake-label">Deliverable</span>
-          <select className="intake-input" value={values.campaignDeliverable} onChange={(e) => onChange("campaignDeliverable", e.target.value)}>
-            <option value="">Select deliverable</option>
+          <input className="intake-input" list="campaign-deliverable-options" value={values.campaignDeliverable} onChange={(e) => onChange("campaignDeliverable", e.target.value)} placeholder="Select or type deliverable" />
+          <datalist id="campaign-deliverable-options">
             {getDeliverableOptions().map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
+              <option key={item} value={item} />
             ))}
-          </select>
+          </datalist>
         </label>
 
         <label className="intake-field intake-field-wide">
