@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
@@ -98,7 +99,11 @@ export default function EmployeeSubmissionsPage() {
               : 'This page is limited to your own intake records, status updates, rejection notes, and resubmission actions.'}
           </p>
         </div>
-        {canCreateSubmission(user.role) ? <button className="btn btn-primary" type="button">New Submission</button> : null}
+        {canCreateSubmission(user.role) ? (
+          <Link className="btn btn-primary" href="/dashboard/submissions/new">
+            New Submission
+          </Link>
+        ) : null}
       </header>
 
       <div className="surface" style={{ padding: 12 }}>

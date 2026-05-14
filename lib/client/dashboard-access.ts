@@ -1,7 +1,13 @@
 import type { SessionUser } from './session';
 
 export type AppRole = SessionUser['role'];
-export type DashboardPath = '/dashboard' | '/dashboard/submissions' | '/dashboard/finance' | '/dashboard/users' | '/dashboard/system';
+export type DashboardPath =
+  | '/dashboard'
+  | '/dashboard/submissions'
+  | '/dashboard/submissions/new'
+  | '/dashboard/finance'
+  | '/dashboard/users'
+  | '/dashboard/system';
 
 export function isEmployeeRole(role: AppRole) {
   return role === 'employee';
@@ -63,7 +69,7 @@ export function getDefaultDashboardPath(role: AppRole) {
 
 export function canAccessDashboardPath(role: AppRole, pathname: string) {
   if (pathname === '/dashboard') return true;
-  if (pathname === '/dashboard/submissions') return canViewSubmissionsPage(role);
+  if (pathname === '/dashboard/submissions' || pathname.startsWith('/dashboard/submissions/')) return canViewSubmissionsPage(role);
   if (pathname === '/dashboard/finance') return canViewFinanceDashboard(role);
   if (pathname === '/dashboard/users') return canManageUsers(role);
   if (pathname === '/dashboard/system') return canViewSystemPage(role);

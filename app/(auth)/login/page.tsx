@@ -34,16 +34,38 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ maxWidth: 420, margin: '80px auto', fontFamily: 'sans-serif' }}>
-      <h1>Login</h1>
-      <p style={{ color: '#555', marginBottom: 12 }}>Use your provisioned <strong>@create.wtf</strong> account.</p>
-      <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12 }}>
-        <input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        <button type="submit" disabled={loading}>{loading ? 'Logging in...' : 'Login'}</button>
-      </form>
-      {error ? <p style={{ color: 'crimson' }}>{error}</p> : null}
-      <p style={{ marginTop: 12, color: '#666' }}>No public signup. Ask admin/finance to provision your account.</p>
+    <main className="bg-app" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 20 }}>
+      <section className="surface" style={{ width: '100%', maxWidth: 460, padding: 24 }}>
+        <div style={{ marginBottom: 14 }}>
+          <h1 style={{ margin: 0 }}>CREATE Finance Ops</h1>
+          <p className="text-muted" style={{ marginTop: 6 }}>
+            Use your provisioned <strong>@create.wtf</strong> account.
+          </p>
+        </div>
+        <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12 }}>
+          <input
+            placeholder="Email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            style={{ padding: 10, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--fg)' }}
+          />
+          <input
+            placeholder="Password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            style={{ padding: 10, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--fg)' }}
+          />
+          <button className="btn btn-primary" type="submit" disabled={loading}>
+            {loading ? 'Logging in...' : 'Login'}
+          </button>
+        </form>
+        {error ? <p className="text-danger" style={{ marginTop: 12 }}>{error}</p> : null}
+        <p className="text-muted" style={{ marginTop: 12 }}>No public signup. Ask admin/finance to provision your account.</p>
+      </section>
     </main>
   );
 }

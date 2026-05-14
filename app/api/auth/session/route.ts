@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { assertSupabaseEnv, createUserScopedClient } from '../../../../../lib/server/supabase';
-import { getAccessTokenFromCookieHeader } from '../../../../../lib/server/services/authCookies';
+import { assertSupabaseEnv, createUserScopedClient } from '@/lib/server/supabase';
+import { getAccessTokenFromCookieHeader } from '@/lib/server/services/authCookies';
 
 export async function GET(req: NextRequest) {
   try {
