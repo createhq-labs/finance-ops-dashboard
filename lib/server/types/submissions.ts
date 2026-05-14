@@ -60,7 +60,7 @@ export type SanitizedSubmissionPayload = {
   reimbursement_receipts: string | null;
   intake_status: 'submitted';
   sync_status: 'pending_sheet_sync';
-  invoice_status: 'Invoice created';
+  invoice_status: 'Invoice Pending' | 'Invoice created' | 'Po Created/Estimate' | 'Invoice Cancelled' | 'Debit Note' | 'Invoice + Debit Note';
   invoice_number: null;
   debit_note_number: null;
   payment_received: null;

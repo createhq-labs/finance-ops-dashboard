@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { BILL_DUE_OPTIONS, INVOICE_TYPES } from "../constants";
 import type { InvoiceIntakeFormValues } from "../types";
 
@@ -7,6 +8,36 @@ type Props = {
 };
 
 export function InvoiceDetailsSection({ values, onChange }: Props) {
+  const [invoiceTypeInput, setInvoiceTypeInput] = useState("");
+  const [invoiceTypeError, setInvoiceTypeError] = useState("");
+  const selectedInvoiceTypes = values.invoiceType
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const billDueInList = BILL_DUE_OPTIONS.includes(values.billDue as (typeof BILL_DUE_OPTIONS)[number]);
+
+  function addInvoiceType(value: string) {
+    const next = value.trim();
+    if (!INVOICE_TYPES.includes(next as (typeof INVOICE_TYPES)[number])) return;
+    if (selectedInvoiceTypes.includes(next)) return;
+    if (selectedInvoiceTypes.length >= 2) {
+      setInvoiceTypeError("You can select up to 2 invoice types.");
+      setInvoiceTypeInput("");
+      return;
+    }
+    setInvoiceTypeError("");
+    onChange("invoiceType", [...selectedInvoiceTypes, next].join(", "));
+    setInvoiceTypeInput("");
+  }
+
+  function removeInvoiceType(value: string) {
+    setInvoiceTypeError("");
+    onChange(
+      "invoiceType",
+      selectedInvoiceTypes.filter((item) => item !== value).join(", ")
+    );
+  }
+
   return (
     <section className="intake-section">
       <div className="intake-section-header">
@@ -16,27 +47,65 @@ export function InvoiceDetailsSection({ values, onChange }: Props) {
         </div>
       </div>
 
-      <div className="intake-section-body intake-form-grid">
-        <label className="intake-field">
+      <div className="intake-section-body intake-form-grid" style={{ alignItems: "start" }}>
+        <label className="intake-field" style={{ alignSelf: "start" }}>
           <span className="intake-label">Invoice Type</span>
-          <select className="intake-input" value={values.invoiceType} onChange={(e) => onChange("invoiceType", e.target.value)} required>
+          <div style={{ display: "grid", gap: 8, minHeight: 72 }}>
+            <input
+              className="intake-input"
+              list="invoice-type-options"
+              value={invoiceTypeInput}
+              onChange={(e) => {
+                const next = e.target.value;
+                setInvoiceTypeInput(next);
+                addInvoiceType(next);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addInvoiceType(invoiceTypeInput);
+                }
+              }}
+              onBlur={() => setInvoiceTypeInput("")}
+              placeholder="Select invoice type"
+            />
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", minHeight: 28 }}>
+              {selectedInvoiceTypes.map((item) => (
+                <span key={item} className="badge badge-submitted" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  {item}
+                  <button type="button" onClick={() => removeInvoiceType(item)} style={{ border: 0, background: "transparent", color: "inherit", cursor: "pointer", padding: 0 }}>
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+          {invoiceTypeError ? <p className="text-danger intake-inline-error">{invoiceTypeError}</p> : null}
+          <datalist id="invoice-type-options">
             {INVOICE_TYPES.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
+              <option key={item} value={item} />
             ))}
-          </select>
+          </datalist>
         </label>
 
-        <label className="intake-field">
+        <label className="intake-field" style={{ alignSelf: "start" }}>
           <span className="intake-label">Bill Due</span>
-          <select className="intake-input" value={values.billDue} onChange={(e) => onChange("billDue", e.target.value)} required>
+          <input
+            className="intake-input"
+            list="bill-due-options"
+            value={values.billDue}
+            onChange={(e) => onChange("billDue", e.target.value)}
+            onBlur={() => {
+              if (!billDueInList) onChange("billDue", "");
+            }}
+            placeholder="Select bill due"
+            required={values.billDue.trim() === ""}
+          />
+          <datalist id="bill-due-options">
             {BILL_DUE_OPTIONS.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
+              <option key={item} value={item} />
             ))}
-          </select>
+          </datalist>
         </label>
       </div>
     </section>

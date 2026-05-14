@@ -39,10 +39,13 @@ export type InvoiceIntakeFormValues = {
   addressLine: string;
   city: string;
   state: string;
+  country: string;
   pincode: string;
   invoiceType: string;
   billDue: string;
   commission: string;
+  reimbursementIncluded: "yes" | "no";
+  reimbursementAmount: string;
   reimbursementProof: string;
   additionalInformation: string;
   scCreator: string;
@@ -65,6 +68,7 @@ export type InvoiceIntakeIntegrationMetadata = {
   entityType: EntityType;
   city: string;
   state: string;
+  country: string;
   pincode: string;
   campaignCode: string;
   campaignNotes: string;
