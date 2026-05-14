@@ -1,86 +1,94 @@
 "use client";
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { KpiCard } from '../../../components/dashboard/kpi-card';
 import { SubmissionDrawer } from '../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../components/layout/dashboard-session';
-import { canResubmitSubmission, canSubmitInvoice, canViewTeamSubmissions, getDrawerViewerRole, getInvoiceIntakePath, getOverviewTitle, isEmployeeRole, isTeamLeadRole } from '../../../lib/client/dashboard-access';
+import { canResubmitSubmission, canSubmitInvoice, getDrawerViewerRole, getInvoiceIntakePath, getOverviewTitle, isEmployeeRole, isTeamLeadRole } from '../../../lib/client/dashboard-access';
 
-const ALL_ROWS: SubmissionRow[] = [
-  {
-    id: '1',
-    pi: 'PI-000321',
-    entity: 'Auburn Digital',
-    amount: 70000,
-    owner_name: 'Ria Sen',
-    intake_status: 'submitted',
-    invoice_status: 'Invoice Pending',
-    sync_status: 'pending_sheet_sync',
-    submitted_at: '2026-05-04T10:00:00.000Z',
-  },
-  {
-    id: '2',
-    pi: 'PI-000322',
-    entity: 'Dreamplug',
-    amount: 1325000,
-    owner_name: 'Ria Sen',
-    intake_status: 'accepted',
-    invoice_status: 'PO Created/Estimate',
-    sync_status: 'synced',
-    submitted_at: '2026-05-03T09:15:00.000Z',
-    creator_invoice_received: 'received',
-    payment_received: 'received',
-    payment_made: 'pending',
-    closed_status: 'open',
-    comments: 'Waiting on creator settlement.',
-  },
-  {
-    id: '3',
-    pi: 'PI-000323',
-    entity: 'Headout',
-    amount: 220000,
-    owner_name: 'Arjun Mehta',
-    intake_status: 'rejected',
-    invoice_status: 'On Hold',
-    sync_status: 'failed',
-    submitted_at: '2026-05-02T08:20:00.000Z',
-    rejection_note: 'Missing GST breakup on creator invoice.',
-    comments: 'Need corrected invoice before retry.',
-  },
-  {
-    id: '4',
-    pi: 'PI-000324',
-    entity: 'CRED',
-    amount: 480000,
-    owner_name: 'Neha Kapoor',
-    intake_status: 'accepted',
-    invoice_status: 'Invoice Raised',
-    sync_status: 'synced',
-    submitted_at: '2026-05-01T11:10:00.000Z',
-    creator_invoice_received: 'received',
-    payment_received: 'received',
-    payment_made: 'paid',
-    closed_status: 'closed',
-    comments: 'Closed after payout confirmation.',
-  },
-];
-
-const MY_ROWS = ALL_ROWS.filter((row) => row.owner_name === 'Ria Sen');
-const TEAM_ROWS = ALL_ROWS.filter((row) => row.owner_name === 'Ria Sen' || row.owner_name === 'Arjun Mehta');
+type MySubmissionApiRow = {
+  id: string;
+  proforma_invoice: string | null;
+  agency_brand_name: string | null;
+  agency_brand_trade_name: string | null;
+  gst_number: string | null;
+  address: string | null;
+  bill_due: string | null;
+  invoice_type: string | null;
+  deliverables: string | null;
+  creator_creators_name: string | null;
+  brand_name: string | null;
+  commercials: number | string | null;
+  additional_agency_commission: number | string | null;
+  reimbursement_amount: number | string | null;
+  reimbursement_receipts: string | null;
+  additional_information: string | null;
+  intake_status: SubmissionRow['intake_status'];
+  invoice_status: string | null;
+  submitted_at: string | null;
+  rejection_note: string | null;
+};
 
 export default function DashboardHomePage() {
   const { user, loading } = useDashboardSession();
   const [openId, setOpenId] = useState<string | null>(null);
-  const role = user?.role;
+  const [rowsLoading, setRowsLoading] = useState(true);
+  const [rowsError, setRowsError] = useState('');
+  const [rows, setRows] = useState<SubmissionRow[]>([]);
 
-  const visibleRows = useMemo(() => {
-    if (!role) return ALL_ROWS;
-    if (isEmployeeRole(role)) return MY_ROWS;
-    if (canViewTeamSubmissions(role) && !isEmployeeRole(role)) return TEAM_ROWS;
-    return ALL_ROWS;
-  }, [role]);
+  useEffect(() => {
+    let active = true;
+    if (!user) return;
+
+    setRowsLoading(true);
+    setRowsError('');
+    fetch('/api/submissions/my', { method: 'GET', cache: 'no-store' })
+      .then(async (res) => {
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.error || 'Failed to load overview data.');
+        }
+        const mapped = ((json.submissions ?? []) as MySubmissionApiRow[]).map((item): SubmissionRow => ({
+          id: String(item.id),
+          pi: item.proforma_invoice || '-',
+          entity: item.agency_brand_name || '-',
+          amount: Number(item.commercials ?? 0),
+          owner_name: user.full_name || undefined,
+          intake_status: item.intake_status,
+          invoice_status: item.invoice_status || '-',
+          sync_status: 'pending_sheet_sync',
+          submitted_at: item.submitted_at || new Date().toISOString(),
+          rejection_note: item.rejection_note || null,
+          trade_name: item.agency_brand_trade_name || null,
+          gst_number: item.gst_number || null,
+          address: item.address || null,
+          bill_due: item.bill_due || null,
+          invoice_type: item.invoice_type || null,
+          creator_creators_name: item.creator_creators_name || null,
+          brand_name: item.brand_name || null,
+          deliverables: item.deliverables || null,
+          additional_agency_commission: Number(item.additional_agency_commission ?? 0),
+          reimbursement_amount: Number(item.reimbursement_amount ?? 0),
+          reimbursement_receipts: item.reimbursement_receipts || null,
+          additional_information: item.additional_information || null,
+        }));
+        if (active) setRows(mapped);
+      })
+      .catch((error) => {
+        if (active) setRowsError(error instanceof Error ? error.message : 'Failed to load overview data.');
+      })
+      .finally(() => {
+        if (active) setRowsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  const visibleRows = useMemo(() => rows, [rows]);
 
   const row = useMemo(() => visibleRows.find((entry) => entry.id === openId) || null, [openId, visibleRows]);
 
@@ -89,6 +97,9 @@ export default function DashboardHomePage() {
   const isTeamLead = isTeamLeadRole(user.role);
   const isDeveloper = user.role === 'developer';
   const isFinance = user.role === 'finance';
+
+  if (rowsLoading) return <div className="surface text-muted" style={{ padding: 16 }}>Loading overview...</div>;
+  if (rowsError) return <div className="surface text-danger" style={{ padding: 16 }}>{rowsError}</div>;
 
   if (isEmployee) {
     const submittedCount = visibleRows.filter((entry) => entry.intake_status === 'submitted').length;
@@ -129,8 +140,16 @@ export default function DashboardHomePage() {
         <section>
           <h2 style={{ marginTop: 0 }}>Recent Activity</h2>
           <div className="surface" style={{ padding: 16 }}>
-            <div>PI-000322 was accepted by finance yesterday.</div>
-            <div style={{ marginTop: 8 }}>PI-000323 needs invoice corrections before resubmission.</div>
+            {visibleRows.length === 0 ? (
+              <div className="text-muted">No recent activity yet.</div>
+            ) : (
+              visibleRows.slice(0, 2).map((entry) => (
+                <div key={`recent-${entry.id}`} style={{ marginTop: 8 }}>
+                  {entry.pi} is currently <strong>{entry.intake_status}</strong>.
+                  {entry.intake_status === 'rejected' && entry.rejection_note ? ` Note: ${entry.rejection_note}` : ''}
+                </div>
+              ))
+            )}
           </div>
         </section>
 
@@ -160,6 +179,7 @@ export default function DashboardHomePage() {
           <div>
             <h1 style={{ margin: 0 }}>{getOverviewTitle(user.role)}</h1>
             <p className="text-muted">Team leads see their own work plus their team pipeline, not company-wide finance metrics.</p>
+            <p className="text-muted" style={{ marginTop: 6 }}>Finance-wide role data is still under development; full overview metrics will appear after that wiring is complete.</p>
           </div>
           {canSubmitInvoice(user.role) ? (
             <Link href={getInvoiceIntakePath()} className="btn btn-primary" style={{ textDecoration: 'none' }}>
@@ -189,13 +209,14 @@ export default function DashboardHomePage() {
   }
 
   if (isDeveloper) {
-    const failedSyncs = ALL_ROWS.filter((entry) => entry.sync_status === 'failed').length;
+    const failedSyncs = visibleRows.filter((entry) => entry.sync_status === 'failed').length;
 
     return (
       <div style={{ display: 'grid', gap: 16 }}>
         <header>
           <h1 style={{ margin: 0 }}>{getOverviewTitle(user.role)}</h1>
           <p className="text-muted">Developer access is limited to technical visibility, sync health, and debugging context.</p>
+          <p className="text-muted" style={{ marginTop: 6 }}>Finance-role overview data is not fully developed yet and will be shown after implementation is completed.</p>
         </header>
 
         <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
@@ -221,13 +242,21 @@ export default function DashboardHomePage() {
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      <header>
-        <h1 style={{ margin: 0 }}>{getOverviewTitle(user.role)}</h1>
-        <p className="text-muted">
-          {isFinance
-            ? 'Finance sees operational queue metrics and all submissions, without employee-only or developer-only views.'
-            : 'Admin sees the full system overview, including finance operations and user management access.'}
-        </p>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ margin: 0 }}>{getOverviewTitle(user.role)}</h1>
+          <p className="text-muted">
+            {isFinance
+              ? 'Finance sees operational queue metrics and all submissions, without employee-only or developer-only views.'
+              : 'Admin sees the full system overview, including finance operations and user management access.'}
+          </p>
+          <p className="text-muted" style={{ marginTop: 6 }}>Finance-role overview data is partially placeholder right now; complete data will appear after finance dashboard wiring is finished.</p>
+        </div>
+        {canSubmitInvoice(user.role) ? (
+          <Link href={getInvoiceIntakePath()} className="btn btn-primary" style={{ textDecoration: 'none' }}>
+            Submit Invoice
+          </Link>
+        ) : null}
       </header>
 
       <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>

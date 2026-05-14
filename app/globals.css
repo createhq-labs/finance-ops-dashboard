@@ -1,36 +1,79 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #f7f9fc;
-  --fg: #0f172a;
+  --bg: #eef2ff;
+  --fg: #16213b;
   --card: #ffffff;
-  --muted: #667085;
-  --border: #e4e7ec;
-  --primary: #0ea5e9;
-  --primary-strong: #0284c7;
-  --accent: #8b5cf6;
+  --muted: #607098;
+  --border: #d9e2ff;
+  --primary: #22d3ee;
+  --primary-strong: #06b6d4;
+  --accent: #a855f7;
   --danger: #dc2626;
   --success: #16a34a;
+  --surface-shadow: 0 20px 45px rgba(30, 41, 59, 0.12);
+  --surface-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 255, 0.98));
+  --surface-border: rgba(80, 102, 190, 0.2);
+  --intake-surface-border: rgba(15, 23, 42, 0.12);
+  --intake-surface-bg: linear-gradient(180deg, #ffffff, #f8fafc);
+  --intake-surface-shadow: 0 14px 36px rgba(15, 23, 42, 0.08);
+  --intake-title: #0f172a;
+  --intake-label: #334155;
+  --intake-input-bg: #ffffff;
+  --intake-input-fg: #0f172a;
+  --intake-input-border: rgba(15, 23, 42, 0.2);
+  --intake-input-readonly-bg: #f1f5f9;
+  --intake-option-bg: #ffffff;
+  --intake-option-fg: #0f172a;
+  --intake-toggle-bg: #ffffff;
+  --intake-toggle-fg: #334155;
+  --intake-toggle-border: rgba(15, 23, 42, 0.2);
+  --intake-header-sep: rgba(15, 23, 42, 0.1);
 }
 
 .dark {
-  --bg: #0b1220;
-  --fg: #e2e8f0;
-  --card: #121a2b;
-  --muted: #93a0b8;
-  --border: #25304a;
-  --primary: #38bdf8;
+  --bg: #0a1022;
+  --fg: #e8edff;
+  --card: #11182f;
+  --muted: #95a4c7;
+  --border: #25355d;
+  --primary: #2dd4bf;
   --primary-strong: #0ea5e9;
-  --accent: #a78bfa;
+  --accent: #d946ef;
   --danger: #f87171;
   --success: #4ade80;
+  --surface-shadow: 0 24px 60px rgba(1, 6, 20, 0.5);
+  --surface-bg: linear-gradient(180deg, rgba(14, 21, 42, 0.96), rgba(10, 16, 34, 0.98));
+  --surface-border: rgba(79, 101, 183, 0.35);
+  --intake-surface-border: rgba(125, 211, 252, 0.12);
+  --intake-surface-bg:
+    radial-gradient(circle at top left, rgba(139, 92, 246, 0.16), transparent 28%),
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(12, 18, 34, 0.98));
+  --intake-surface-shadow: 0 18px 50px rgba(2, 6, 23, 0.22);
+  --intake-title: #f8fafc;
+  --intake-label: #cbd5e1;
+  --intake-input-bg: rgba(15, 23, 42, 0.82);
+  --intake-input-fg: #f8fafc;
+  --intake-input-border: rgba(148, 163, 184, 0.22);
+  --intake-input-readonly-bg: rgba(15, 23, 42, 0.58);
+  --intake-option-bg: #0f172a;
+  --intake-option-fg: #f8fafc;
+  --intake-toggle-bg: rgba(15, 23, 42, 0.84);
+  --intake-toggle-fg: #cbd5e1;
+  --intake-toggle-border: rgba(148, 163, 184, 0.24);
+  --intake-header-sep: rgba(148, 163, 184, 0.14);
 }
 
 * { box-sizing: border-box; }
 body {
   margin: 0;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at -10% -10%, rgba(168, 85, 247, 0.22), transparent 26%),
+    radial-gradient(circle at 110% 15%, rgba(45, 212, 191, 0.2), transparent 24%),
+    radial-gradient(circle at 85% 100%, rgba(59, 130, 246, 0.16), transparent 30%),
+    var(--bg);
   color: var(--fg);
 }
 
@@ -43,31 +86,42 @@ body {
 .text-danger { color: var(--danger); }
 
 .surface {
-  border: 1px solid var(--border);
-  background: var(--card);
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
   border-radius: 14px;
+  box-shadow: var(--surface-shadow);
+  backdrop-filter: blur(8px);
 }
 
 .btn {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 8px 12px;
-  background: var(--card);
+  background: color-mix(in oklab, var(--card) 86%, transparent);
   color: var(--fg);
   cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
+  box-shadow: 0 10px 24px rgba(45, 212, 191, 0.15);
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--primary), var(--accent));
+  background: linear-gradient(135deg, var(--accent), var(--primary));
   border: none;
   color: #fff;
+  box-shadow: 0 12px 30px rgba(168, 85, 247, 0.35);
 }
 
 .table-wrap {
   overflow: auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--surface-border);
   border-radius: 12px;
-  background: var(--card);
+  background: color-mix(in oklab, var(--card) 82%, transparent);
+  box-shadow: var(--surface-shadow);
 }
 
 .table {
@@ -82,6 +136,11 @@ body {
   border-bottom: 1px solid var(--border);
   text-align: left;
   white-space: nowrap;
+}
+
+.table th {
+  color: color-mix(in oklab, var(--fg) 80%, var(--muted));
+  font-weight: 600;
 }
 
 .badge {
@@ -113,10 +172,30 @@ body {
 .drawer {
   width: min(620px, 100%);
   height: 100%;
-  background: var(--card);
+  background: var(--surface-bg);
   border-left: 1px solid var(--border);
   padding: 20px;
   overflow: auto;
+}
+
+.dashboard-frame {
+  gap: 14px;
+  padding: 14px;
+}
+
+.dashboard-sidebar {
+  border-radius: 22px;
+  border-left: 1px solid var(--surface-border);
+  border-top: 1px solid var(--surface-border);
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.dashboard-main {
+  border-radius: 22px;
+}
+
+.dashboard-nav-item {
+  border-radius: 12px;
 }
 
 .intake-shell {
@@ -163,25 +242,22 @@ body {
 }
 
 .intake-section {
-  border: 1px solid rgba(125, 211, 252, 0.12);
-  background:
-    radial-gradient(circle at top left, rgba(139, 92, 246, 0.16), transparent 28%),
-    radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 24%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(12, 18, 34, 0.98));
+  border: 1px solid var(--intake-surface-border);
+  background: var(--intake-surface-bg);
   border-radius: 18px;
-  box-shadow: 0 18px 50px rgba(2, 6, 23, 0.22);
+  box-shadow: var(--intake-surface-shadow);
 }
 
 .intake-section-header {
   padding: 18px 20px 12px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  border-bottom: 1px solid var(--intake-header-sep);
 }
 
 .intake-section-title {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--intake-title);
 }
 
 .intake-section-copy {
@@ -214,15 +290,15 @@ body {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #cbd5e1;
+  color: var(--intake-label);
 }
 
 .intake-input {
   width: 100%;
   border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(15, 23, 42, 0.82);
-  color: #f8fafc;
+  border: 1px solid var(--intake-input-border);
+  background: var(--intake-input-bg);
+  color: var(--intake-input-fg);
   padding: 12px 14px;
   font-size: 14px;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
@@ -232,17 +308,17 @@ body {
   outline: none;
   border-color: rgba(125, 211, 252, 0.72);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
-  background: rgba(15, 23, 42, 0.95);
+  background: color-mix(in oklab, var(--intake-input-bg) 88%, #ffffff 12%);
 }
 
 .intake-input[readonly] {
   color: #94a3b8;
-  background: rgba(15, 23, 42, 0.58);
+  background: var(--intake-input-readonly-bg);
 }
 
 .intake-input option {
-  background: #0f172a;
-  color: #f8fafc;
+  background: var(--intake-option-bg);
+  color: var(--intake-option-fg);
 }
 
 .intake-textarea {
@@ -257,9 +333,9 @@ body {
 }
 
 .intake-toggle {
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  background: rgba(15, 23, 42, 0.84);
-  color: #cbd5e1;
+  border: 1px solid var(--intake-toggle-border);
+  background: var(--intake-toggle-bg);
+  color: var(--intake-toggle-fg);
   border-radius: 999px;
   padding: 10px 16px;
   cursor: pointer;
