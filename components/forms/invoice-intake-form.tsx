@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { BUSINESS_LINES, ENTRY_TYPES } from "./constants";
 import { AdditionalInfoSection } from "./sections/AdditionalInfoSection";
 import { BillingEntitySection } from "./sections/BillingEntitySection";
@@ -8,12 +8,13 @@ import { CommercialsSection } from "./sections/CommercialsSection";
 import { CreatorDeliverablesSection } from "./sections/CreatorDeliverablesSection";
 import { FormActions } from "./sections/FormActions";
 import { InvoiceDetailsSection } from "./sections/InvoiceDetailsSection";
-import { ReimbursementSection } from "./sections/ReimbursementSection";
 import type { BusinessLine, EntryType, InvoiceIntakeFormValues, InvoiceIntakeSubmissionPayload, MultiCreatorRow } from "./types";
 
 type Props = {
   submitterName?: string;
   submitterEmail?: string;
+  initialValues?: Partial<InvoiceIntakeFormValues> | null;
+  previousSubmissionId?: string | null;
   onSubmit?: (payload: InvoiceIntakeSubmissionPayload) => Promise<void> | void;
   submitEnabled?: boolean;
 };
@@ -27,8 +28,10 @@ const INITIAL_VALUES: InvoiceIntakeFormValues = {
   businessLine: "TM",
   entryType: "SC",
   entityType: "Agency",
+  clientType: "Indian",
   agencyBrandName: "",
   agencyBrandTradeName: "",
+  billingBrandName: "",
   gstNumber: "",
   addressLine: "",
   city: "",
@@ -67,9 +70,71 @@ function isValidGstin(value: string) {
   return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gst);
 }
 
+function normalizeState(value: string) {
+  return value.toLowerCase().replace(/[^a-z]/g, "");
+}
+
+function hasKnownPincodeLocationMismatch(pincodeRaw: string, cityRaw: string, stateRaw: string) {
+  const pincode = pincodeRaw.trim();
+  if (!/^\d{6}$/.test(pincode)) return false;
+
+  const prefix = pincode.slice(0, 2);
+  const pincodeStateMap: Record<string, string> = {
+    "11": "delhi",
+    "12": "haryana",
+    "14": "punjab",
+    "20": "uttarpradesh",
+    "22": "uttarpradesh",
+    "24": "uttarpradesh",
+    "28": "madhyapradesh",
+    "30": "rajasthan",
+    "32": "rajasthan",
+    "36": "gujarat",
+    "38": "gujarat",
+    "40": "maharashtra",
+    "41": "maharashtra",
+    "42": "maharashtra",
+    "43": "maharashtra",
+    "44": "maharashtra",
+    "45": "madhyapradesh",
+    "50": "telangana",
+    "56": "karnataka",
+    "57": "karnataka",
+    "60": "tamilnadu",
+    "70": "westbengal",
+    "75": "odisha",
+    "80": "bihar",
+  };
+  const pincodeCityHints: Record<string, string[]> = {
+    "11": ["delhi", "newdelhi"],
+    "40": ["mumbai", "thane", "navimumbai"],
+    "41": ["pune", "nashik"],
+    "42": ["nashik", "jalgaon"],
+    "43": ["nagpur", "amravati"],
+    "44": ["pune", "kolhapur", "sangli"],
+    "50": ["hyderabad", "secunderabad"],
+    "56": ["bengaluru", "bangalore"],
+    "57": ["mysuru", "mysore"],
+    "60": ["chennai"],
+    "70": ["kolkata", "calcutta"],
+  };
+
+  const mappedState = pincodeStateMap[prefix];
+  const normalizedState = normalizeState(stateRaw);
+  if (mappedState && normalizedState && normalizedState !== mappedState) return true;
+
+  const cityHints = pincodeCityHints[prefix] ?? [];
+  const normalizedCity = cityRaw.toLowerCase().replace(/[^a-z]/g, "");
+  if (cityHints.length > 0 && normalizedCity && !cityHints.some((hint) => normalizedCity.includes(hint))) return true;
+
+  return false;
+}
+
 export function InvoiceIntakeForm({
   submitterName = "",
   submitterEmail = "",
+  initialValues = null,
+  previousSubmissionId = null,
   onSubmit,
   submitEnabled = false,
 }: Props) {
@@ -80,6 +145,15 @@ export function InvoiceIntakeForm({
   });
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
+  const [manualLocationEdits, setManualLocationEdits] = useState({
+    city: false,
+    state: false,
+    country: false,
+    pincode: false,
+  });
+  const [productReimbursementFiles, setProductReimbursementFiles] = useState<Record<string, File | null>>({});
+  const [productReimbursementErrors, setProductReimbursementErrors] = useState<Record<string, string>>({});
+  const previousBillingBrandRef = useRef("");
 
   useEffect(() => {
     setValues((prev) => ({
@@ -88,6 +162,85 @@ export function InvoiceIntakeForm({
       submitterEmail: submitterEmail || prev.submitterEmail,
     }));
   }, [submitterName, submitterEmail]);
+
+  useEffect(() => {
+    if (!initialValues) return;
+    setValues((prev) => ({
+      ...prev,
+      ...initialValues,
+      submitterName: submitterName || prev.submitterName,
+      submitterEmail: submitterEmail || prev.submitterEmail,
+    }));
+    setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+  }, [initialValues, submitterEmail, submitterName]);
+
+  useEffect(() => {
+    const address = values.addressLine;
+    if (!address.trim()) return;
+
+    const nextCity = values.city.trim();
+    const nextState = values.state.trim();
+    const nextCountry = values.country.trim();
+    const nextPincode = values.pincode.trim();
+
+    const pinMatch = address.match(/\b(\d{6})\b/);
+    const inferredPincode = pinMatch?.[1] ?? "";
+    const hasIndia = /\bindia\b/i.test(address);
+    const normalized = address.toLowerCase();
+
+    const knownPlaces = [
+      { city: "Mumbai", state: "Maharashtra", match: /(mumbai|bhandup|andheri|thane|maharashtra)/i },
+      { city: "Bengaluru", state: "Karnataka", match: /(bengaluru|bangalore|karnataka|indiranagar|hsr)/i },
+      { city: "New Delhi", state: "Delhi", match: /(new delhi|delhi|paschim vihar)/i },
+      { city: "Kolkata", state: "West Bengal", match: /(kolkata|calcutta|west bengal)/i },
+      { city: "Hyderabad", state: "Telangana", match: /(hyderabad|telangana)/i },
+      { city: "Chennai", state: "Tamil Nadu", match: /(chennai|tamil nadu)/i },
+      { city: "Pune", state: "Maharashtra", match: /(pune|maharashtra)/i },
+      { city: "Ahmedabad", state: "Gujarat", match: /(ahmedabad|gujarat)/i },
+    ];
+
+    const place = knownPlaces.find((item) => item.match.test(normalized));
+
+    const updates: Partial<InvoiceIntakeFormValues> = {};
+    if (!manualLocationEdits.pincode && inferredPincode && nextPincode !== inferredPincode) updates.pincode = inferredPincode;
+    if (!manualLocationEdits.country && hasIndia && nextCountry.toLowerCase() !== "india") updates.country = "India";
+    if (!manualLocationEdits.city && place?.city && nextCity !== place.city) updates.city = place.city;
+    if (!manualLocationEdits.state && place?.state && nextState !== place.state) updates.state = place.state;
+
+    if (Object.keys(updates).length > 0) {
+      setValues((prev) => ({ ...prev, ...updates }));
+    }
+  }, [manualLocationEdits.city, manualLocationEdits.country, manualLocationEdits.pincode, manualLocationEdits.state, values.addressLine, values.city, values.country, values.pincode, values.state]);
+
+  useEffect(() => {
+    const billingBrand = values.entityType === "Agency" ? values.billingBrandName.trim() : values.agencyBrandName.trim();
+    const previousBillingBrand = previousBillingBrandRef.current;
+    previousBillingBrandRef.current = billingBrand;
+    if (!billingBrand) return;
+
+    setValues((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      if (!prev.scBrand.trim() || prev.scBrand === previousBillingBrand) {
+        next.scBrand = billingBrand;
+        changed = true;
+      }
+      if (!prev.campaignBrand.trim() || prev.campaignBrand === previousBillingBrand) {
+        next.campaignBrand = billingBrand;
+        changed = true;
+      }
+
+      const nextMcRows = prev.mcRows.map((row) => {
+        if (row.brand.trim() && row.brand !== previousBillingBrand) return row;
+        changed = true;
+        return { ...row, brand: billingBrand };
+      });
+
+      if (changed) next.mcRows = nextMcRows;
+      return changed ? next : prev;
+    });
+  }, [values.agencyBrandName, values.billingBrandName, values.entityType]);
 
   const totalAmount = useMemo(() => {
     const commission = Number.parseFloat(values.commission || "0");
@@ -115,8 +268,11 @@ export function InvoiceIntakeForm({
     if (!values.entityType.trim()) return false;
     if (!values.agencyBrandName.trim()) return false;
     if (!values.agencyBrandTradeName.trim()) return false;
-    if (!values.gstNumber.trim()) return false;
-    if (!isValidGstin(values.gstNumber)) return false;
+    if (values.clientType === "Indian") {
+      if (!values.gstNumber.trim()) return false;
+      if (!isValidGstin(values.gstNumber)) return false;
+      if (values.pincode.trim() && !/^\d{6}$/.test(values.pincode.trim())) return false;
+    }
     if (!values.addressLine.trim()) return false;
     if (!values.state.trim()) return false;
     if (!values.country.trim()) return false;
@@ -127,6 +283,7 @@ export function InvoiceIntakeForm({
     values.submitterName,
     values.submitterEmail,
     values.entityType,
+    values.clientType,
     values.agencyBrandName,
     values.agencyBrandTradeName,
     values.gstNumber,
@@ -137,9 +294,13 @@ export function InvoiceIntakeForm({
     values.entryType,
     values.scCreator,
     values.imCommercials,
+    values.pincode,
   ]);
 
   function update<K extends keyof InvoiceIntakeFormValues>(key: K, value: InvoiceIntakeFormValues[K]) {
+    if (key === "city" || key === "state" || key === "country" || key === "pincode") {
+      setManualLocationEdits((prev) => ({ ...prev, [key]: true }));
+    }
     setValues((prev) => ({ ...prev, [key]: value }));
   }
 
@@ -232,6 +393,25 @@ export function InvoiceIntakeForm({
     }));
   }
 
+  function getProductReimbursementFile(key: string) {
+    return productReimbursementFiles[key] ?? null;
+  }
+
+  function getProductReimbursementError(key: string) {
+    return productReimbursementErrors[key] ?? "";
+  }
+
+  function onProductReimbursementFileChange(key: string, file: File | null) {
+    if (file && file.size > 10 * 1024 * 1024) {
+      setProductReimbursementErrors((prev) => ({ ...prev, [key]: "File must be 10 MB or smaller." }));
+      setProductReimbursementFiles((prev) => ({ ...prev, [key]: null }));
+      return;
+    }
+
+    setProductReimbursementErrors((prev) => ({ ...prev, [key]: "" }));
+    setProductReimbursementFiles((prev) => ({ ...prev, [key]: file }));
+  }
+
   function buildPayload(): InvoiceIntakeSubmissionPayload {
     const deliverables =
       values.businessLine === "TM" && values.entryType === "SC"
@@ -259,12 +439,13 @@ export function InvoiceIntakeForm({
       )
     );
 
+    const billingBrandName = values.entityType === "Agency" ? values.billingBrandName : values.agencyBrandName;
     const brandName =
       values.businessLine === "TM" && values.entryType === "SC"
-        ? values.scBrand
+        ? values.scBrand || billingBrandName || ""
         : values.businessLine === "TM" && values.entryType === "MC"
-          ? uniqueBrandNames[0] || ""
-          : values.campaignBrand || "";
+          ? uniqueBrandNames[0] || billingBrandName || ""
+          : values.campaignBrand || billingBrandName || "";
 
     const lineItems =
       values.businessLine === "TM" && values.entryType === "SC"
@@ -288,6 +469,7 @@ export function InvoiceIntakeForm({
     const commercials = Number.parseFloat(totalAmount || "0") || 0;
 
     return {
+      previous_submission_id: previousSubmissionId || null,
       agency_brand_name: values.agencyBrandName,
       agency_brand_trade_name: values.agencyBrandTradeName,
       email_address: values.submitterEmail,
@@ -310,6 +492,8 @@ export function InvoiceIntakeForm({
         businessLine: values.businessLine,
         entryType: values.businessLine === "TM" ? values.entryType : null,
         entityType: values.entityType,
+        clientType: values.clientType,
+        billingBrandName: values.billingBrandName,
         city: values.city,
         state: values.state,
         country: values.country,
@@ -323,15 +507,38 @@ export function InvoiceIntakeForm({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     setError("");
 
     if (!values.submitterName.trim()) return setError("Submitter name is required.");
     if (!values.submitterEmail.trim()) return setError("Submitter email is required.");
     if (!values.entityType.trim()) return setError("Entity Type is required.");
-    if (!values.agencyBrandName.trim()) return setError("Agency / Brand Name is required.");
-    if (!values.agencyBrandTradeName.trim()) return setError("Agency / Brand Trade Name is required.");
-    if (!values.gstNumber.trim()) return setError("GST Number is required.");
-    if (!isValidGstin(values.gstNumber)) return setError("GST Number must be a valid 15-character GSTIN.");
+    if (!values.agencyBrandName.trim()) return setError(`${values.entityType} Name is required.`);
+    if (!values.agencyBrandTradeName.trim()) return setError(`${values.entityType} Trade Name is required.`);
+    if (values.clientType === "Indian") {
+      if (!values.gstNumber.trim()) return setError("GST Number is required.");
+      if (!isValidGstin(values.gstNumber)) return setError("GST Number must be a valid 15-character GSTIN.");
+      if (values.pincode.trim() && !/^\d{6}$/.test(values.pincode.trim())) return setError("Pincode must be a valid 6-digit Indian pincode.");
+
+      const stateCodeMap: Record<string, string> = {
+        "27": "maharashtra",
+        "29": "karnataka",
+        "07": "delhi",
+        "33": "tamilnadu",
+        "36": "telangana",
+        "24": "gujarat",
+        "19": "westbengal",
+      };
+      const stateCode = values.gstNumber.slice(0, 2);
+      const mappedState = stateCodeMap[stateCode];
+      if (mappedState && values.state.trim() && normalizeState(values.state) !== mappedState) {
+        return setError("GST state code and selected state do not match. Please verify.");
+      }
+
+      if (hasKnownPincodeLocationMismatch(values.pincode, values.city, values.state)) {
+        return setError("Pincode does not match selected city/state.");
+      }
+    }
     if (!values.addressLine.trim()) return setError("Address is required.");
     if (!values.state.trim()) return setError("State is required.");
     if (!values.country.trim()) return setError("Country is required.");
@@ -361,6 +568,10 @@ export function InvoiceIntakeForm({
       submitterName: values.submitterName,
       submitterEmail: values.submitterEmail,
     });
+    setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+    setProductReimbursementFiles({});
+    setProductReimbursementErrors({});
+    previousBillingBrandRef.current = "";
     setError("");
   }
 
@@ -442,9 +653,11 @@ export function InvoiceIntakeForm({
         addMcRow={addMcRow}
         removeMcRow={removeMcRow}
         patchMcRow={patchMcRow}
+        getProductReimbursementFile={getProductReimbursementFile}
+        getProductReimbursementError={getProductReimbursementError}
+        onProductReimbursementFileChange={onProductReimbursementFileChange}
       />
       <CommercialsSection values={values} totalAmount={totalAmount} onChange={update} />
-      <ReimbursementSection values={values} onChange={update} />
       <AdditionalInfoSection values={values} onChange={update} />
       <FormActions onReset={handleReset} submitting={submitting} submitEnabled={submitEnabled && Boolean(onSubmit) && canSubmit} />
 
