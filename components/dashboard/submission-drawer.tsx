@@ -6,18 +6,20 @@ export function SubmissionDrawer({
   onClose,
   row,
   viewer,
+  onResubmit,
 }: {
   open: boolean;
   onClose: () => void;
   row: SubmissionRow | null;
   viewer: 'employee' | 'team_lead' | 'finance' | 'admin' | 'developer';
+  onResubmit?: (id: string) => void;
 }) {
   if (!open || !row) return null;
 
   const canSeeFinanceFields = canViewFinanceFields(viewer);
   const canSeeSystemFields = canViewSystemFields(viewer);
   const canSeeInvoice = canViewInvoiceStatus(viewer) || viewer === 'employee';
-  const canResubmit = canResubmitSubmission(viewer, row);
+  const canResubmit = viewer === 'employee' || canResubmitSubmission(viewer, row);
 
   return (
     <div className="drawer-overlay" onClick={onClose}>
@@ -146,7 +148,7 @@ export function SubmissionDrawer({
           ) : null}
           {canResubmit ? (
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button className="btn btn-primary" type="button">Resubmit Intake</button>
+              <button className="btn btn-primary" type="button" onClick={() => onResubmit?.(row.id)}>Edit / Resubmit</button>
             </div>
           ) : null}
           {canSeeFinanceFields ? (

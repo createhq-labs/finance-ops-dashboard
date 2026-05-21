@@ -1,11 +1,12 @@
 "use client";
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
-import { canResubmitSubmission, canSubmitInvoice, getDrawerViewerRole, getSubmissionsLabel } from '../../../../lib/client/dashboard-access';
+import { canSubmitInvoice, getDrawerViewerRole, getSubmissionsLabel } from '../../../../lib/client/dashboard-access';
 
 type MySubmissionApiRow = {
   id: string;
@@ -24,6 +25,9 @@ type MySubmissionApiRow = {
   reimbursement_amount: number | string | null;
   reimbursement_receipts: string | null;
   additional_information: string | null;
+  previous_submission_id: string | null;
+  integration_metadata: SubmissionRow['integration_metadata'];
+  intake_line_items: SubmissionRow['intake_line_items'];
   intake_status: SubmissionRow['intake_status'];
   invoice_status: string | null;
   submitted_at: string | null;
@@ -31,6 +35,7 @@ type MySubmissionApiRow = {
 };
 
 export default function EmployeeSubmissionsPage() {
+  const router = useRouter();
   const { user, loading } = useDashboardSession();
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState<SubmissionRow[]>([]);
@@ -74,6 +79,9 @@ export default function EmployeeSubmissionsPage() {
           reimbursement_amount: Number(item.reimbursement_amount ?? 0),
           reimbursement_receipts: item.reimbursement_receipts || null,
           additional_information: item.additional_information || null,
+          previous_submission_id: item.previous_submission_id || null,
+          integration_metadata: item.integration_metadata || null,
+          intake_line_items: item.intake_line_items || [],
         }));
         if (active) setRows(mapped);
       })
@@ -131,11 +139,19 @@ export default function EmployeeSubmissionsPage() {
           onOpen={setOpenId}
           columns={['pi', 'entity', 'amount', 'intake_status', 'invoice_status', 'submitted_at', 'rejection_note', 'actions']}
           emptyLabel="No submissions found yet."
-          getActionLabel={(entry) => (canResubmitSubmission(user.role, entry) ? 'Resubmit' : 'View')}
+          getActionLabel={() => 'View'}
         />
       ) : null}
 
-      <SubmissionDrawer open={Boolean(row)} onClose={() => setOpenId(null)} row={row} viewer={getDrawerViewerRole(user.role)} />
+      <SubmissionDrawer
+        open={Boolean(row)}
+        onClose={() => setOpenId(null)}
+        row={row}
+        viewer={getDrawerViewerRole(user.role)}
+        onResubmit={(id) => {
+          router.push(`/dashboard/submissions/new?resubmit_id=${id}`);
+        }}
+      />
     </div>
   );
 }

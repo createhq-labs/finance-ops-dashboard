@@ -26,6 +26,27 @@ export type SubmissionRow = {
   reimbursement_amount?: number | null;
   reimbursement_receipts?: string | null;
   additional_information?: string | null;
+  previous_submission_id?: string | null;
+  integration_metadata?: {
+    submitterName?: string;
+    businessLine?: 'TM' | 'IM';
+    entryType?: 'SC' | 'MC' | null;
+    entityType?: 'Agency' | 'Brand';
+    city?: string;
+    state?: string;
+    country?: string;
+    pincode?: string;
+    campaignCode?: string;
+    campaignNotes?: string;
+    brandNamesText?: string;
+  } | null;
+  intake_line_items?: Array<{
+    creator_name?: string | null;
+    brand_name?: string | null;
+    deliverable_name?: string | null;
+    amount?: number | null;
+    line_order?: number | null;
+  }>;
 };
 
 export type SubmissionTableColumn =
