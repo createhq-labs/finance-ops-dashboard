@@ -33,8 +33,10 @@ export type InvoiceIntakeFormValues = {
   businessLine: BusinessLine;
   entryType: EntryType;
   entityType: EntityType;
+  clientType: "Indian" | "Foreign";
   agencyBrandName: string;
   agencyBrandTradeName: string;
+  billingBrandName: string;
   gstNumber: string;
   addressLine: string;
   city: string;
@@ -66,6 +68,8 @@ export type InvoiceIntakeIntegrationMetadata = {
   businessLine: BusinessLine;
   entryType: EntryType | null;
   entityType: EntityType;
+  clientType: "Indian" | "Foreign";
+  billingBrandName: string;
   city: string;
   state: string;
   country: string;
@@ -76,6 +80,7 @@ export type InvoiceIntakeIntegrationMetadata = {
 };
 
 export type InvoiceIntakeSubmissionPayload = {
+  previous_submission_id?: string | null;
   agency_brand_name: string;
   agency_brand_trade_name: string;
   email_address: string;
