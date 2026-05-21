@@ -14,7 +14,6 @@ export function InvoiceDetailsSection({ values, onChange }: Props) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-  const billDueInList = BILL_DUE_OPTIONS.includes(values.billDue as (typeof BILL_DUE_OPTIONS)[number]);
 
   function addInvoiceType(value: string) {
     const next = value.trim();
@@ -60,6 +59,7 @@ export function InvoiceDetailsSection({ values, onChange }: Props) {
                 setInvoiceTypeInput(next);
                 addInvoiceType(next);
               }}
+              onFocus={(e) => e.currentTarget.select()}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -94,9 +94,11 @@ export function InvoiceDetailsSection({ values, onChange }: Props) {
             className="intake-input"
             list="bill-due-options"
             value={values.billDue}
+            onFocus={(e) => e.currentTarget.select()}
             onChange={(e) => onChange("billDue", e.target.value)}
-            onBlur={() => {
-              if (!billDueInList) onChange("billDue", "");
+            onBlur={(e) => {
+              const next = e.target.value.trim();
+              if (next && !BILL_DUE_OPTIONS.includes(next as (typeof BILL_DUE_OPTIONS)[number])) onChange("billDue", "");
             }}
             placeholder="Select bill due"
             required={values.billDue.trim() === ""}
