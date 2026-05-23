@@ -1,5 +1,5 @@
-import { getBrandsForCreator, getCreatorOptions, getDeliverableOptions } from "./constants";
 import type { DeliverableAmountRow, MultiCreatorRow } from "./types";
+import { SearchableSelect } from "./searchable-select";
 
 function ProductReimbursementField({
   fieldKey,
@@ -13,12 +13,12 @@ function ProductReimbursementField({
   onChange: (key: string, file: File | null) => void;
 }) {
   return (
-    <div className="grid gap-1">
+    <div className="grid gap-1" style={{ maxWidth: 320 }}>
       <input
         className="intake-input"
         type="file"
         accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,image/*"
-        style={{ width: "fit-content", maxWidth: 320, minWidth: 220 }}
+        style={{ width: "fit-content", maxWidth: 280, minWidth: 220 }}
         onChange={(e) => onChange(fieldKey, e.target.files?.[0] ?? null)}
       />
       <p className="text-muted intake-section-copy" style={{ margin: 0 }}>
@@ -35,10 +35,13 @@ function ProductReimbursementField({
 }
 
 type SingleCreatorProps = {
-  businessLine: "TM" | "IM";
   scCreator: string;
   scBrand: string;
   rows: DeliverableAmountRow[];
+  errors?: Record<string, string>;
+  creatorOptions: string[];
+  brandOptions: string[];
+  deliverableOptions: string[];
   getProductReimbursementFile: (key: string) => File | null;
   getProductReimbursementError: (key: string) => string;
   onCreatorChange: (value: string) => void;
@@ -50,10 +53,13 @@ type SingleCreatorProps = {
 };
 
 export function SingleCreatorRows({
-  businessLine,
   scCreator,
   scBrand,
   rows,
+  errors = {},
+  creatorOptions,
+  brandOptions,
+  deliverableOptions,
   getProductReimbursementFile,
   getProductReimbursementError,
   onCreatorChange,
@@ -63,10 +69,6 @@ export function SingleCreatorRows({
   onRowChange,
   onProductReimbursementFileChange,
 }: SingleCreatorProps) {
-  const creatorOptions = getCreatorOptions();
-  const brandOptions = getBrandsForCreator(scCreator);
-  const deliverableOptions = getDeliverableOptions(businessLine);
-
   return (
     <section className="intake-section">
       <div className="intake-section-header">
@@ -83,41 +85,51 @@ export function SingleCreatorRows({
           {rows.map((row, idx) => (
             <div key={`sc-${idx}`} className="grid gap-2">
               <div className="intake-row-grid intake-row-grid-multi">
-                <input
-                  className="intake-input"
-                  list="creator-options-sc"
-                  value={scCreator}
-                  onChange={(e) => onCreatorChange(e.target.value)}
-                  onFocus={(e) => e.currentTarget.select()}
-                  placeholder="Select or type creator"
-                  disabled={idx > 0}
-                />
-                <input
-                  className="intake-input"
-                  list="brand-options-sc"
-                  value={scBrand}
-                  onChange={(e) => onBrandChange(e.target.value)}
-                  onFocus={(e) => e.currentTarget.select()}
-                  placeholder="Select or type brand"
-                  disabled={idx > 0}
-                />
-                <input
-                  className="intake-input"
-                  list="deliverable-options-sc"
-                  value={row.deliverable}
-                  onFocus={(e) => e.currentTarget.select()}
-                  onChange={(e) => onRowChange(idx, { deliverable: e.target.value })}
-                  placeholder="Select or type deliverable"
-                />
-                <input
-                  className="intake-input"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  placeholder="Amount INR"
-                  value={row.amount}
-                  onChange={(e) => onRowChange(idx, { amount: e.target.value })}
-                />
+                <div className="grid gap-1">
+                  <SearchableSelect
+                    value={scCreator}
+                    options={creatorOptions}
+                    onChange={onCreatorChange}
+                    placeholder="Select creator"
+                    disabled={idx > 0}
+                    data-field="scCreator"
+                  />
+                  {idx === 0 && errors.scCreator ? <p className="text-danger intake-inline-error">{errors.scCreator}</p> : null}
+                </div>
+                <div className="grid gap-1">
+                  <SearchableSelect
+                    value={scBrand}
+                    options={brandOptions}
+                    onChange={onBrandChange}
+                    placeholder="Select brand"
+                    disabled={idx > 0}
+                    data-field="scBrand"
+                  />
+                  {idx === 0 && errors.scBrand ? <p className="text-danger intake-inline-error">{errors.scBrand}</p> : null}
+                </div>
+                <div className="grid gap-1">
+                  <SearchableSelect
+                    value={row.deliverable}
+                    options={deliverableOptions}
+                    onChange={(next) => onRowChange(idx, { deliverable: next })}
+                    data-field={`scDeliverables.${idx}.deliverable`}
+                    placeholder="Select deliverable"
+                  />
+                  {errors[`scDeliverables.${idx}.deliverable`] ? <p className="text-danger intake-inline-error">{errors[`scDeliverables.${idx}.deliverable`]}</p> : null}
+                </div>
+                <div className="grid gap-1">
+                  <input
+                    className="intake-input"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="Amount INR"
+                    value={row.amount}
+                    onChange={(e) => onRowChange(idx, { amount: e.target.value })}
+                    data-field={`scDeliverables.${idx}.amount`}
+                  />
+                  {errors[`scDeliverables.${idx}.amount`] ? <p className="text-danger intake-inline-error">{errors[`scDeliverables.${idx}.amount`]}</p> : null}
+                </div>
                 <button className="btn intake-row-action" type="button" onClick={() => onRemoveRow(idx)} disabled={rows.length === 1}>
                   Remove
                 </button>
@@ -135,53 +147,44 @@ export function SingleCreatorRows({
           ))}
         </div>
 
+        {errors.creatorDeliverables ? <p className="text-danger intake-inline-error">{errors.creatorDeliverables}</p> : null}
         <button className="btn" type="button" onClick={onAddRow}>
           + Add Deliverable
         </button>
-        <datalist id="deliverable-options-sc">
-          {deliverableOptions.map((item) => (
-            <option key={item} value={item} />
-          ))}
-        </datalist>
-        <datalist id="creator-options-sc">
-          {creatorOptions.map((item) => (
-            <option key={item} value={item} />
-          ))}
-        </datalist>
-        <datalist id="brand-options-sc">
-          {brandOptions.map((item) => (
-            <option key={item} value={item} />
-          ))}
-        </datalist>
       </div>
     </section>
   );
 }
 
 type MultiCreatorProps = {
-  businessLine: "TM" | "IM";
   rows: MultiCreatorRow[];
+  errors?: Record<string, string>;
+  creatorOptions: string[];
+  brandOptions: string[];
+  deliverableOptions: string[];
   getProductReimbursementFile: (key: string) => File | null;
   getProductReimbursementError: (key: string) => string;
   onAddRow: () => void;
   onRemoveRow: (index: number) => void;
   onRowChange: (index: number, patch: Partial<MultiCreatorRow>) => void;
+  onCreatorChange: (index: number, creator: string) => void;
   onProductReimbursementFileChange: (key: string, file: File | null) => void;
 };
 
 export function MultiCreatorRows({
-  businessLine,
   rows,
+  errors = {},
+  creatorOptions,
+  brandOptions,
+  deliverableOptions,
   getProductReimbursementFile,
   getProductReimbursementError,
   onAddRow,
   onRemoveRow,
   onRowChange,
+  onCreatorChange,
   onProductReimbursementFileChange,
 }: MultiCreatorProps) {
-  const creatorOptions = getCreatorOptions();
-  const deliverableOptions = getDeliverableOptions(businessLine);
-
   return (
     <section className="intake-section">
       <div className="intake-section-header">
@@ -196,47 +199,52 @@ export function MultiCreatorRows({
           {rows.map((row, idx) => (
             <div key={`mc-${idx}`} className="grid gap-2">
               <div className="intake-row-grid intake-row-grid-multi">
-                <input
-                  className="intake-input"
-                  list="creator-options-mc"
-                  value={row.creator}
-                  onFocus={(e) => e.currentTarget.select()}
-                  onChange={(e) => onRowChange(idx, { creator: e.target.value })}
-                  placeholder="Select or type creator"
-                />
+                <div className="grid gap-1">
+                  <SearchableSelect
+                    value={row.creator}
+                    options={creatorOptions}
+                    onChange={(next) => onCreatorChange(idx, next)}
+                    placeholder="Select creator"
+                    data-field={`mcRows.${idx}.creator`}
+                  />
+                  {errors[`mcRows.${idx}.creator`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.creator`]}</p> : null}
+                </div>
 
-                <input
-                  className="intake-input"
-                  list={`brand-options-mc-${idx}`}
-                  value={row.brand}
-                  onFocus={(e) => e.currentTarget.select()}
-                  onChange={(e) => onRowChange(idx, { brand: e.target.value })}
-                  placeholder="Select or type brand"
-                />
-                <datalist id={`brand-options-mc-${idx}`}>
-                  {getBrandsForCreator(row.creator).map((item) => (
-                    <option key={item} value={item} />
-                  ))}
-                </datalist>
+                <div className="grid gap-1">
+                  <SearchableSelect
+                    value={row.brand}
+                    options={brandOptions}
+                    onChange={(next) => onRowChange(idx, { brand: next })}
+                    placeholder="Select brand"
+                    data-field={`mcRows.${idx}.brand`}
+                  />
+                  {errors[`mcRows.${idx}.brand`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.brand`]}</p> : null}
+                </div>
 
-                <input
-                  className="intake-input"
-                  list="deliverable-options-mc"
-                  value={row.deliverable}
-                  onFocus={(e) => e.currentTarget.select()}
-                  onChange={(e) => onRowChange(idx, { deliverable: e.target.value })}
-                  placeholder="Select or type deliverable"
-                />
+                <div className="grid gap-1">
+                  <SearchableSelect
+                    value={row.deliverable}
+                    options={deliverableOptions}
+                    onChange={(next) => onRowChange(idx, { deliverable: next })}
+                    data-field={`mcRows.${idx}.deliverable`}
+                    placeholder="Select deliverable"
+                  />
+                  {errors[`mcRows.${idx}.deliverable`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.deliverable`]}</p> : null}
+                </div>
 
-                <input
-                  className="intake-input"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  placeholder="Amount INR"
-                  value={row.amount}
-                  onChange={(e) => onRowChange(idx, { amount: e.target.value })}
-                />
+                <div className="grid gap-1">
+                  <input
+                    className="intake-input"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="Amount INR"
+                    value={row.amount}
+                    onChange={(e) => onRowChange(idx, { amount: e.target.value })}
+                    data-field={`mcRows.${idx}.amount`}
+                  />
+                  {errors[`mcRows.${idx}.amount`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.amount`]}</p> : null}
+                </div>
 
                 <button className="btn intake-row-action" type="button" onClick={() => onRemoveRow(idx)} disabled={rows.length === 1}>
                   Remove
@@ -255,19 +263,10 @@ export function MultiCreatorRows({
           ))}
         </div>
 
+        {errors.creatorDeliverables ? <p className="text-danger intake-inline-error">{errors.creatorDeliverables}</p> : null}
         <button className="btn" type="button" onClick={onAddRow}>
           + Add Creator Row
         </button>
-        <datalist id="creator-options-mc">
-          {creatorOptions.map((item) => (
-            <option key={item} value={item} />
-          ))}
-        </datalist>
-        <datalist id="deliverable-options-mc">
-          {deliverableOptions.map((item) => (
-            <option key={item} value={item} />
-          ))}
-        </datalist>
       </div>
     </section>
   );

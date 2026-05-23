@@ -321,6 +321,22 @@ body {
   color: var(--intake-option-fg);
 }
 
+.intake-searchable-root .intake-searchable-input {
+  background: var(--intake-input-bg) !important;
+  color: var(--intake-input-fg) !important;
+  border-color: var(--intake-input-border) !important;
+}
+
+.intake-searchable-panel {
+  background: var(--intake-option-bg) !important;
+  border-color: var(--intake-input-border) !important;
+}
+
+.intake-searchable-option {
+  background: var(--intake-option-bg) !important;
+  color: var(--intake-option-fg) !important;
+}
+
 .intake-textarea {
   min-height: 104px;
   resize: vertical;
