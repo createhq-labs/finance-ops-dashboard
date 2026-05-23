@@ -4,6 +4,7 @@ export type SubmissionRow = {
   entity: string;
   amount: number;
   owner_name?: string;
+  submitter_email?: string;
   intake_status: 'submitted' | 'rejected' | 'accepted';
   invoice_status: string;
   sync_status: 'pending_sheet_sync' | 'synced' | 'failed';
@@ -26,6 +27,33 @@ export type SubmissionRow = {
   reimbursement_amount?: number | null;
   reimbursement_receipts?: string | null;
   additional_information?: string | null;
+  previous_submission_id?: string | null;
+  version_status?: 'original' | 'resubmitted' | 'superseded';
+  integration_metadata?: {
+    submitterName?: string;
+    businessLine?: 'TM' | 'IM';
+    entryType?: 'SC' | 'MC' | null;
+    entityType?: 'Agency' | 'Brand';
+    clientType?: 'Indian' | 'Foreign';
+    billingBrandName?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    pincode?: string;
+    campaignCode?: string;
+    campaignName?: string;
+    campaignBrand?: string;
+    campaignDeliverable?: string;
+    campaignNotes?: string;
+    brandNamesText?: string;
+  } | null;
+  intake_line_items?: Array<{
+    creator_name?: string | null;
+    brand_name?: string | null;
+    deliverable_name?: string | null;
+    amount?: number | null;
+    line_order?: number | null;
+  }>;
 };
 
 export type SubmissionTableColumn =

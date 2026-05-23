@@ -1,25 +1,30 @@
 import { useState } from "react";
 import { BILL_DUE_OPTIONS, INVOICE_TYPES } from "../constants";
+import { SearchableSelect } from "../searchable-select";
 import type { InvoiceIntakeFormValues } from "../types";
 
 type Props = {
   values: InvoiceIntakeFormValues;
   onChange: <K extends keyof InvoiceIntakeFormValues>(key: K, value: InvoiceIntakeFormValues[K]) => void;
+  errors?: Record<string, string>;
 };
 
-export function InvoiceDetailsSection({ values, onChange }: Props) {
+export function InvoiceDetailsSection({ values, onChange, errors = {} }: Props) {
   const [invoiceTypeInput, setInvoiceTypeInput] = useState("");
   const [invoiceTypeError, setInvoiceTypeError] = useState("");
   const selectedInvoiceTypes = values.invoiceType
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-  const billDueInList = BILL_DUE_OPTIONS.includes(values.billDue as (typeof BILL_DUE_OPTIONS)[number]);
 
   function addInvoiceType(value: string) {
     const next = value.trim();
+    if (!next) return;
     if (!INVOICE_TYPES.includes(next as (typeof INVOICE_TYPES)[number])) return;
-    if (selectedInvoiceTypes.includes(next)) return;
+    if (selectedInvoiceTypes.includes(next)) {
+      setInvoiceTypeInput("");
+      return;
+    }
     if (selectedInvoiceTypes.length >= 2) {
       setInvoiceTypeError("You can select up to 2 invoice types.");
       setInvoiceTypeInput("");
@@ -49,24 +54,16 @@ export function InvoiceDetailsSection({ values, onChange }: Props) {
 
       <div className="intake-section-body intake-form-grid" style={{ alignItems: "start" }}>
         <label className="intake-field" style={{ alignSelf: "start" }}>
-          <span className="intake-label">Invoice Type</span>
+          <span className="intake-label">Invoice Type *</span>
           <div style={{ display: "grid", gap: 8, minHeight: 72 }}>
-            <input
-              className="intake-input"
-              list="invoice-type-options"
+            <SearchableSelect
               value={invoiceTypeInput}
-              onChange={(e) => {
-                const next = e.target.value;
+              options={[...INVOICE_TYPES]}
+              onChange={(next) => {
                 setInvoiceTypeInput(next);
                 addInvoiceType(next);
               }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addInvoiceType(invoiceTypeInput);
-                }
-              }}
-              onBlur={() => setInvoiceTypeInput("")}
+              data-field="invoiceType"
               placeholder="Select invoice type"
             />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", minHeight: 28 }}>
@@ -80,32 +77,20 @@ export function InvoiceDetailsSection({ values, onChange }: Props) {
               ))}
             </div>
           </div>
+          {errors.invoiceType ? <p className="text-danger intake-inline-error">{errors.invoiceType}</p> : null}
           {invoiceTypeError ? <p className="text-danger intake-inline-error">{invoiceTypeError}</p> : null}
-          <datalist id="invoice-type-options">
-            {INVOICE_TYPES.map((item) => (
-              <option key={item} value={item} />
-            ))}
-          </datalist>
         </label>
 
         <label className="intake-field" style={{ alignSelf: "start" }}>
-          <span className="intake-label">Bill Due</span>
-          <input
-            className="intake-input"
-            list="bill-due-options"
+          <span className="intake-label">Bill Due *</span>
+          <SearchableSelect
             value={values.billDue}
-            onChange={(e) => onChange("billDue", e.target.value)}
-            onBlur={() => {
-              if (!billDueInList) onChange("billDue", "");
-            }}
+            options={[...BILL_DUE_OPTIONS]}
+            onChange={(next) => onChange("billDue", next)}
+            data-field="billDue"
             placeholder="Select bill due"
-            required={values.billDue.trim() === ""}
           />
-          <datalist id="bill-due-options">
-            {BILL_DUE_OPTIONS.map((item) => (
-              <option key={item} value={item} />
-            ))}
-          </datalist>
+          {errors.billDue ? <p className="text-danger intake-inline-error">{errors.billDue}</p> : null}
         </label>
       </div>
     </section>
