@@ -13,6 +13,7 @@ type MySubmissionApiRow = {
   proforma_invoice: string | null;
   agency_brand_name: string | null;
   agency_brand_trade_name: string | null;
+  email_address: string | null;
   gst_number: string | null;
   address: string | null;
   bill_due: string | null;
@@ -62,6 +63,7 @@ export default function EmployeeSubmissionsPage() {
           entity: item.agency_brand_name || '-',
           amount: Number(item.commercials ?? 0),
           owner_name: user.full_name || undefined,
+          submitter_email: item.email_address || user.email || undefined,
           intake_status: item.intake_status,
           invoice_status: item.invoice_status || '-',
           sync_status: 'pending_sheet_sync',
@@ -83,7 +85,16 @@ export default function EmployeeSubmissionsPage() {
           integration_metadata: item.integration_metadata || null,
           intake_line_items: item.intake_line_items || [],
         }));
-        if (active) setRows(mapped);
+        const newerByPreviousId = new Set(mapped.map((entry) => entry.previous_submission_id).filter(Boolean));
+        const versioned = mapped.map((entry) => ({
+          ...entry,
+          version_status: entry.previous_submission_id
+            ? 'resubmitted'
+            : newerByPreviousId.has(entry.id)
+              ? 'superseded'
+              : 'original',
+        })) satisfies SubmissionRow[];
+        if (active) setRows(versioned);
       })
       .catch((error) => {
         if (active) setRowsError(error instanceof Error ? error.message : 'Failed to load submissions.');
