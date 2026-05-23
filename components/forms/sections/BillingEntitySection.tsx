@@ -1,13 +1,31 @@
-import { useEffect, useRef, useState } from "react";
-import { ENTITY_TYPES, getEntityNameOptions, getMappedTradeName, getTradeNameOptions } from "../constants";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ENTITY_TYPES } from "../constants";
+import { SearchableSelect } from "../searchable-select";
 import type { InvoiceIntakeFormValues } from "../types";
 
 type Props = {
   values: InvoiceIntakeFormValues;
   onChange: <K extends keyof InvoiceIntakeFormValues>(key: K, value: InvoiceIntakeFormValues[K]) => void;
+  errors?: Record<string, string>;
+  agencyOptions: string[];
+  brandOptions: string[];
+  agencyTradeNameOptions: string[];
+  brandTradeNameOptions: string[];
+  agencyTradeNameMap: Record<string, string>;
+  brandTradeNameMap: Record<string, string>;
 };
 
-export function BillingEntitySection({ values, onChange }: Props) {
+export function BillingEntitySection({
+  values,
+  onChange,
+  errors = {},
+  agencyOptions,
+  brandOptions,
+  agencyTradeNameOptions,
+  brandTradeNameOptions,
+  agencyTradeNameMap,
+  brandTradeNameMap,
+}: Props) {
   const [gstTouched, setGstTouched] = useState(false);
   const [pincodeTouched, setPincodeTouched] = useState(false);
   const [cityTouched, setCityTouched] = useState(false);
@@ -91,8 +109,12 @@ export function BillingEntitySection({ values, onChange }: Props) {
     !!values.city.trim() &&
     !hintedCities.some((city) => values.city.toLowerCase().includes(city.toLowerCase()));
   const locationMismatch = pincodeStateMismatch || pincodeCityMismatch;
-  const entityNameOptions = getEntityNameOptions(values.entityType);
-  const tradeNameOptions = getTradeNameOptions(values.entityType);
+  const entityNameOptions = values.entityType === "Agency" ? agencyOptions : brandOptions;
+  const tradeNameOptions = values.entityType === "Agency" ? agencyTradeNameOptions : brandTradeNameOptions;
+  const tradeNameMap = useMemo(
+    () => (values.entityType === "Agency" ? agencyTradeNameMap : brandTradeNameMap),
+    [agencyTradeNameMap, brandTradeNameMap, values.entityType]
+  );
 
   useEffect(() => {
     setTradeNameOverridden(false);
@@ -111,12 +133,8 @@ export function BillingEntitySection({ values, onChange }: Props) {
     if (rawIndex <= 0) return 0;
     let seen = 0;
     for (let i = 0; i < formatted.length; i += 1) {
-      if (/[A-Z0-9]/.test(formatted[i])) {
-        seen += 1;
-      }
-      if (seen >= rawIndex) {
-        return i + 1;
-      }
+      if (/[A-Z0-9]/.test(formatted[i])) seen += 1;
+      if (seen >= rawIndex) return i + 1;
     }
     return formatted.length;
   }
@@ -149,93 +167,82 @@ export function BillingEntitySection({ values, onChange }: Props) {
 
       <div className="intake-section-body intake-form-grid">
         <label className="intake-field">
-          <span className="intake-label">Entity Type</span>
-          <select
-            className="intake-input"
+          <span className="intake-label">Entity Type *</span>
+          <SearchableSelect
             value={values.entityType}
-            onChange={(e) => onChange("entityType", e.target.value as InvoiceIntakeFormValues["entityType"])}
+            options={[...ENTITY_TYPES]}
+            onChange={(next) => onChange("entityType", next as InvoiceIntakeFormValues["entityType"])}
+            data-field="entityType"
+            placeholder="Select entity type"
             required
-          >
-            {ENTITY_TYPES.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
+          />
+          {errors.entityType ? <p className="text-danger intake-inline-error">{errors.entityType}</p> : null}
         </label>
 
         <label className="intake-field">
-          <span className="intake-label">Client Type</span>
-          <select className="intake-input" value={values.clientType} onChange={(e) => onChange("clientType", e.target.value as InvoiceIntakeFormValues["clientType"])} required>
-            <option value="Indian">Indian</option>
-            <option value="Foreign">Foreign</option>
-          </select>
+          <span className="intake-label">Client Type *</span>
+          <SearchableSelect
+            value={values.clientType}
+            options={["Indian", "Foreign"]}
+            onChange={(next) => onChange("clientType", next as InvoiceIntakeFormValues["clientType"])}
+            data-field="clientType"
+            placeholder="Select client type"
+            required
+          />
+          {errors.clientType ? <p className="text-danger intake-inline-error">{errors.clientType}</p> : null}
         </label>
 
         <label className="intake-field">
-          <span className="intake-label">{values.entityType === "Agency" ? "Agency Name" : "Brand Name"}</span>
-          <input
-            className="intake-input"
-            list={`entity-name-options-${values.entityType.toLowerCase()}`}
+          <span className="intake-label">{values.entityType === "Agency" ? "Agency Name *" : "Brand Name *"}</span>
+          <SearchableSelect
             value={values.agencyBrandName}
-            onFocus={(e) => e.currentTarget.select()}
-            onChange={(e) => {
-              const next = e.target.value;
+            options={entityNameOptions}
+            onChange={(next) => {
               onChange("agencyBrandName", next);
-              if (!tradeNameOverridden) onChange("agencyBrandTradeName", getMappedTradeName(next) ?? "");
+              if (!tradeNameOverridden) {
+                const mappedTradeName = tradeNameMap[next.trim().toLowerCase()] ?? "";
+                onChange("agencyBrandTradeName", mappedTradeName);
+              }
             }}
-            placeholder={`Select or type ${values.entityType.toLowerCase()} name`}
+            placeholder={`Select ${values.entityType.toLowerCase()} name`}
+            data-field="agencyBrandName"
             required
           />
-          <datalist id={`entity-name-options-${values.entityType.toLowerCase()}`}>
-            {entityNameOptions.map((item) => (
-              <option key={item} value={item} />
-            ))}
-          </datalist>
+          {errors.agencyBrandName ? <p className="text-danger intake-inline-error">{errors.agencyBrandName}</p> : null}
         </label>
 
         <label className="intake-field">
-          <span className="intake-label">{values.entityType === "Agency" ? "Agency Trade Name" : "Brand Trade Name"}</span>
-          <input
-            className="intake-input"
-            list={`trade-name-options-${values.entityType.toLowerCase()}`}
+          <span className="intake-label">{values.entityType === "Agency" ? "Agency Trade Name *" : "Brand Trade Name *"}</span>
+          <SearchableSelect
             value={values.agencyBrandTradeName}
-            onFocus={(e) => e.currentTarget.select()}
-            onChange={(e) => {
+            options={tradeNameOptions}
+            onChange={(next) => {
               setTradeNameOverridden(true);
-              onChange("agencyBrandTradeName", e.target.value);
+              onChange("agencyBrandTradeName", next);
             }}
-            placeholder={`Select or type ${values.entityType.toLowerCase()} trade name`}
+            placeholder={`Select ${values.entityType.toLowerCase()} trade name`}
+            data-field="agencyBrandTradeName"
             required
           />
-          <datalist id={`trade-name-options-${values.entityType.toLowerCase()}`}>
-            {tradeNameOptions.map((item) => (
-              <option key={item} value={item} />
-            ))}
-          </datalist>
+          {errors.agencyBrandTradeName ? <p className="text-danger intake-inline-error">{errors.agencyBrandTradeName}</p> : null}
         </label>
 
         {values.entityType === "Agency" ? (
           <label className="intake-field">
-            <span className="intake-label">Brand Name</span>
-            <input
-              className="intake-input"
-              list="agency-brand-options"
+            <span className="intake-label">Brand Name *</span>
+            <SearchableSelect
               value={values.billingBrandName}
-              onFocus={(e) => e.currentTarget.select()}
-              onChange={(e) => onChange("billingBrandName", e.target.value)}
-              placeholder="Select or type brand name"
+              options={brandOptions}
+              onChange={(next) => onChange("billingBrandName", next)}
+              placeholder="Select brand name"
+              data-field="billingBrandName"
             />
-            <datalist id="agency-brand-options">
-              {getEntityNameOptions("Brand").map((item) => (
-                <option key={item} value={item} />
-              ))}
-            </datalist>
+            {errors.billingBrandName ? <p className="text-danger intake-inline-error">{errors.billingBrandName}</p> : null}
           </label>
         ) : null}
 
         <label className="intake-field">
-          <span className="intake-label">GST Number</span>
+          <span className="intake-label">GST Number{isIndianClient ? " *" : ""}</span>
           <input
             ref={gstInputRef}
             className="intake-input"
@@ -247,54 +254,60 @@ export function BillingEntitySection({ values, onChange }: Props) {
             onBlur={() => setGstTouched(true)}
             placeholder="07-AAIFI5054J-1-Z-7"
             autoComplete="off"
+            data-field="gstNumber"
             required={isIndianClient}
             disabled={!isIndianClient}
             style={!isIndianClient ? { color: "#dc2626" } : undefined}
           />
+          {errors.gstNumber ? <p className="text-danger intake-inline-error">{errors.gstNumber}</p> : null}
           {isIndianClient ? (
             <>
               <p className="text-muted intake-section-copy" style={{ margin: "6px 0 0" }}>Format: 2-digit state + PAN + entity + Z + checksum.</p>
               {gstTouched && !gstValid ? (
                 <p className="text-danger" style={{ margin: "4px 0 0", fontSize: 12 }}>Enter a valid 15-character GST number. Example: 07AAIFI5054J1Z7</p>
               ) : null}
-              {gstTouched && stateLooksMismatched ? (
-                <p className="text-danger" style={{ margin: "4px 0 0", fontSize: 12 }}>GST state code and selected state look different. Please recheck.</p>
-              ) : null}
             </>
           ) : null}
         </label>
 
         <label className="intake-field intake-field-wide">
-          <span className="intake-label">Address</span>
+          <span className="intake-label">Address *</span>
           <input
             className="intake-input"
             value={values.addressLine}
             onChange={(e) => onChange("addressLine", e.target.value)}
             placeholder="Street / Building / Area (e.g., Unit 22, 2nd Floor, Der Deutsche Parkz, Subhash Nagar Road)"
+            data-field="addressLine"
+            autoComplete="off"
             required
           />
+          {errors.addressLine ? <p className="text-danger intake-inline-error">{errors.addressLine}</p> : null}
         </label>
 
         <label className="intake-field">
-          <span className="intake-label">City</span>
-          <input className="intake-input" value={values.city} onBlur={() => setCityTouched(true)} onChange={(e) => onChange("city", e.target.value)} placeholder="Enter city" />
+          <span className="intake-label">City *</span>
+          <input className="intake-input" value={values.city} onBlur={() => setCityTouched(true)} onChange={(e) => onChange("city", e.target.value)} placeholder="Enter city" data-field="city" autoComplete="off" />
+          {errors.city ? <p className="text-danger intake-inline-error">{errors.city}</p> : null}
           {cityTouched && locationMismatch ? <p className="text-danger" style={{ margin: "4px 0 0", fontSize: 12 }}>Pincode does not match selected city/state.</p> : null}
         </label>
 
         <label className="intake-field">
-          <span className="intake-label">State</span>
-          <input className="intake-input" value={values.state} onBlur={() => setStateTouched(true)} onChange={(e) => onChange("state", e.target.value)} placeholder="Enter state" required />
+          <span className="intake-label">State *</span>
+          <input className="intake-input" value={values.state} onBlur={() => setStateTouched(true)} onChange={(e) => onChange("state", e.target.value)} placeholder="Enter state" data-field="state" autoComplete="off" required />
+          {errors.state ? <p className="text-danger intake-inline-error">{errors.state}</p> : null}
           {stateTouched && locationMismatch ? <p className="text-danger" style={{ margin: "4px 0 0", fontSize: 12 }}>Pincode does not match selected city/state.</p> : null}
         </label>
 
         <label className="intake-field">
-          <span className="intake-label">Country</span>
-          <input className="intake-input" value={values.country} onChange={(e) => onChange("country", e.target.value)} placeholder="Enter country" required />
+          <span className="intake-label">Country *</span>
+          <input className="intake-input" value={values.country} onChange={(e) => onChange("country", e.target.value)} placeholder="Enter country" data-field="country" autoComplete="off" required />
+          {errors.country ? <p className="text-danger intake-inline-error">{errors.country}</p> : null}
         </label>
 
         <label className="intake-field">
-          <span className="intake-label">Pincode</span>
-          <input className="intake-input" value={values.pincode} onBlur={() => setPincodeTouched(true)} onChange={(e) => onChange("pincode", e.target.value)} placeholder="Enter pincode" />
+          <span className="intake-label">Pincode{isIndianClient ? " *" : ""}</span>
+          <input className="intake-input" value={values.pincode} onBlur={() => setPincodeTouched(true)} onChange={(e) => onChange("pincode", e.target.value)} placeholder="Enter pincode / postal code" data-field="pincode" autoComplete="off" required={isIndianClient} />
+          {errors.pincode ? <p className="text-danger intake-inline-error">{errors.pincode}</p> : null}
           {pincodeTouched && !pincodeValid ? <p className="text-danger" style={{ margin: "4px 0 0", fontSize: 12 }}>Enter a valid 6-digit Indian pincode.</p> : null}
           {pincodeTouched && locationMismatch ? (
             <p className="text-danger" style={{ margin: "4px 0 0", fontSize: 12 }}>Pincode does not match selected city/state.</p>

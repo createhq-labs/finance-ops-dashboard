@@ -3,9 +3,10 @@ import type { InvoiceIntakeFormValues } from "../types";
 type Props = {
   values: InvoiceIntakeFormValues;
   onChange: <K extends keyof InvoiceIntakeFormValues>(key: K, value: InvoiceIntakeFormValues[K]) => void;
+  errors?: Record<string, string>;
 };
 
-export function AdditionalInfoSection({ values, onChange }: Props) {
+export function AdditionalInfoSection({ values, onChange, errors = {} }: Props) {
   return (
     <section className="intake-section">
       <div className="intake-section-header">
@@ -26,7 +27,8 @@ export function AdditionalInfoSection({ values, onChange }: Props) {
       <div className="intake-section-body">
         <label className="intake-field">
           <span className="intake-label">Internal Notes / Additional Information</span>
-          <textarea className="intake-input intake-textarea" rows={4} value={values.additionalInformation} onChange={(e) => onChange("additionalInformation", e.target.value)} />
+          <textarea className="intake-input intake-textarea" rows={4} value={values.additionalInformation} onChange={(e) => onChange("additionalInformation", e.target.value)} data-field="additionalInformation" />
+          {errors.additionalInformation ? <p className="text-danger intake-inline-error">{errors.additionalInformation}</p> : null}
         </label>
       </div>
     </section>

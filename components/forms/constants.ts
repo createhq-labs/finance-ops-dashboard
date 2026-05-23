@@ -18,6 +18,12 @@ export const AGENCY_NAME_OPTIONS = [
   "Momentum Communication",
 ] as const;
 
+export const AGENCY_TRADE_NAME_OPTIONS = [
+  "Barcode Influencer Marketing Private Limited",
+  "TIST Media Private Limited",
+  "Momentum Communications (India) Private Limited",
+] as const;
+
 export const BRAND_NAME_OPTIONS = [
   "Virgio",
   "Angel One",
@@ -31,6 +37,19 @@ export const BRAND_NAME_OPTIONS = [
   "Boat",
   "Mamaearth",
   "Noise",
+] as const;
+
+export const BRAND_TRADE_NAME_OPTIONS = [
+  "Angel One Limited",
+  "FNP E Retail Private Limited",
+  "Lenskart Solutions Limited",
+  "Honasa Consumer Limited",
+  "Dreamplug Technologies Private Limited",
+  "Decathlon Sports India Private Limited",
+  "PSAV Global Marketing (India) Private Limited",
+  "NIVEA India Pvt Ltd",
+  "Imagine Marketing Limited",
+  "Nexxbase Marketing Private Limited",
 ] as const;
 
 export const INVOICE_TYPES = [
@@ -122,6 +141,18 @@ export function getCreatorOptions() {
   return MASTER_CREATORS.map((item) => item.name);
 }
 
+export function getAgencyOptions() {
+  return [...AGENCY_NAME_OPTIONS];
+}
+
+export function getAgencyTradeNameOptions() {
+  return [...AGENCY_TRADE_NAME_OPTIONS];
+}
+
+export function getBrandTradeNameOptions() {
+  return [...BRAND_TRADE_NAME_OPTIONS];
+}
+
 export function getEntityNameOptions(entityType: "Agency" | "Brand") {
   return entityType === "Agency" ? [...AGENCY_NAME_OPTIONS] : [...BRAND_NAME_OPTIONS];
 }
@@ -163,4 +194,35 @@ export function getBrandsForCreator(creatorName: string) {
   if (!creatorName) return getBrandOptions();
   const matchingBrands = MASTER_CREATORS.filter((item) => item.name === creatorName).map((item) => item.brandName);
   return matchingBrands.length > 0 ? Array.from(new Set(matchingBrands)) : getBrandOptions();
+}
+
+export type FormDropdownMasterData = {
+  agencies: Array<{ name: string; tradeName: string }>;
+  brands: Array<{ name: string; tradeName: string }>;
+  creators: Array<{ name: string; linkedBrandName: string }>;
+  deliverables: {
+    TM: string[];
+    IM: string[];
+  };
+};
+
+export function getFallbackMasterData(): FormDropdownMasterData {
+  return {
+    agencies: AGENCY_NAME_OPTIONS.map((name) => ({
+      name,
+      tradeName: getMappedTradeName(name) ?? "",
+    })),
+    brands: BRAND_NAME_OPTIONS.map((name) => ({
+      name,
+      tradeName: getMappedTradeName(name) ?? "",
+    })),
+    creators: MASTER_CREATORS.map((creator) => ({
+      name: creator.name,
+      linkedBrandName: creator.brandName,
+    })),
+    deliverables: {
+      TM: getDeliverableOptions("TM"),
+      IM: getDeliverableOptions("IM"),
+    },
+  };
 }
