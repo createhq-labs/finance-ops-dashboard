@@ -12,6 +12,7 @@ export default function NewSubmissionPage() {
   const resubmitId = searchParams.get('resubmit_id');
   const { user, loading } = useDashboardSession();
   const [submitMessage, setSubmitMessage] = useState('');
+  const [submitPi, setSubmitPi] = useState('');
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [prefillValues, setPrefillValues] = useState<Partial<InvoiceIntakeFormValues> | null>(null);
   const [prefillLoading, setPrefillLoading] = useState(false);
@@ -123,10 +124,10 @@ export default function NewSubmissionPage() {
       throw new Error(`${detail}${stage}`);
     }
 
-    const pi = body?.pi_number ? ` PI: ${body.pi_number}` : '';
-    setSubmitMessage(`Submission created.${pi}`);
+    setSubmitPi(body?.pi_number || '');
+    setSubmitMessage('Your intake has been recorded and sent into the finance review workflow.');
     setSubmitSuccess(true);
-    setTimeout(() => router.push('/dashboard/submissions'), 1400);
+    setTimeout(() => router.push('/dashboard/submissions'), 1800);
   }
 
   if (loading || !user) return null;
@@ -149,17 +150,45 @@ export default function NewSubmissionPage() {
         </p>
       </section>
 
-      <InvoiceIntakeForm
-        submitterName={user.full_name || ''}
-        submitterEmail={user.email || ''}
-        initialValues={prefillValues}
-        previousSubmissionId={resubmitId}
-        submitEnabled
-        onSubmit={handleCreateSubmit}
-      />
+      {resubmitId ? (
+        <section className="intake-banner">
+          <p style={{ margin: 0, fontWeight: 600 }}>
+            You are editing a previous submission. Submitting will create a new version.
+          </p>
+        </section>
+      ) : null}
+
+      {submitSuccess ? (
+        <section className="intake-section" style={{ maxWidth: 560, margin: '0 auto', width: '100%' }}>
+          <div className="intake-section-body" style={{ textAlign: 'center', display: 'grid', gap: 16, padding: 32 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 999, margin: '0 auto', display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, rgba(34,197,94,0.18), rgba(16,185,129,0.24))', border: '1px solid rgba(34,197,94,0.28)', color: '#16a34a', fontSize: 30, fontWeight: 700 }}>
+              ✓
+            </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <h2 className="intake-section-title" style={{ margin: 0 }}>Submission Successful!</h2>
+              <p className="text-muted" style={{ margin: 0 }}>{submitMessage}</p>
+            </div>
+            <div className="surface" style={{ padding: 16 }}>
+              <div className="text-muted" style={{ fontSize: 12 }}>PI / Proforma Invoice Number</div>
+              <div style={{ fontSize: 22, fontWeight: 700 }}>{submitPi || 'Generated'}</div>
+            </div>
+            <button className="btn btn-primary" type="button" disabled>
+              Redirecting to Submissions...
+            </button>
+          </div>
+        </section>
+      ) : (
+        <InvoiceIntakeForm
+          submitterName={user.full_name || ''}
+          submitterEmail={user.email || ''}
+          initialValues={prefillValues}
+          previousSubmissionId={resubmitId}
+          submitEnabled
+          onSubmit={handleCreateSubmit}
+        />
+      )}
       {prefillLoading ? <p className="text-muted">Loading previous submission...</p> : null}
       {prefillError ? <p className="text-danger">{prefillError}</p> : null}
-      {submitMessage ? <p className={submitSuccess ? 'text-success intake-submit-success' : 'text-success'}>{submitMessage}</p> : null}
       <style jsx>{`
         .intake-submit-success {
           animation: intakeSuccessPulse 900ms ease;
