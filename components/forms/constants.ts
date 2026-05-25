@@ -190,12 +190,6 @@ export function getTradeNameOptions(entityType: "Agency" | "Brand") {
     .filter((item): item is string => Boolean(item));
 }
 
-export function getBrandsForCreator(creatorName: string) {
-  if (!creatorName) return getBrandOptions();
-  const matchingBrands = MASTER_CREATORS.filter((item) => item.name === creatorName).map((item) => item.brandName);
-  return matchingBrands.length > 0 ? Array.from(new Set(matchingBrands)) : getBrandOptions();
-}
-
 export type FormDropdownMasterData = {
   agencies: Array<{ name: string; tradeName: string }>;
   brands: Array<{ name: string; tradeName: string }>;
