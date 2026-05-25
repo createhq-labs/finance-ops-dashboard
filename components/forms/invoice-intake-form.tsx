@@ -427,15 +427,6 @@ export function InvoiceIntakeForm({
     [masters.brands]
   );
   const creatorOptions = useMemo(() => masters.creators.map((row) => row.name), [masters.creators]);
-  const creatorLinkedBrandMap = useMemo(
-    () =>
-      masters.creators.reduce<Record<string, string>>((acc, row) => {
-        if (!row.name || !row.linkedBrandName) return acc;
-        acc[row.name.trim().toLowerCase()] = row.linkedBrandName.trim();
-        return acc;
-      }, {}),
-    [masters.creators]
-  );
   const deliverableOptions = useMemo(
     () => ({
       TM: masters.deliverables.TM,
@@ -589,31 +580,26 @@ export function InvoiceIntakeForm({
       ...prev,
       mcRows: prev.mcRows.map((item, i) => {
         if (i !== index) return item;
-        const next = { ...item, ...patch };
-        if (patch.creator && patch.creator !== item.creator && (!patch.brand || patch.brand === item.brand)) next.brand = "";
-        return next;
+        return { ...item, ...patch };
       }),
     }));
     clearErrors([`mcRows.${index}.creator`, `mcRows.${index}.brand`, `mcRows.${index}.deliverable`, `mcRows.${index}.amount`, "creatorDeliverables"]);
   }
 
   function patchScCreator(nextCreator: string) {
-    const mappedBrand = creatorLinkedBrandMap[nextCreator.trim().toLowerCase()] ?? "";
     setValues((prev) => ({
       ...prev,
       scCreator: nextCreator,
-      scBrand: mappedBrand || prev.scBrand || "",
     }));
-    clearErrors(["scCreator", "scBrand", "creatorDeliverables"]);
+    clearErrors(["scCreator", "creatorDeliverables"]);
   }
 
   function patchMcCreator(index: number, creator: string) {
-    const mappedBrand = creatorLinkedBrandMap[creator.trim().toLowerCase()] ?? "";
     setValues((prev) => ({
       ...prev,
-      mcRows: prev.mcRows.map((row, i) => (i === index ? { ...row, creator, brand: mappedBrand || row.brand || "" } : row)),
+      mcRows: prev.mcRows.map((row, i) => (i === index ? { ...row, creator } : row)),
     }));
-    clearErrors([`mcRows.${index}.creator`, `mcRows.${index}.brand`, "creatorDeliverables"]);
+    clearErrors([`mcRows.${index}.creator`, "creatorDeliverables"]);
   }
 
   function getProductReimbursementFile(key: string) {
