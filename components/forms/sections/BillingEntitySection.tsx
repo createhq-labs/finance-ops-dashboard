@@ -36,23 +36,6 @@ export function BillingEntitySection({
   const isIndianClient = values.clientType === "Indian";
   const gstValid = !isIndianClient || !gst ? true : /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gst);
   const pincodeValid = !isIndianClient || !values.pincode ? true : /^\d{6}$/.test(values.pincode.trim());
-  const stateCodeMap: Record<string, string> = {
-    "27": "Maharashtra",
-    "29": "Karnataka",
-    "07": "Delhi",
-    "33": "Tamil Nadu",
-    "36": "Telangana",
-    "24": "Gujarat",
-    "19": "West Bengal",
-  };
-  const gstStateCode = gst.slice(0, 2);
-  const mappedState = stateCodeMap[gstStateCode];
-  const stateLooksMismatched =
-    isIndianClient &&
-    Boolean(mappedState) &&
-    Boolean(values.state.trim()) &&
-    !values.state.toLowerCase().includes(mappedState.toLowerCase());
-
   const pincodePrefix = values.pincode.trim().slice(0, 2);
   const pincodeStateMap: Record<string, string> = {
     "11": "Delhi",
@@ -197,6 +180,7 @@ export function BillingEntitySection({
           <SearchableSelect
             value={values.agencyBrandName}
             options={entityNameOptions}
+            allowCustom
             onChange={(next) => {
               onChange("agencyBrandName", next);
               if (!tradeNameOverridden) {
@@ -216,6 +200,7 @@ export function BillingEntitySection({
           <SearchableSelect
             value={values.agencyBrandTradeName}
             options={tradeNameOptions}
+            allowCustom
             onChange={(next) => {
               setTradeNameOverridden(true);
               onChange("agencyBrandTradeName", next);
@@ -233,6 +218,7 @@ export function BillingEntitySection({
             <SearchableSelect
               value={values.billingBrandName}
               options={brandOptions}
+              allowCustom
               onChange={(next) => onChange("billingBrandName", next)}
               placeholder="Select brand name"
               data-field="billingBrandName"
