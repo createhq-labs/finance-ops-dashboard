@@ -57,6 +57,7 @@ export type InvoiceIntakeFormValues = {
   campaignCode: string;
   campaignBrand: string;
   campaignDeliverable: string;
+  campaignExtraDeliverables: string[];
   campaignName: string;
   campaignNotes: string;
   imCommercials: string;
@@ -75,6 +76,9 @@ export type InvoiceIntakeIntegrationMetadata = {
   country: string;
   pincode: string;
   campaignCode: string;
+  campaignName: string;
+  campaignBrand: string;
+  campaignDeliverable: string;
   campaignNotes: string;
   brandNamesText: string;
 };
@@ -91,6 +95,10 @@ export type InvoiceIntakeSubmissionPayload = {
   deliverables: string;
   creator_creators_name: string;
   brand_name: string;
+  campaign_code: string;
+  campaign_name: string;
+  campaign_brand: string;
+  campaign_notes: string;
   brand_names_text: string;
   commercials: number;
   additional_information: string;

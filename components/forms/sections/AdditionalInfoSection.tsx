@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { InvoiceIntakeFormValues } from "../types";
 
 type Props = {
@@ -7,6 +8,15 @@ type Props = {
 };
 
 export function AdditionalInfoSection({ values, onChange, errors = {} }: Props) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const element = textareaRef.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${Math.min(Math.max(element.scrollHeight, 40), 180)}px`;
+  }, [values.additionalInformation]);
+
   return (
     <section className="intake-section">
       <div className="intake-section-header">
@@ -27,7 +37,15 @@ export function AdditionalInfoSection({ values, onChange, errors = {} }: Props) 
       <div className="intake-section-body">
         <label className="intake-field">
           <span className="intake-label">Internal Notes / Additional Information</span>
-          <textarea className="intake-input intake-textarea" rows={4} value={values.additionalInformation} onChange={(e) => onChange("additionalInformation", e.target.value)} data-field="additionalInformation" />
+          <textarea
+            ref={textareaRef}
+            className="intake-input intake-textarea"
+            rows={1}
+            value={values.additionalInformation}
+            onChange={(e) => onChange("additionalInformation", e.target.value)}
+            data-field="additionalInformation"
+            style={{ minHeight: 40, maxHeight: 180, overflowY: "auto", resize: "vertical" }}
+          />
           {errors.additionalInformation ? <p className="text-danger intake-inline-error">{errors.additionalInformation}</p> : null}
         </label>
       </div>

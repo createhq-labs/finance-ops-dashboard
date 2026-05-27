@@ -33,6 +33,73 @@ const REIMBURSEMENT_INVOICE_TYPES = new Set([
   "Reimbursement Invoice (With GST)",
   "Reimbursement Invoice (Without GST)",
 ]);
+const INDIAN_STATES: Array<{ name: string; aliases: string[] }> = [
+  { name: "Delhi", aliases: ["delhi", "new delhi"] },
+  { name: "Haryana", aliases: ["haryana"] },
+  { name: "Punjab", aliases: ["punjab"] },
+  { name: "Uttar Pradesh", aliases: ["uttar pradesh"] },
+  { name: "Madhya Pradesh", aliases: ["madhya pradesh"] },
+  { name: "Rajasthan", aliases: ["rajasthan"] },
+  { name: "Gujarat", aliases: ["gujarat"] },
+  { name: "Maharashtra", aliases: ["maharashtra"] },
+  { name: "Telangana", aliases: ["telangana"] },
+  { name: "Karnataka", aliases: ["karnataka"] },
+  { name: "Tamil Nadu", aliases: ["tamil nadu"] },
+  { name: "West Bengal", aliases: ["west bengal"] },
+  { name: "Odisha", aliases: ["odisha", "orissa"] },
+  { name: "Bihar", aliases: ["bihar"] },
+];
+const CITY_ALIASES: Array<{ name: string; aliases: string[]; state: string }> = [
+  { name: "Mumbai", aliases: ["mumbai"], state: "Maharashtra" },
+  { name: "Bengaluru", aliases: ["bengaluru", "bangalore"], state: "Karnataka" },
+  { name: "Delhi", aliases: ["new delhi", "delhi"], state: "Delhi" },
+  { name: "Gurugram", aliases: ["gurugram", "gurgaon"], state: "Haryana" },
+  { name: "Hyderabad", aliases: ["hyderabad"], state: "Telangana" },
+  { name: "Chennai", aliases: ["chennai"], state: "Tamil Nadu" },
+  { name: "Kolkata", aliases: ["kolkata", "calcutta"], state: "West Bengal" },
+  { name: "Pune", aliases: ["pune"], state: "Maharashtra" },
+  { name: "Ahmedabad", aliases: ["ahmedabad"], state: "Gujarat" },
+];
+const PINCODE_STATE_MAP: Record<string, string> = {
+  "11": "Delhi",
+  "12": "Haryana",
+  "14": "Punjab",
+  "20": "Uttar Pradesh",
+  "22": "Uttar Pradesh",
+  "24": "Uttar Pradesh",
+  "28": "Madhya Pradesh",
+  "30": "Rajasthan",
+  "32": "Rajasthan",
+  "36": "Gujarat",
+  "38": "Gujarat",
+  "40": "Maharashtra",
+  "41": "Maharashtra",
+  "42": "Maharashtra",
+  "43": "Maharashtra",
+  "44": "Maharashtra",
+  "45": "Madhya Pradesh",
+  "50": "Telangana",
+  "56": "Karnataka",
+  "57": "Karnataka",
+  "60": "Tamil Nadu",
+  "70": "West Bengal",
+  "75": "Odisha",
+  "80": "Bihar",
+};
+const PINCODE_CITY_HINTS: Record<string, string[]> = {
+  "11": ["Delhi"],
+  "12": ["Gurugram", "Gurgaon"],
+  "40": ["Mumbai", "Thane", "Navi Mumbai"],
+  "41": ["Pune", "Nashik"],
+  "42": ["Nashik", "Jalgaon"],
+  "43": ["Nagpur", "Amravati"],
+  "44": ["Pune", "Kolhapur", "Sangli"],
+  "50": ["Hyderabad", "Secunderabad"],
+  "56": ["Bengaluru", "Bangalore"],
+  "57": ["Mysuru", "Mysore"],
+  "60": ["Chennai"],
+  "70": ["Kolkata", "Calcutta"],
+};
 
 const INITIAL_VALUES: InvoiceIntakeFormValues = {
   submitterName: "",
@@ -64,17 +131,24 @@ const INITIAL_VALUES: InvoiceIntakeFormValues = {
   campaignCode: "",
   campaignBrand: "",
   campaignDeliverable: "",
+  campaignExtraDeliverables: [],
   campaignName: "",
   campaignNotes: "",
   imCommercials: "",
   totalAmount: "",
 };
 
+function sanitizeWholeNumberInput(value: string) {
+  return value.replace(/[^0-9]/g, "");
+}
+
+function parseAmount(value: string) {
+  const digits = sanitizeWholeNumberInput(value);
+  return digits ? Number.parseInt(digits, 10) : 0;
+}
+
 function sumAmounts(values: string[]) {
-  return values.reduce((total, value) => {
-    const next = Number.parseFloat(value || "0");
-    return Number.isNaN(next) || next <= 0 ? total : total + next;
-  }, 0);
+  return values.reduce((total, value) => total + parseAmount(value), 0);
 }
 
 function isValidGstin(value: string) {
@@ -86,109 +160,84 @@ function normalizeState(value: string) {
   return value.toLowerCase().replace(/[^a-z]/g, "");
 }
 
+function normalizeCity(value: string) {
+  return value.toLowerCase().replace(/[^a-z]/g, "");
+}
+
+function findLastAlias(text: string, aliases: string[]) {
+  let bestIndex = -1;
+  for (const alias of aliases) {
+    const idx = text.lastIndexOf(alias.toLowerCase());
+    if (idx > bestIndex) bestIndex = idx;
+  }
+  return bestIndex;
+}
+
+function extractLastPincode(text: string) {
+  const matches = [...text.matchAll(/\b(\d{6})\b/g)];
+  return matches.length > 0 ? matches[matches.length - 1][1] : "";
+}
+
+function inferAddressData(address: string, clientType: InvoiceIntakeFormValues["clientType"]) {
+  const text = address.trim();
+  if (!text) return { city: "", state: "", country: clientType === "Indian" ? "India" : "", pincode: "" };
+
+  const normalized = text.toLowerCase();
+  const pincode = extractLastPincode(text);
+  const country = clientType === "Indian" || /\bindia\b/i.test(text) || Boolean(pincode) ? "India" : "";
+
+  let state = "";
+  let stateIndex = -1;
+  for (const entry of INDIAN_STATES) {
+    const idx = findLastAlias(normalized, entry.aliases);
+    if (idx > stateIndex) {
+      stateIndex = idx;
+      state = entry.name;
+    }
+  }
+
+  let city = "";
+  let cityIndex = -1;
+  for (const entry of CITY_ALIASES) {
+    const idx = findLastAlias(normalized, entry.aliases);
+    if (idx > cityIndex) {
+      cityIndex = idx;
+      city = entry.name;
+      if (!state || idx > stateIndex) state = entry.state;
+    }
+  }
+
+  if (!state && /^\d{6}$/.test(pincode)) {
+    state = PINCODE_STATE_MAP[pincode.slice(0, 2)] ?? "";
+  }
+
+  if (!city && /^\d{6}$/.test(pincode)) {
+    city = (PINCODE_CITY_HINTS[pincode.slice(0, 2)] ?? [])[0] ?? "";
+  }
+
+  return { city, state, country, pincode };
+}
+
 function hasKnownPincodeLocationMismatch(pincodeRaw: string, cityRaw: string, stateRaw: string) {
   const pincode = pincodeRaw.trim();
   if (!/^\d{6}$/.test(pincode)) return false;
 
   const prefix = pincode.slice(0, 2);
-  const pincodeStateMap: Record<string, string> = {
-    "11": "delhi",
-    "12": "haryana",
-    "14": "punjab",
-    "20": "uttarpradesh",
-    "22": "uttarpradesh",
-    "24": "uttarpradesh",
-    "28": "madhyapradesh",
-    "30": "rajasthan",
-    "32": "rajasthan",
-    "36": "gujarat",
-    "38": "gujarat",
-    "40": "maharashtra",
-    "41": "maharashtra",
-    "42": "maharashtra",
-    "43": "maharashtra",
-    "44": "maharashtra",
-    "45": "madhyapradesh",
-    "50": "telangana",
-    "56": "karnataka",
-    "57": "karnataka",
-    "60": "tamilnadu",
-    "70": "westbengal",
-    "75": "odisha",
-    "80": "bihar",
-  };
-  const pincodeCityHints: Record<string, string[]> = {
-    "11": ["delhi", "newdelhi"],
-    "40": ["mumbai", "thane", "navimumbai"],
-    "41": ["pune", "nashik"],
-    "42": ["nashik", "jalgaon"],
-    "43": ["nagpur", "amravati"],
-    "44": ["pune", "kolhapur", "sangli"],
-    "50": ["hyderabad", "secunderabad"],
-    "56": ["bengaluru", "bangalore"],
-    "57": ["mysuru", "mysore"],
-    "60": ["chennai"],
-    "70": ["kolkata", "calcutta"],
-  };
-
-  const mappedState = pincodeStateMap[prefix];
+  const mappedState = PINCODE_STATE_MAP[prefix];
   const normalizedState = normalizeState(stateRaw);
-  if (mappedState && normalizedState && normalizedState !== mappedState) return true;
+  if (mappedState && normalizedState && normalizedState !== normalizeState(mappedState)) return true;
 
-  const cityHints = pincodeCityHints[prefix] ?? [];
-  const normalizedCity = cityRaw.toLowerCase().replace(/[^a-z]/g, "");
-  if (cityHints.length > 0 && normalizedCity && !cityHints.some((hint) => normalizedCity.includes(hint))) return true;
+  const cityHints = PINCODE_CITY_HINTS[prefix] ?? [];
+  const normalizedCity = normalizeCity(cityRaw);
+  if (cityHints.length > 0 && normalizedCity && !cityHints.some((hint) => normalizedCity.includes(normalizeCity(hint)))) return true;
 
   return false;
 }
 
-function inferAddressData(address: string) {
-  const text = address.trim();
-  if (!text) return { city: "", state: "", country: "", pincode: "" };
-
-  const pinMatch = text.match(/\b(\d{6})\b/);
-  const pincode = pinMatch?.[1] ?? "";
-  const hasIndia = /\bindia\b/i.test(text);
-  const normalized = text.toLowerCase();
-  const knownPlaces = [
-    { city: "Mumbai", state: "Maharashtra", match: /(mumbai|bhandup|andheri|thane|maharashtra)/i },
-    { city: "Bengaluru", state: "Karnataka", match: /(bengaluru|bangalore|karnataka|indiranagar|hsr)/i },
-    { city: "New Delhi", state: "Delhi", match: /(new delhi|delhi|paschim vihar)/i },
-    { city: "Kolkata", state: "West Bengal", match: /(kolkata|calcutta|west bengal)/i },
-    { city: "Hyderabad", state: "Telangana", match: /(hyderabad|telangana)/i },
-    { city: "Chennai", state: "Tamil Nadu", match: /(chennai|tamil nadu)/i },
-    { city: "Pune", state: "Maharashtra", match: /(pune|maharashtra)/i },
-    { city: "Ahmedabad", state: "Gujarat", match: /(ahmedabad|gujarat)/i },
-  ];
-  const place = knownPlaces.find((item) => item.match.test(normalized));
-  return {
-    city: place?.city ?? "",
-    state: place?.state ?? "",
-    country: hasIndia ? "India" : "",
-    pincode,
-  };
-}
-
 function isObviouslyIndianAddress(values: Pick<InvoiceIntakeFormValues, "addressLine" | "city" | "state" | "country" | "pincode">) {
   const haystack = `${values.addressLine} ${values.city} ${values.state} ${values.country}`.toLowerCase();
-  const indianStateHints = [
-    "maharashtra",
-    "karnataka",
-    "delhi",
-    "tamil nadu",
-    "telangana",
-    "gujarat",
-    "west bengal",
-    "uttar pradesh",
-    "rajasthan",
-    "madhya pradesh",
-    "haryana",
-    "punjab",
-    "bihar",
-    "odisha",
-  ];
   if (/\bindia\b/.test(haystack)) return true;
-  if (indianStateHints.some((state) => haystack.includes(state))) return true;
+  if (INDIAN_STATES.some((entry) => entry.aliases.some((alias) => haystack.includes(alias)))) return true;
   if (/^\d{6}$/.test(values.pincode.trim())) return true;
   if (/\b\d{6}\b/.test(values.addressLine)) return true;
   return false;
@@ -242,6 +291,7 @@ export function InvoiceIntakeForm({
     setValues((prev) => ({
       ...prev,
       ...initialValues,
+      campaignExtraDeliverables: initialValues.campaignExtraDeliverables ?? prev.campaignExtraDeliverables,
       submitterName: submitterEmail ? prev.submitterName || submitterName : submitterName || prev.submitterName,
       submitterEmail: submitterEmail || prev.submitterEmail,
     }));
@@ -297,7 +347,6 @@ export function InvoiceIntakeForm({
           },
         };
 
-        // Use DB as primary source per list; fallback constants only where a list is empty.
         setMasters({
           agencies: nextMasters.agencies.length > 0 ? nextMasters.agencies : fallback.agencies,
           brands: nextMasters.brands.length > 0 ? nextMasters.brands : fallback.brands,
@@ -319,7 +368,7 @@ export function InvoiceIntakeForm({
   }, []);
 
   useEffect(() => {
-    const inferred = inferAddressData(values.addressLine);
+    const inferred = inferAddressData(values.addressLine, values.clientType);
 
     setValues((prev) => {
       const next = { ...prev };
@@ -364,7 +413,14 @@ export function InvoiceIntakeForm({
 
       return changed ? next : prev;
     });
-  }, [autoFilledLocation, manualLocationEdits, values.addressLine]);
+  }, [autoFilledLocation, manualLocationEdits, values.addressLine, values.clientType]);
+
+  useEffect(() => {
+    if (values.clientType !== "Indian") return;
+    setValues((prev) => (prev.country === "India" ? prev : { ...prev, country: "India" }));
+    setManualLocationEdits((prev) => (prev.country ? { ...prev, country: false } : prev));
+    setAutoFilledLocation((prev) => ({ ...prev, country: true }));
+  }, [values.clientType]);
 
   useEffect(() => {
     const billingBrand = values.entityType === "Agency" ? values.billingBrandName.trim() : values.agencyBrandName.trim();
@@ -397,23 +453,18 @@ export function InvoiceIntakeForm({
   }, [values.agencyBrandName, values.billingBrandName, values.entityType]);
 
   const totalAmount = useMemo(() => {
-    const commission = Number.parseFloat(values.commission || "0");
-    const commissionValue = Number.isNaN(commission) || commission <= 0 ? 0 : commission;
+    const commissionValue = parseAmount(values.commission);
 
     if (values.businessLine === "TM" && values.entryType === "SC") {
-      const base = sumAmounts(values.scDeliverables.map((row) => row.amount));
-      const total = base + commissionValue;
-      return total > 0 ? total.toFixed(2) : "";
+      const total = sumAmounts(values.scDeliverables.map((row) => row.amount)) + commissionValue;
+      return total > 0 ? String(total) : "";
     }
     if (values.businessLine === "TM" && values.entryType === "MC") {
-      const base = sumAmounts(values.mcRows.map((row) => row.amount));
-      const total = base + commissionValue;
-      return total > 0 ? total.toFixed(2) : "";
+      const total = sumAmounts(values.mcRows.map((row) => row.amount)) + commissionValue;
+      return total > 0 ? String(total) : "";
     }
-    const imBase = Number.parseFloat(values.imCommercials || "0");
-    const imBaseValue = Number.isNaN(imBase) || imBase <= 0 ? 0 : imBase;
-    const imTotal = imBaseValue + commissionValue;
-    return imTotal > 0 ? imTotal.toFixed(2) : "";
+    const imTotal = parseAmount(values.imCommercials) + commissionValue;
+    return imTotal > 0 ? String(imTotal) : "";
   }, [values.businessLine, values.entryType, values.imCommercials, values.mcRows, values.scDeliverables, values.commission]);
 
   const agencyOptions = useMemo(() => masters.agencies.map((row) => row.name), [masters.agencies]);
@@ -469,20 +520,20 @@ export function InvoiceIntakeForm({
 
   function update<K extends keyof InvoiceIntakeFormValues>(key: K, value: InvoiceIntakeFormValues[K]) {
     setHasInteracted(true);
+
+    let nextValue = value;
+    if (key === "commission" || key === "reimbursementAmount" || key === "imCommercials") {
+      nextValue = sanitizeWholeNumberInput(String(value)) as InvoiceIntakeFormValues[K];
+    }
     if (key === "addressLine") {
-      // When address is rewritten, allow fresh location inference again.
-      setManualLocationEdits({
-        city: false,
-        state: false,
-        country: false,
-        pincode: false,
-      });
+      setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
     }
     if (key === "city" || key === "state" || key === "country" || key === "pincode") {
       setManualLocationEdits((prev) => ({ ...prev, [key]: true }));
       setAutoFilledLocation((prev) => ({ ...prev, [key]: false }));
     }
-    setValues((prev) => ({ ...prev, [key]: value }));
+
+    setValues((prev) => ({ ...prev, [key]: nextValue }));
     clearErrors([String(key), "creatorDeliverables"]);
     setError("");
   }
@@ -503,6 +554,7 @@ export function InvoiceIntakeForm({
       campaignCode: "",
       campaignBrand: "",
       campaignDeliverable: "",
+      campaignExtraDeliverables: [],
       campaignName: "",
       campaignNotes: "",
       imCommercials: "",
@@ -524,6 +576,7 @@ export function InvoiceIntakeForm({
             campaignCode: prev.campaignCode,
             campaignBrand: prev.campaignBrand,
             campaignDeliverable: prev.campaignDeliverable,
+            campaignExtraDeliverables: prev.campaignExtraDeliverables,
             campaignName: prev.campaignName,
             campaignNotes: prev.campaignNotes,
           }),
@@ -555,7 +608,15 @@ export function InvoiceIntakeForm({
   function patchScDeliverable(index: number, patch: { deliverable?: string; amount?: string }) {
     setValues((prev) => ({
       ...prev,
-      scDeliverables: prev.scDeliverables.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+      scDeliverables: prev.scDeliverables.map((item, i) =>
+        i === index
+          ? {
+              ...item,
+              ...patch,
+              ...(patch.amount !== undefined ? { amount: sanitizeWholeNumberInput(patch.amount) } : {}),
+            }
+          : item
+      ),
     }));
     clearErrors([`scDeliverables.${index}.deliverable`, `scDeliverables.${index}.amount`, "creatorDeliverables"]);
   }
@@ -563,7 +624,7 @@ export function InvoiceIntakeForm({
   function addMcRow() {
     setValues((prev) => ({
       ...prev,
-      mcRows: [...prev.mcRows, { ...EMPTY_MC_ROW }],
+      mcRows: [...prev.mcRows, { ...EMPTY_MC_ROW, brand: prev.mcRows[0]?.brand || "" }],
     }));
   }
 
@@ -579,11 +640,46 @@ export function InvoiceIntakeForm({
     setValues((prev) => ({
       ...prev,
       mcRows: prev.mcRows.map((item, i) => {
-        if (i !== index) return item;
-        return { ...item, ...patch };
+        const nextPatch =
+          patch.brand !== undefined
+            ? { ...patch, brand: patch.brand }
+            : i === index
+              ? patch
+              : {};
+
+        return i === index || patch.brand !== undefined
+          ? {
+              ...item,
+              ...nextPatch,
+              ...(nextPatch.amount !== undefined ? { amount: sanitizeWholeNumberInput(nextPatch.amount) } : {}),
+            }
+          : item;
       }),
     }));
     clearErrors([`mcRows.${index}.creator`, `mcRows.${index}.brand`, `mcRows.${index}.deliverable`, `mcRows.${index}.amount`, "creatorDeliverables"]);
+  }
+
+  function addImDeliverable() {
+    setValues((prev) => ({
+      ...prev,
+      campaignExtraDeliverables: [...prev.campaignExtraDeliverables, ""],
+    }));
+  }
+
+  function removeImDeliverable(index: number) {
+    setValues((prev) => ({
+      ...prev,
+      campaignExtraDeliverables: prev.campaignExtraDeliverables.filter((_, i) => i !== index),
+    }));
+    clearErrors([`campaignExtraDeliverables.${index}`, "creatorDeliverables"]);
+  }
+
+  function patchImDeliverable(index: number, value: string) {
+    setValues((prev) => ({
+      ...prev,
+      campaignExtraDeliverables: prev.campaignExtraDeliverables.map((item, i) => (i === index ? value : item)),
+    }));
+    clearErrors([`campaignExtraDeliverables.${index}`, "creatorDeliverables"]);
   }
 
   function patchScCreator(nextCreator: string) {
@@ -625,6 +721,7 @@ export function InvoiceIntakeForm({
     const errors: Record<string, string> = {};
     const invoiceTypes = nextValues.invoiceType.split(",").map((item) => item.trim()).filter(Boolean);
     const allowedDeliverables = nextValues.businessLine === "IM" ? deliverableOptions.IM : deliverableOptions.TM;
+    const imDeliverables = [nextValues.campaignDeliverable, ...nextValues.campaignExtraDeliverables].filter(Boolean);
 
     if (!nextValues.submitterName.trim()) errors.submitterName = "Name is required.";
     if (!nextValues.submitterEmail.trim()) errors.submitterEmail = "Email is required.";
@@ -660,6 +757,7 @@ export function InvoiceIntakeForm({
         "36": "telangana",
         "24": "gujarat",
         "19": "westbengal",
+        "06": "haryana",
       };
       const stateCode = nextValues.gstNumber.slice(0, 2);
       const mappedState = stateCodeMap[stateCode];
@@ -689,7 +787,7 @@ export function InvoiceIntakeForm({
       nextValues.scDeliverables.forEach((row, idx) => {
         if (!row.deliverable.trim()) errors[`scDeliverables.${idx}.deliverable`] = "Deliverable is required.";
         else if (!allowedDeliverables.includes(row.deliverable)) errors[`scDeliverables.${idx}.deliverable`] = "Select a valid deliverable.";
-        if (!(Number.parseFloat(row.amount || "0") > 0)) errors[`scDeliverables.${idx}.amount`] = "Amount is required.";
+        if (!(parseAmount(row.amount) > 0)) errors[`scDeliverables.${idx}.amount`] = "Amount is required.";
       });
     }
 
@@ -699,7 +797,7 @@ export function InvoiceIntakeForm({
         if (!row.brand.trim()) errors[`mcRows.${idx}.brand`] = "Brand is required.";
         if (!row.deliverable.trim()) errors[`mcRows.${idx}.deliverable`] = "Deliverable is required.";
         else if (!allowedDeliverables.includes(row.deliverable)) errors[`mcRows.${idx}.deliverable`] = "Select a valid deliverable.";
-        if (!(Number.parseFloat(row.amount || "0") > 0)) errors[`mcRows.${idx}.amount`] = "Amount is required.";
+        if (!(parseAmount(row.amount) > 0)) errors[`mcRows.${idx}.amount`] = "Amount is required.";
       });
     }
 
@@ -709,14 +807,19 @@ export function InvoiceIntakeForm({
       if (!nextValues.campaignBrand.trim()) errors.campaignBrand = "Campaign brand is required.";
       if (!nextValues.campaignDeliverable.trim()) errors.campaignDeliverable = "Deliverable is required.";
       else if (!deliverableOptions.IM.includes(nextValues.campaignDeliverable)) errors.campaignDeliverable = "Select a valid deliverable.";
-      if (!(Number.parseFloat(nextValues.imCommercials || "0") > 0)) errors.imCommercials = "Commercials / Total Amount is required.";
+      nextValues.campaignExtraDeliverables.forEach((deliverable, index) => {
+        if (!deliverable.trim()) errors[`campaignExtraDeliverables.${index}`] = "Deliverable is required.";
+        else if (!deliverableOptions.IM.includes(deliverable)) errors[`campaignExtraDeliverables.${index}`] = "Select a valid deliverable.";
+      });
+      if (!(parseAmount(nextValues.imCommercials) > 0)) errors.imCommercials = "Commercials / Total Amount is required.";
+      if (imDeliverables.length === 0) errors.creatorDeliverables = "At least one deliverable is required.";
     }
 
     const requiresProductReimbursement = invoiceTypes.some((item) => REIMBURSEMENT_INVOICE_TYPES.has(item));
     const hasProductReimbursement =
       (nextValues.businessLine === "TM" && nextValues.entryType === "SC" && nextValues.scDeliverables.some((row) => row.deliverable === "Product Reimbursement")) ||
       (nextValues.businessLine === "TM" && nextValues.entryType === "MC" && nextValues.mcRows.some((row) => row.deliverable === "Product Reimbursement")) ||
-      (nextValues.businessLine === "IM" && nextValues.campaignDeliverable === "Product Reimbursement");
+      (nextValues.businessLine === "IM" && imDeliverables.includes("Product Reimbursement"));
     if (requiresProductReimbursement && !hasProductReimbursement) {
       errors.creatorDeliverables = "Reimbursement invoice requires at least one Product Reimbursement deliverable.";
     }
@@ -737,12 +840,13 @@ export function InvoiceIntakeForm({
   }
 
   function buildPayload(): InvoiceIntakeSubmissionPayload {
+    const imDeliverables = [values.campaignDeliverable, ...values.campaignExtraDeliverables].filter(Boolean);
     const deliverables =
       values.businessLine === "TM" && values.entryType === "SC"
         ? values.scDeliverables.map((row) => row.deliverable).filter(Boolean).join(", ")
         : values.businessLine === "TM" && values.entryType === "MC"
           ? values.mcRows.map((row) => row.deliverable).filter(Boolean).join(", ")
-          : values.campaignDeliverable || "";
+          : imDeliverables.join(", ");
 
     const creatorNames =
       values.businessLine === "TM" && values.entryType === "SC"
@@ -777,7 +881,7 @@ export function InvoiceIntakeForm({
             creator_name: values.scCreator || null,
             brand_name: values.scBrand || null,
             deliverable_name: row.deliverable || null,
-            amount: Number.parseFloat(row.amount || "0") || 0,
+            amount: parseAmount(row.amount),
             line_order: idx,
           }))
         : values.businessLine === "TM" && values.entryType === "MC"
@@ -785,12 +889,18 @@ export function InvoiceIntakeForm({
               creator_name: row.creator || null,
               brand_name: row.brand || null,
               deliverable_name: row.deliverable || null,
-              amount: Number.parseFloat(row.amount || "0") || 0,
+              amount: parseAmount(row.amount),
               line_order: idx,
             }))
-          : [];
+          : imDeliverables.map((deliverable, idx) => ({
+              creator_name: null,
+              brand_name: values.campaignBrand || brandName || null,
+              deliverable_name: deliverable || null,
+              amount: 0,
+              line_order: idx,
+            }));
 
-    const commercials = Number.parseFloat(totalAmount || "0") || 0;
+    const commercials = parseAmount(totalAmount);
 
     return {
       previous_submission_id: previousSubmissionId || null,
@@ -807,10 +917,14 @@ export function InvoiceIntakeForm({
       brand_names_text: uniqueBrandNames.join(", "),
       commercials,
       additional_information: values.additionalInformation,
-      additional_agency_commission: Number.parseFloat(values.commission || "0") || 0,
-      reimbursement_amount: values.reimbursementIncluded === "yes" ? Number.parseFloat(values.reimbursementAmount || "0") || 0 : 0,
+      additional_agency_commission: parseAmount(values.commission),
+      reimbursement_amount: values.reimbursementIncluded === "yes" ? parseAmount(values.reimbursementAmount) : 0,
       reimbursement_receipts: values.reimbursementIncluded === "yes" ? values.reimbursementProof : "",
       line_items: lineItems,
+      campaign_code: values.businessLine === "IM" ? values.campaignCode : "",
+      campaign_name: values.businessLine === "IM" ? values.campaignName : "",
+      campaign_brand: values.businessLine === "IM" ? values.campaignBrand : "",
+      campaign_notes: values.businessLine === "IM" ? values.campaignNotes : "",
       integration_metadata: {
         submitterName: values.submitterName,
         businessLine: values.businessLine,
@@ -823,6 +937,9 @@ export function InvoiceIntakeForm({
         country: values.country,
         pincode: values.pincode,
         campaignCode: values.campaignCode,
+        campaignName: values.campaignName,
+        campaignBrand: values.campaignBrand,
+        campaignDeliverable: deliverables,
         campaignNotes: values.campaignNotes,
         brandNamesText: uniqueBrandNames.join(", "),
       },
@@ -969,6 +1086,9 @@ export function InvoiceIntakeForm({
         addMcRow={addMcRow}
         removeMcRow={removeMcRow}
         patchMcRow={patchMcRow}
+        addImDeliverable={addImDeliverable}
+        removeImDeliverable={removeImDeliverable}
+        patchImDeliverable={patchImDeliverable}
         getProductReimbursementFile={getProductReimbursementFile}
         getProductReimbursementError={getProductReimbursementError}
         onProductReimbursementFileChange={onProductReimbursementFileChange}

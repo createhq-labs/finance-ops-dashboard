@@ -75,7 +75,7 @@ export function SingleCreatorRows({
         <div>
           <h3 className="intake-section-title">Single Creator</h3>
           <p className="text-muted intake-section-copy">
-            Select one creator, a linked brand, and the deliverable rows that should roll into the invoice total.
+            Select one creator, choose the working brand, and add the deliverable rows that should roll into the invoice total.
           </p>
         </div>
       </div>
@@ -89,6 +89,7 @@ export function SingleCreatorRows({
                   <SearchableSelect
                     value={scCreator}
                     options={creatorOptions}
+                    allowCustom
                     onChange={onCreatorChange}
                     placeholder="Select creator"
                     disabled={idx > 0}
@@ -100,6 +101,7 @@ export function SingleCreatorRows({
                   <SearchableSelect
                     value={scBrand}
                     options={brandOptions}
+                    allowCustom
                     onChange={onBrandChange}
                     placeholder="Select brand"
                     disabled={idx > 0}
@@ -120,13 +122,14 @@ export function SingleCreatorRows({
                 <div className="grid gap-1">
                   <input
                     className="intake-input"
-                    type="number"
-                    min={0}
-                    step="0.01"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     placeholder="Amount INR"
                     value={row.amount}
                     onChange={(e) => onRowChange(idx, { amount: e.target.value })}
                     data-field={`scDeliverables.${idx}.amount`}
+                    autoComplete="off"
                   />
                   {errors[`scDeliverables.${idx}.amount`] ? <p className="text-danger intake-inline-error">{errors[`scDeliverables.${idx}.amount`]}</p> : null}
                 </div>
@@ -203,6 +206,7 @@ export function MultiCreatorRows({
                   <SearchableSelect
                     value={row.creator}
                     options={creatorOptions}
+                    allowCustom
                     onChange={(next) => onCreatorChange(idx, next)}
                     placeholder="Select creator"
                     data-field={`mcRows.${idx}.creator`}
@@ -214,8 +218,10 @@ export function MultiCreatorRows({
                   <SearchableSelect
                     value={row.brand}
                     options={brandOptions}
+                    allowCustom
                     onChange={(next) => onRowChange(idx, { brand: next })}
                     placeholder="Select brand"
+                    disabled={idx > 0}
                     data-field={`mcRows.${idx}.brand`}
                   />
                   {errors[`mcRows.${idx}.brand`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.brand`]}</p> : null}
@@ -235,13 +241,14 @@ export function MultiCreatorRows({
                 <div className="grid gap-1">
                   <input
                     className="intake-input"
-                    type="number"
-                    min={0}
-                    step="0.01"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     placeholder="Amount INR"
                     value={row.amount}
                     onChange={(e) => onRowChange(idx, { amount: e.target.value })}
                     data-field={`mcRows.${idx}.amount`}
+                    autoComplete="off"
                   />
                   {errors[`mcRows.${idx}.amount`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.amount`]}</p> : null}
                 </div>
