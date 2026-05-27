@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { ReactNode, useEffect, useMemo } from 'react';
-import { FilePlus } from 'lucide-react';
-import { canAccessDashboardPath, getDefaultDashboardPath, getInvoiceIntakePath, getSubmissionsLabel } from '../../lib/client/dashboard-access';
+import { ReactNode, useEffect, useMemo, useState } from 'react';
+import { Bell, BookOpen, FilePlus, Home, ListChecks } from 'lucide-react';
+import { canAccessDashboardPath, canViewNotifications, getDefaultDashboardPath, getInvoiceIntakePath, getSubmissionsLabel } from '../../lib/client/dashboard-access';
 import { ThemeToggle } from './theme-toggle';
 import { DashboardSessionProvider, useDashboardSession } from './dashboard-session';
 
@@ -20,6 +20,7 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, loading } = useDashboardSession();
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     if (loading || !user) return;
@@ -28,12 +29,34 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
     }
   }, [loading, pathname, router, user]);
 
+  useEffect(() => {
+    let active = true;
+    if (!user || !canViewNotifications(user.role)) return;
+
+    fetch('/api/notifications/my?limit=20', { method: 'GET', cache: 'no-store' })
+      .then(async (res) => {
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.success) return;
+        if (active) setUnreadCount(Number(json.unread_count ?? 0));
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!active) return;
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
   const items = useMemo(() => {
     const role = user?.role;
     const base = [
-      { href: '/dashboard', label: 'Overview' },
+      { href: '/dashboard', label: 'Overview', icon: Home },
       { href: getInvoiceIntakePath(), label: 'Submit Invoice', icon: FilePlus },
-      { href: '/dashboard/submissions', label: getSubmissionsLabel(role) },
+      { href: '/dashboard/submissions', label: getSubmissionsLabel(role), icon: ListChecks },
+      { href: '/dashboard/notifications', label: 'Notifications', icon: Bell, badge: unreadCount > 0 ? unreadCount : undefined },
+      { href: '/dashboard/guide', label: 'Guide', icon: BookOpen },
       { href: '/dashboard/finance', label: 'Finance Review' },
       { href: '/dashboard/users', label: 'Users' },
       { href: '/dashboard/system', label: 'System' },
@@ -43,7 +66,7 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
       if (!role) return i.href === '/dashboard';
       return canAccessDashboardPath(role, i.href);
     });
-  }, [user?.role]);
+  }, [unreadCount, user?.role]);
 
   if (loading) {
     return (
@@ -85,6 +108,25 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
               >
                 {Icon ? <Icon size={16} /> : null}
                 {item.label}
+                {'badge' in item && item.badge ? (
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      minWidth: 20,
+                      height: 20,
+                      borderRadius: 999,
+                      display: 'inline-grid',
+                      placeItems: 'center',
+                      padding: '0 6px',
+                      background: active ? 'rgba(255,255,255,0.2)' : 'var(--primary)',
+                      color: '#fff',
+                      fontSize: 11,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {item.badge}
+                  </span>
+                ) : null}
               </Link>
             );
           })}
