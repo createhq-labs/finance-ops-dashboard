@@ -19,6 +19,8 @@ export async function GET(req: NextRequest) {
     const appUser = await getCurrentAppUser(userClient, token);
 
     const baseSelect =
+      'id, proforma_invoice, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, payment_received_status, payment_made_status, closure_status, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
+    const legacySelect =
       'id, proforma_invoice, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
 
     let { data, error } = await userClient
@@ -27,16 +29,43 @@ export async function GET(req: NextRequest) {
       .eq('submitted_by', appUser.id)
       .order('submitted_at', { ascending: false });
 
-    if (error && /integration_metadata/i.test(error.message)) {
-      const fallback = await userClient
+    if (error) {
+      const normalizedFallback = await userClient
         .from('intake_submissions')
         .select(baseSelect)
+        .eq('submitted_by', appUser.id)
+        .order('submitted_at', { ascending: false });
+
+      data = (normalizedFallback.data ?? []).map((row) => ({
+        ...row,
+        integration_metadata: null,
+      }));
+      error = normalizedFallback.error;
+    }
+
+    if (error) {
+      const fallback = await userClient
+        .from('intake_submissions')
+        .select(legacySelect)
         .eq('submitted_by', appUser.id)
         .order('submitted_at', { ascending: false });
 
       data = (fallback.data ?? []).map((row) => ({
         ...row,
         integration_metadata: null,
+        business_line: null,
+        entity_type: null,
+        client_type: null,
+        agency_name: null,
+        agency_trade_name: null,
+        brand_trade_name: null,
+        campaign_code: null,
+        campaign_name: null,
+        campaign_brand: null,
+        campaign_notes: null,
+        payment_received_status: null,
+        payment_made_status: null,
+        closure_status: null,
       }));
       error = fallback.error;
     }

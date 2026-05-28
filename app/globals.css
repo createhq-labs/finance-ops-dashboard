@@ -160,6 +160,35 @@ body {
 .badge-sync-failed { background: rgba(220, 38, 38, 0.14); color: var(--danger); }
 .badge-sync-synced { background: rgba(22, 163, 74, 0.14); color: var(--success); }
 
+.submission-pi {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-weight: 600;
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--fg);
+}
+
+.submission-pi-resubmitted {
+  background: rgba(59, 130, 246, 0.16);
+  color: #1d4ed8;
+}
+
+.submission-pi-superseded {
+  background: rgba(245, 158, 11, 0.16);
+  color: #b45309;
+}
+
+.dark .submission-pi-resubmitted {
+  color: #93c5fd;
+}
+
+.dark .submission-pi-superseded {
+  color: #fcd34d;
+}
+
 .drawer-overlay {
   position: fixed;
   inset: 0;
