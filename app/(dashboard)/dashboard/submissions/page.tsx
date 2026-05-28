@@ -1,7 +1,7 @@
 "use client";
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
@@ -21,12 +21,22 @@ type MySubmissionApiRow = {
   deliverables: string | null;
   creator_creators_name: string | null;
   brand_name: string | null;
+  campaign_code?: string | null;
+  campaign_name?: string | null;
+  campaign_brand?: string | null;
+  campaign_notes?: string | null;
   commercials: number | string | null;
   additional_agency_commission: number | string | null;
   reimbursement_amount: number | string | null;
   reimbursement_receipts: string | null;
   additional_information: string | null;
   previous_submission_id: string | null;
+  business_line?: 'TM' | 'IM' | null;
+  entity_type?: 'Agency' | 'Brand' | null;
+  client_type?: 'Indian' | 'Foreign' | null;
+  agency_name?: string | null;
+  agency_trade_name?: string | null;
+  brand_trade_name?: string | null;
   integration_metadata: SubmissionRow['integration_metadata'];
   intake_line_items: SubmissionRow['intake_line_items'];
   intake_status: SubmissionRow['intake_status'];
@@ -37,6 +47,7 @@ type MySubmissionApiRow = {
 
 export default function EmployeeSubmissionsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading } = useDashboardSession();
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState<SubmissionRow[]>([]);
@@ -76,18 +87,30 @@ export default function EmployeeSubmissionsPage() {
           invoice_type: item.invoice_type || null,
           creator_creators_name: item.creator_creators_name || null,
           brand_name: item.brand_name || null,
+          campaign_code: item.campaign_code || null,
+          campaign_name: item.campaign_name || null,
+          campaign_brand: item.campaign_brand || null,
+          campaign_notes: item.campaign_notes || null,
           deliverables: item.deliverables || null,
           additional_agency_commission: Number(item.additional_agency_commission ?? 0),
           reimbursement_amount: Number(item.reimbursement_amount ?? 0),
           reimbursement_receipts: item.reimbursement_receipts || null,
           additional_information: item.additional_information || null,
           previous_submission_id: item.previous_submission_id || null,
+          business_line: item.business_line || null,
+          entity_type: item.entity_type || null,
+          client_type: item.client_type || null,
+          agency_name: item.agency_name || null,
+          agency_trade_name: item.agency_trade_name || null,
+          brand_trade_name: item.brand_trade_name || null,
           integration_metadata: item.integration_metadata || null,
           intake_line_items: item.intake_line_items || [],
         }));
+        const piById = new Map(mapped.map((entry) => [entry.id, entry.pi]));
         const newerByPreviousId = new Set(mapped.map((entry) => entry.previous_submission_id).filter(Boolean));
         const versioned = mapped.map((entry) => ({
           ...entry,
+          previous_submission_pi: entry.previous_submission_id ? piById.get(entry.previous_submission_id) || null : null,
           version_status: entry.previous_submission_id
             ? 'resubmitted'
             : newerByPreviousId.has(entry.id)
@@ -116,6 +139,14 @@ export default function EmployeeSubmissionsPage() {
     [query, rows]
   );
   const row = useMemo(() => filteredRows.find((entry) => entry.id === openId) || null, [filteredRows, openId]);
+
+  useEffect(() => {
+    const submissionId = searchParams.get('submission_id');
+    if (!submissionId) return;
+    if (rows.some((entry) => entry.id === submissionId)) {
+      setOpenId(submissionId);
+    }
+  }, [rows, searchParams]);
 
   if (loading || !user) return null;
 

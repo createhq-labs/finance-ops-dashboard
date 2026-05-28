@@ -11,20 +11,42 @@ function isBlank(value: React.ReactNode) {
 
 function cleanFullAddress(address: string | null | undefined, metadata: SubmissionRow['integration_metadata']) {
   if (!address) return '';
+  const normalizedAddress = address.trim().replace(/^"+|"+$/g, '');
   const tokensToRemove = [metadata?.pincode, metadata?.country, metadata?.state, metadata?.city]
     .filter(Boolean)
-    .map((value) => String(value).trim().toLowerCase());
+    .map((value) => String(value).trim().replace(/^"+|"+$/g, '').toLowerCase());
 
-  const parts = address
+  const parts = normalizedAddress
     .split(',')
-    .map((part) => part.trim())
+    .map((part) => part.trim().replace(/^"+|"+$/g, ''))
     .filter(Boolean);
 
   while (parts.length && tokensToRemove.includes(parts[parts.length - 1].toLowerCase())) {
     parts.pop();
   }
 
-  return parts.join(', ') || address;
+  return parts.join(', ') || normalizedAddress;
+}
+
+function uniqueCommaSeparated(values: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+
+  for (const value of values) {
+    const parts = String(value || '')
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    for (const part of parts) {
+      const key = part.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      ordered.push(part);
+    }
+  }
+
+  return ordered;
 }
 
 function DetailItem({
@@ -63,12 +85,14 @@ export function SubmissionDrawer({
   row,
   viewer,
   onResubmit,
+  financePanel,
 }: {
   open: boolean;
   onClose: () => void;
   row: SubmissionRow | null;
   viewer: 'employee' | 'team_lead' | 'finance' | 'admin' | 'developer';
   onResubmit?: (id: string) => void;
+  financePanel?: React.ReactNode;
 }) {
   if (!open || !row) return null;
 
@@ -78,8 +102,14 @@ export function SubmissionDrawer({
   const canResubmit = viewer === 'employee' || canResubmitSubmission(viewer, row);
   const metadata = row.integration_metadata;
   const lineItems = [...(row.intake_line_items || [])].sort((a, b) => (a.line_order ?? 0) - (b.line_order ?? 0));
-  const isIM = metadata?.businessLine === 'IM';
-  const isIndianClient = metadata?.clientType === 'Indian' || (!metadata?.clientType && Boolean(row.gst_number));
+  const businessLine = row.business_line || metadata?.businessLine || null;
+  const entityType = row.entity_type || metadata?.entityType || null;
+  const clientType = row.client_type || metadata?.clientType || null;
+  const entryType = metadata?.entryType || null;
+  const isIM = businessLine === 'IM';
+  const businessLineLabel = businessLine === 'IM' ? 'Influencer Marketing' : businessLine === 'TM' ? 'Talent Management' : '';
+  const entryTypeLabel = entryType === 'SC' ? 'Single Creator' : entryType === 'MC' ? 'Multiple Creators' : isIM ? 'IM Campaign' : '';
+  const isIndianClient = clientType === 'Indian' || (!clientType && Boolean(row.gst_number));
   const cleanAddress = cleanFullAddress(row.address, metadata);
   const versionLabel =
     row.version_status === 'resubmitted'
@@ -87,10 +117,22 @@ export function SubmissionDrawer({
       : row.version_status === 'superseded'
         ? 'Superseded by newer submission'
         : 'Original submission';
-  const agencyName = metadata?.entityType === 'Agency' ? row.entity : '';
-  const agencyTradeName = metadata?.entityType === 'Agency' ? row.trade_name : '';
-  const billingBrandName = metadata?.entityType === 'Agency' ? metadata?.billingBrandName || row.brand_name : row.entity;
-  const billingBrandTradeName = metadata?.entityType === 'Brand' ? row.trade_name : '';
+  const agencyName = entityType === 'Agency' ? row.agency_name || row.entity : '';
+  const agencyTradeName = entityType === 'Agency' ? row.agency_trade_name || row.trade_name : '';
+  const billingBrandName =
+    entityType === 'Agency'
+      ? row.brand_name || metadata?.billingBrandName || ''
+      : row.brand_name || row.entity;
+  const billingBrandTradeName = entityType === 'Brand' ? row.brand_trade_name || row.trade_name : '';
+  const scPrimaryLine = lineItems[0];
+  const singleCreatorName = row.creator_creators_name || scPrimaryLine?.creator_name || '';
+  const singleCreatorBrand = row.brand_name || scPrimaryLine?.brand_name || metadata?.brandNamesText || '';
+  const imDeliverableNames = uniqueCommaSeparated([
+    row.deliverables,
+    row.campaign_code ? undefined : metadata?.campaignDeliverable,
+    ...lineItems.map((item) => item.deliverable_name),
+  ]);
+  const imCampaignBrand = row.campaign_brand || metadata?.campaignBrand || row.brand_name || lineItems.find((item) => item.brand_name)?.brand_name || '';
 
   return (
     <div className="drawer-overlay" onClick={onClose}>
@@ -103,7 +145,7 @@ export function SubmissionDrawer({
         <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
           <DetailSection title="Submission Info">
             <DetailItem label="Version Status" value={versionLabel} alwaysShow />
-            {row.previous_submission_id ? <DetailItem label="Previous Submission ID" value={row.previous_submission_id} /> : null}
+            {row.previous_submission_pi ? <DetailItem label="Previous Submission" value={row.previous_submission_pi} /> : null}
             <DetailItem label="Proforma Invoice" value={row.pi} alwaysShow />
             <DetailItem label="Intake Status" value={row.intake_status} alwaysShow />
             {canSeeInvoice ? <DetailItem label="Invoice Status" value={row.invoice_status || '-'} alwaysShow /> : null}
@@ -113,17 +155,17 @@ export function SubmissionDrawer({
           </DetailSection>
 
           <DetailSection title="Business Workflow">
-            <DetailItem label="Business Line" value={metadata?.businessLine} />
-            <DetailItem label="Entry Type" value={metadata?.entryType || (isIM ? 'IM Campaign' : '')} />
+            <DetailItem label="Business Line" value={businessLineLabel} />
+            <DetailItem label="Client Type" value={clientType} />
+            {!isIM ? <DetailItem label="Entry Type" value={entryTypeLabel} /> : null}
           </DetailSection>
 
           <DetailSection title="Billing Entity">
-            <DetailItem label="Entity Type" value={metadata?.entityType} />
-            <DetailItem label="Client Type" value={metadata?.clientType} />
-            <DetailItem label="Agency Name" value={agencyName} />
-            <DetailItem label="Agency Trade Name / Legal Name" value={agencyTradeName} />
+            <DetailItem label="Entity Type" value={entityType} />
+            {entityType === 'Agency' ? <DetailItem label="Agency Name" value={agencyName} /> : null}
+            {entityType === 'Agency' ? <DetailItem label="Agency Trade / Legal Name" value={agencyTradeName} /> : null}
             <DetailItem label="Brand Name" value={billingBrandName} />
-            <DetailItem label="Brand Trade Name / Legal Name" value={billingBrandTradeName} />
+            {entityType === 'Brand' ? <DetailItem label="Brand Trade / Legal Name" value={billingBrandTradeName} /> : null}
             {isIndianClient ? <DetailItem label="GST Number" value={row.gst_number} /> : null}
             <DetailItem label="Full Address" value={cleanAddress} />
             <DetailItem label="City" value={metadata?.city} />
@@ -139,17 +181,19 @@ export function SubmissionDrawer({
 
           {isIM ? (
             <DetailSection title="Campaign Details">
-              <DetailItem label="Campaign Code" value={metadata?.campaignCode} />
-              <DetailItem label="Campaign Name" value={metadata?.campaignName} />
-              <DetailItem label="Campaign Brand" value={metadata?.campaignBrand || row.brand_name} />
-              <DetailItem label="Deliverable" value={metadata?.campaignDeliverable || row.deliverables} />
-              <DetailItem label="Campaign Notes" value={metadata?.campaignNotes} />
+              <DetailItem label="Campaign Code" value={row.campaign_code || metadata?.campaignCode} />
+              <DetailItem label="Campaign Name" value={row.campaign_name || metadata?.campaignName} />
+              <DetailItem label="Campaign Brand" value={imCampaignBrand} />
+              <DetailItem label="Deliverables" value={imDeliverableNames.join(', ')} />
+              {row.campaign_notes || metadata?.campaignNotes ? <DetailItem label="Campaign Notes" value={row.campaign_notes || metadata?.campaignNotes} /> : null}
             </DetailSection>
           ) : (
             <DetailSection title="Creator / Deliverables">
-              <DetailItem label="Creator Name" value={row.creator_creators_name} />
-              <DetailItem label="Brand Name" value={row.brand_name || metadata?.brandNamesText} />
-              <DetailItem label="Deliverables" value={row.deliverables} />
+              {entryType === 'SC' ? <DetailItem label="Entry Type" value="Single Creator" /> : null}
+              {entryType === 'SC' ? <DetailItem label="Creator Name" value={singleCreatorName} /> : null}
+              {entryType === 'SC' ? <DetailItem label="Brand Name" value={singleCreatorBrand} /> : null}
+              {entryType === 'SC' ? <DetailItem label="Deliverables" value={row.deliverables} /> : null}
+              {entryType === 'MC' ? <DetailItem label="Entry Type" value="Multiple Creators" /> : null}
               {lineItems.length ? (
                 <div className="surface" style={{ padding: 12, overflowX: 'auto' }}>
                   <div className="text-muted" style={{ fontSize: 12, marginBottom: 8 }}>Line Items</div>
@@ -215,12 +259,7 @@ export function SubmissionDrawer({
               <button className="btn btn-primary" type="button" onClick={() => onResubmit?.(row.id)}>Edit / Resubmit</button>
             </div>
           ) : null}
-          {canSeeFinanceFields ? (
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button className="btn" type="button">Reject with Note</button>
-              <button className="btn btn-primary" type="button">Accept Submission</button>
-            </div>
-          ) : null}
+          {canSeeFinanceFields && financePanel ? financePanel : null}
         </div>
       </aside>
     </div>
