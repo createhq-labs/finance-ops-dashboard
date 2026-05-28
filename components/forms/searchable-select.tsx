@@ -6,6 +6,7 @@ type SearchableSelectProps = {
   value: string;
   options: string[];
   onChange: (next: string) => void;
+  allowCustom?: boolean;
   placeholder?: string;
   disabled?: boolean;
   dataField?: string;
@@ -17,6 +18,7 @@ export function SearchableSelect({
   value,
   options,
   onChange,
+  allowCustom = false,
   placeholder = "Select option",
   disabled = false,
   dataField,
@@ -80,6 +82,15 @@ export function SearchableSelect({
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
+  function commitCustomValue() {
+    const next = query.trim();
+    if (!allowCustom || !next) {
+      setQuery(value);
+      return;
+    }
+    selectOption(next);
+  }
+
   return (
     <div ref={rootRef} className={`intake-searchable-root${className ? ` ${className}` : ""}`} style={{ position: "relative" }}>
       <input
@@ -125,7 +136,11 @@ export function SearchableSelect({
             event.preventDefault();
             if (!open) return;
             const selected = filteredOptions[highlightedIndex] ?? filteredOptions[0];
-            if (selected) selectOption(selected);
+            if (selected) {
+              selectOption(selected);
+            } else {
+              commitCustomValue();
+            }
           }
           if (event.key === "Escape") {
             event.preventDefault();
@@ -137,8 +152,11 @@ export function SearchableSelect({
           // Click-outside handler closes reliably; this guards tab navigation.
           requestAnimationFrame(() => {
             if (!rootRef.current?.contains(document.activeElement)) {
+              if (allowCustom && query.trim()) {
+                onChange(query.trim());
+              }
               setOpen(false);
-              setQuery(value);
+              setQuery(allowCustom && query.trim() ? query.trim() : value);
             }
           });
         }}
@@ -187,7 +205,28 @@ export function SearchableSelect({
           }}
         >
           {filteredOptions.length === 0 ? (
-            <div style={{ padding: "8px 10px", color: "var(--muted)", fontSize: 13 }}>No matching option</div>
+            allowCustom && query.trim() ? (
+              <button
+                className="intake-searchable-option"
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={commitCustomValue}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  border: 0,
+                  background: "rgba(56, 189, 248, 0.16)",
+                  color: "var(--intake-option-fg)",
+                  padding: "8px 10px",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+              >
+                Use &quot;{query.trim()}&quot;
+              </button>
+            ) : (
+              <div style={{ padding: "8px 10px", color: "var(--muted)", fontSize: 13 }}>No matching option</div>
+            )
           ) : (
             filteredOptions.map((option, index) => (
               <button
