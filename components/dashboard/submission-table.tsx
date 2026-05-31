@@ -4,16 +4,67 @@ export type SubmissionRow = {
   entity: string;
   amount: number;
   owner_name?: string;
+  submitter_email?: string;
   intake_status: 'submitted' | 'rejected' | 'accepted';
   invoice_status: string;
   sync_status: 'pending_sheet_sync' | 'synced' | 'failed';
   submitted_at: string;
   rejection_note?: string | null;
-  creator_invoice_received?: 'received' | 'pending';
-  payment_received?: 'received' | 'pending';
-  payment_made?: 'paid' | 'pending';
-  closed_status?: 'open' | 'closed';
+  creator_invoice_received?: 'received' | 'pending' | string;
+  payment_received?: 'received' | 'pending' | 'partial' | 'full' | 'not_received' | string;
+  payment_made?: 'paid' | 'pending' | 'partial' | 'full' | 'not_paid' | string;
+  closed_status?: 'open' | 'closed' | 'cancelled' | string;
   comments?: string;
+  trade_name?: string | null;
+  gst_number?: string | null;
+  address?: string | null;
+  bill_due?: string | null;
+  invoice_type?: string | null;
+  creator_creators_name?: string | null;
+  brand_name?: string | null;
+  campaign_code?: string | null;
+  campaign_name?: string | null;
+  campaign_brand?: string | null;
+  campaign_notes?: string | null;
+  deliverables?: string | null;
+  additional_agency_commission?: number | null;
+  reimbursement_amount?: number | null;
+  reimbursement_receipts?: string | null;
+  additional_information?: string | null;
+  previous_submission_id?: string | null;
+  previous_submission_pi?: string | null;
+  version_status?: 'original' | 'resubmitted' | 'superseded';
+  business_line?: 'TM' | 'IM' | null;
+  entity_type?: 'Agency' | 'Brand' | null;
+  client_type?: 'Indian' | 'Foreign' | null;
+  agency_name?: string | null;
+  agency_trade_name?: string | null;
+  brand_trade_name?: string | null;
+  integration_metadata?: {
+    submitterName?: string;
+    businessLine?: 'TM' | 'IM';
+    entryType?: 'SC' | 'MC' | null;
+    entityType?: 'Agency' | 'Brand';
+    clientType?: 'Indian' | 'Foreign';
+    billingBrandName?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    pincode?: string;
+    campaignCode?: string;
+    campaignName?: string;
+    campaignBrand?: string;
+    campaignDeliverable?: string;
+    campaignNotes?: string;
+    brandNamesText?: string;
+  } | null;
+  intake_line_items?: Array<{
+    creator_name?: string | null;
+    brand_name?: string | null;
+    deliverable_name?: string | null;
+    amount?: number | null;
+    line_order?: number | null;
+  }>;
 };
 
 export type SubmissionTableColumn =
@@ -58,7 +109,18 @@ const COLUMN_LABELS: Record<SubmissionTableColumn, string> = {
 };
 
 function renderCell(column: SubmissionTableColumn, row: SubmissionRow) {
-  if (column === 'pi') return row.pi;
+  if (column === 'pi') {
+    const piClass =
+      row.version_status === 'resubmitted'
+        ? 'submission-pi submission-pi-resubmitted'
+        : row.version_status === 'superseded'
+          ? 'submission-pi submission-pi-superseded'
+          : 'submission-pi';
+
+    return (
+      <span className={piClass}>{row.pi}</span>
+    );
+  }
   if (column === 'entity') return row.entity;
   if (column === 'owner_name') return row.owner_name || '-';
   if (column === 'amount') return money(row.amount);
