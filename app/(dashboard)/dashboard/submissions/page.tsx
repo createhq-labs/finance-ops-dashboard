@@ -3,6 +3,9 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { PageHeader } from '../../../../components/dashboard/page-header';
+import { SectionCard } from '../../../../components/dashboard/section-card';
+import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
@@ -31,6 +34,10 @@ type MySubmissionApiRow = {
   reimbursement_receipts: string | null;
   additional_information: string | null;
   previous_submission_id: string | null;
+  payment_received?: string | null;
+  payment_received_status?: string | null;
+  payment_made?: string | null;
+  payment_made_status?: string | null;
   business_line?: 'TM' | 'IM' | null;
   entity_type?: 'Agency' | 'Brand' | null;
   client_type?: 'Indian' | 'Foreign' | null;
@@ -45,11 +52,47 @@ type MySubmissionApiRow = {
   rejection_note: string | null;
 };
 
+type EmployeePaymentFilter = 'all' | 'pending' | 'partial' | 'paid' | 'received' | 'not_paid' | 'not_received';
+
+function normalizeStatusValue(value: string | null | undefined) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+
+  if (normalized === 'not_received') return 'not_received';
+  if (normalized === 'not_paid') return 'not_paid';
+  if (normalized === 'received') return 'received';
+  if (normalized === 'paid') return 'paid';
+  if (normalized === 'full') return 'full';
+  if (normalized === 'partial') return 'partial';
+  if (normalized === 'pending') return 'pending';
+  return normalized;
+}
+
+function matchesEmployeePaymentFilter(row: SubmissionRow, filter: EmployeePaymentFilter) {
+  if (filter === 'all') return true;
+
+  const paymentMade = normalizeStatusValue(row.payment_made);
+  const paymentReceived = normalizeStatusValue(row.payment_received);
+
+  if (filter === 'paid') return paymentMade === 'paid' || paymentMade === 'full';
+  if (filter === 'received') return paymentReceived === 'received' || paymentReceived === 'full';
+  if (filter === 'pending') return paymentMade === 'pending' || paymentReceived === 'pending';
+  if (filter === 'partial') return paymentMade === 'partial' || paymentReceived === 'partial';
+  if (filter === 'not_paid') return paymentMade === 'not_paid';
+  if (filter === 'not_received') return paymentReceived === 'not_received';
+  return false;
+}
+
 export default function EmployeeSubmissionsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading } = useDashboardSession();
   const [query, setQuery] = useState('');
+  const [intakeStatusFilter, setIntakeStatusFilter] = useState<'all' | SubmissionRow['intake_status']>('all');
+  const [versionStatusFilter, setVersionStatusFilter] = useState<'all' | NonNullable<SubmissionRow['version_status']>>('all');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<EmployeePaymentFilter>('all');
   const [rows, setRows] = useState<SubmissionRow[]>([]);
   const [rowsLoading, setRowsLoading] = useState(true);
   const [rowsError, setRowsError] = useState('');
@@ -97,6 +140,8 @@ export default function EmployeeSubmissionsPage() {
           reimbursement_receipts: item.reimbursement_receipts || null,
           additional_information: item.additional_information || null,
           previous_submission_id: item.previous_submission_id || null,
+          payment_received: normalizeStatusValue(item.payment_received_status || item.payment_received) || undefined,
+          payment_made: normalizeStatusValue(item.payment_made_status || item.payment_made) || undefined,
           business_line: item.business_line || null,
           entity_type: item.entity_type || null,
           client_type: item.client_type || null,
@@ -131,13 +176,32 @@ export default function EmployeeSubmissionsPage() {
     };
   }, [user]);
 
-  const filteredRows = useMemo(
-    () =>
-      rows.filter(
-        (row) => row.entity.toLowerCase().includes(query.toLowerCase()) || row.pi.toLowerCase().includes(query.toLowerCase()) || (row.owner_name || '').toLowerCase().includes(query.toLowerCase())
-      ),
-    [query, rows]
-  );
+  const filteredRows = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return rows.filter((row) => {
+      if (intakeStatusFilter !== 'all' && row.intake_status !== intakeStatusFilter) return false;
+      if (versionStatusFilter !== 'all' && (row.version_status || 'original') !== versionStatusFilter) return false;
+      if (!matchesEmployeePaymentFilter(row, paymentStatusFilter)) return false;
+
+      if (!normalizedQuery) return true;
+
+      const haystack = [
+        row.pi,
+        row.entity,
+        row.brand_name,
+        row.creator_creators_name,
+        row.campaign_brand,
+        row.integration_metadata?.billingBrandName,
+        row.integration_metadata?.brandNamesText,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(normalizedQuery);
+    });
+  }, [intakeStatusFilter, paymentStatusFilter, query, rows, versionStatusFilter]);
   const row = useMemo(() => filteredRows.find((entry) => entry.id === openId) || null, [filteredRows, openId]);
 
   useEffect(() => {
@@ -152,29 +216,66 @@ export default function EmployeeSubmissionsPage() {
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ margin: 0 }}>{getSubmissionsLabel(user.role)}</h1>
-          <p className="text-muted">This page is limited to your own intake records, status updates, rejection notes, and resubmission actions.</p>
-        </div>
-        {canSubmitInvoice(user.role) ? (
+      <PageHeader
+        title={getSubmissionsLabel(user.role)}
+        description="This page is limited to your own intake records, status updates, rejection notes, and resubmission actions."
+        actions={canSubmitInvoice(user.role) ? (
           <Link className="btn btn-primary" href="/dashboard/submissions/new">
             New Submission
           </Link>
         ) : null}
-      </header>
+      />
 
-      <div className="surface" style={{ padding: 12 }}>
-        <input
-          placeholder="Search by PI or Entity"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--fg)' }}
-        />
-      </div>
+      <SectionCard padding={16}>
+        <div className="intake-form-grid">
+          <label className="intake-field">
+            <span className="intake-label">Search</span>
+            <input
+              className="intake-input"
+              placeholder="Search PI, entity, creator, or brand"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+          <label className="intake-field">
+            <span className="intake-label">Intake Status</span>
+            <select className="intake-input" value={intakeStatusFilter} onChange={(e) => setIntakeStatusFilter(e.target.value as 'all' | SubmissionRow['intake_status'])}>
+              <option value="all">All</option>
+              <option value="submitted">Submitted</option>
+              <option value="accepted">Accepted</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </label>
+          <label className="intake-field">
+            <span className="intake-label">Version Status</span>
+            <select
+              className="intake-input"
+              value={versionStatusFilter}
+              onChange={(e) => setVersionStatusFilter(e.target.value as 'all' | NonNullable<SubmissionRow['version_status']>)}
+            >
+              <option value="all">All</option>
+              <option value="original">Original</option>
+              <option value="resubmitted">Resubmitted</option>
+              <option value="superseded">Superseded</option>
+            </select>
+          </label>
+          <label className="intake-field">
+            <span className="intake-label">Payment Status</span>
+            <select className="intake-input" value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value as EmployeePaymentFilter)}>
+              <option value="all">All</option>
+              <option value="pending">Pending</option>
+              <option value="partial">Partial</option>
+              <option value="paid">Paid</option>
+              <option value="received">Received</option>
+              <option value="not_paid">Not Paid</option>
+              <option value="not_received">Not Received</option>
+            </select>
+          </label>
+        </div>
+      </SectionCard>
 
-      {rowsLoading ? <div className="surface text-muted" style={{ padding: 12 }}>Loading submissions...</div> : null}
-      {rowsError ? <div className="surface text-danger" style={{ padding: 12 }}>{rowsError}</div> : null}
+      {rowsLoading ? <StatePanel padding={12}>Loading submissions...</StatePanel> : null}
+      {rowsError ? <StatePanel tone="danger" padding={12}>{rowsError}</StatePanel> : null}
       {!rowsLoading && !rowsError ? (
         <SubmissionTable
           rows={filteredRows}
