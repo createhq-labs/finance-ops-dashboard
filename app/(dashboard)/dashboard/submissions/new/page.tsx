@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { PageHeader } from '../../../../../components/dashboard/page-header';
+import { StatePanel } from '../../../../../components/dashboard/state-panel';
 import { InvoiceIntakeForm } from '../../../../../components/forms/invoice-intake-form';
 import { useDashboardSession } from '../../../../../components/layout/dashboard-session';
 import type { InvoiceIntakeFormValues, InvoiceIntakeSubmissionPayload } from '../../../../../components/forms/types';
@@ -216,15 +218,11 @@ export default function NewSubmissionPage() {
 
   return (
     <main className="intake-shell">
-      <header className="intake-page-header">
-        <div>
-          <p className="intake-eyebrow">CREATE Ledger Intake</p>
-          <h1 className="intake-page-title">New Submission</h1>
-          <p className="text-muted intake-page-copy">
-            Prepare a billing intake for finance review using the CREATE ledger flow adapted for this dashboard.
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow="CREATE Ledger Intake"
+        title={<span className="intake-page-title">New Submission</span>}
+        description={<span className="intake-page-copy">Prepare a billing intake for finance review using the CREATE ledger flow adapted for this dashboard.</span>}
+      />
 
       <section className="intake-banner">
         <p className="text-muted" style={{ margin: 0 }}>
@@ -269,8 +267,8 @@ export default function NewSubmissionPage() {
           onSubmit={handleCreateSubmit}
         />
       )}
-      {prefillLoading ? <p className="text-muted">Loading previous submission...</p> : null}
-      {prefillError ? <p className="text-danger">{prefillError}</p> : null}
+      {prefillLoading ? <StatePanel>Loading previous submission...</StatePanel> : null}
+      {prefillError ? <StatePanel tone="danger">{prefillError}</StatePanel> : null}
       <style jsx>{`
         .intake-submit-success {
           animation: intakeSuccessPulse 900ms ease;
