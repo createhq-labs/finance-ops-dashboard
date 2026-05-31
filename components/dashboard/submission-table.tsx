@@ -84,23 +84,15 @@ function money(n: number) {
 }
 
 function badgeClass(row: SubmissionRow) {
-  if (row.intake_status === 'accepted') {
-    return 'inline-flex items-center rounded-lg bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200';
-  }
-  if (row.intake_status === 'rejected') {
-    return 'inline-flex items-center rounded-lg bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 dark:bg-red-950 dark:text-red-200';
-  }
-  return 'inline-flex items-center rounded-lg bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950 dark:text-blue-200';
+  if (row.intake_status === 'accepted') return 'badge badge-accepted';
+  if (row.intake_status === 'rejected') return 'badge badge-rejected';
+  return 'badge badge-submitted';
 }
 
 function syncClass(sync: SubmissionRow['sync_status']) {
-  if (sync === 'synced') {
-    return 'inline-flex items-center rounded-lg bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200';
-  }
-  if (sync === 'failed') {
-    return 'inline-flex items-center rounded-lg bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 dark:bg-red-950 dark:text-red-200';
-  }
-  return 'inline-flex items-center rounded-lg bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-200';
+  if (sync === 'synced') return 'badge badge-sync-synced';
+  if (sync === 'failed') return 'badge badge-sync-failed';
+  return 'badge badge-sync-pending';
 }
 
 const COLUMN_LABELS: Record<SubmissionTableColumn, string> = {
@@ -129,16 +121,14 @@ function renderCell(column: SubmissionTableColumn, row: SubmissionRow) {
       <span className={piClass}>{row.pi}</span>
     );
   }
-  if (column === 'entity') return <span className="font-medium text-foreground">{row.entity}</span>;
-  if (column === 'owner_name') return <span className="text-muted-foreground">{row.owner_name || '—'}</span>;
-  if (column === 'amount') return <span className="font-semibold tabular-nums text-foreground">{money(row.amount)}</span>;
+  if (column === 'entity') return row.entity;
+  if (column === 'owner_name') return row.owner_name || '-';
+  if (column === 'amount') return money(row.amount);
   if (column === 'intake_status') return <span className={badgeClass(row)}>{row.intake_status}</span>;
-  if (column === 'invoice_status') return <span className="text-sm text-muted-foreground">{row.invoice_status || '—'}</span>;
+  if (column === 'invoice_status') return row.invoice_status || '-';
   if (column === 'sync_status') return <span className={syncClass(row.sync_status)}>{row.sync_status}</span>;
-  if (column === 'submitted_at') return <span className="text-xs text-muted-foreground">{new Date(row.submitted_at).toLocaleDateString()}</span>;
-  if (column === 'rejection_note') {
-    return <span className="text-sm italic text-muted-foreground">{row.intake_status === 'rejected' ? row.rejection_note || 'No note added' : '—'}</span>;
-  }
+  if (column === 'submitted_at') return new Date(row.submitted_at).toLocaleDateString();
+  if (column === 'rejection_note') return row.intake_status === 'rejected' ? row.rejection_note || 'No note added' : '-';
   return null;
 }
 
@@ -158,28 +148,22 @@ export function SubmissionTable({
   const activeColumns = columns || ['pi', 'entity', 'amount', 'intake_status', 'invoice_status', 'sync_status', 'submitted_at', 'actions'];
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-border/70 bg-card/60">
-      <table className="w-full border-collapse text-sm">
+    <div className="table-wrap">
+      <table className="table">
         <thead>
-          <tr className="border-b border-border bg-muted/40">
+          <tr>
             {activeColumns.map((column) => (
-              <th key={column} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {COLUMN_LABELS[column]}
-              </th>
+              <th key={column}>{COLUMN_LABELS[column]}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id} className="cursor-default border-b border-border transition-colors duration-150 hover:bg-muted/30 last:border-b-0">
+            <tr key={r.id}>
               {activeColumns.map((column) => (
-                <td key={`${r.id}-${column}`} className="px-4 py-3 align-middle">
+                <td key={`${r.id}-${column}`}>
                   {column === 'actions' ? (
-                    <button
-                      className="inline-flex items-center rounded-md border border-border bg-transparent px-3 py-1.5 text-xs font-medium text-foreground transition-all duration-150 hover:border-accent hover:bg-accent/10 hover:text-accent"
-                      type="button"
-                      onClick={() => onOpen?.(r.id)}
-                    >
+                    <button className="btn" type="button" onClick={() => onOpen?.(r.id)}>
                       {getActionLabel ? getActionLabel(r) : 'View'}
                     </button>
                   ) : (
@@ -194,11 +178,6 @@ export function SubmissionTable({
           ) : null}
         </tbody>
       </table>
-      {rows.length === 0 ? (
-        <div className="px-4 py-12 text-center text-muted-foreground">
-          {emptyLabel || 'No submissions yet.'}
-        </div>
-      ) : null}
     </div>
   );
 }

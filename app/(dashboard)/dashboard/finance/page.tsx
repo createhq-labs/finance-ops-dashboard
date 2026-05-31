@@ -1,15 +1,12 @@
 "use client";
 
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
-import { PageHeader } from '../../../../components/dashboard/page-header';
-import { SectionCard } from '../../../../components/dashboard/section-card';
-import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
-import { canViewFinanceDashboard, getDefaultDashboardPath, getDrawerViewerRole, getFinanceDashboardTitle } from '../../../../lib/client/dashboard-access';
+import { getDrawerViewerRole, getFinanceDashboardTitle } from '../../../../lib/client/dashboard-access';
 
 type FinanceApiRow = {
   id: string;
@@ -71,54 +68,9 @@ const PAYMENT_RECEIVED_OPTIONS = ['pending', 'partial', 'full', 'not_received'] 
 const PAYMENT_MADE_OPTIONS = ['pending', 'partial', 'full', 'not_paid'] as const;
 const CLOSURE_OPTIONS = ['open', 'closed', 'cancelled'] as const;
 
-function normalizeCreatorInvoice(value: string | null | undefined): 'pending' | 'received' {
-  return String(value || '').trim().toLowerCase() === 'received' ? 'received' : 'pending';
-}
-
-function normalizeStatusToken(value: string | null | undefined) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '_');
-}
-
-function normalizeBusinessLine(value: string | null | undefined): 'TM' | 'IM' | null {
-  const normalized = normalizeStatusToken(value);
-  if (normalized === 'tm' || normalized === 'talent_management') return 'TM';
-  if (normalized === 'im' || normalized === 'influencer_marketing') return 'IM';
-  return null;
-}
-
-function normalizePaymentReceived(value: string | null | undefined): 'pending' | 'partial' | 'full' | 'received' | 'not_received' {
-  const normalized = normalizeStatusToken(value);
-  if (normalized === 'partial') return 'partial';
-  if (normalized === 'full') return 'full';
-  if (normalized === 'received') return 'received';
-  if (normalized === 'not_received') return 'not_received';
-  return 'pending';
-}
-
-function normalizePaymentMade(value: string | null | undefined): 'pending' | 'partial' | 'full' | 'paid' | 'not_paid' {
-  const normalized = normalizeStatusToken(value);
-  if (normalized === 'partial') return 'partial';
-  if (normalized === 'full') return 'full';
-  if (normalized === 'paid') return 'paid';
-  if (normalized === 'not_paid') return 'not_paid';
-  return 'pending';
-}
-
-function normalizeClosedStatus(value: string | null | undefined): 'open' | 'closed' | 'cancelled' {
-  const normalized = normalizeStatusToken(value);
-  if (normalized === 'closed') return 'closed';
-  if (normalized === 'cancelled' || normalized === 'canceled') return 'cancelled';
-  return 'open';
-}
-
 export default function FinanceReviewPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading } = useDashboardSession();
-  const isMountedRef = useRef(true);
   const [rows, setRows] = useState<SubmissionRow[]>([]);
   const [rowsLoading, setRowsLoading] = useState(true);
   const [rowsError, setRowsError] = useState('');
@@ -128,11 +80,6 @@ export default function FinanceReviewPage() {
   const [intakeStatusFilter, setIntakeStatusFilter] = useState<'all' | 'submitted' | 'accepted' | 'rejected'>('all');
   const [employeeFilter, setEmployeeFilter] = useState('all');
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('all');
-  const [creatorInvoiceReceivedFilter, setCreatorInvoiceReceivedFilter] = useState<'all' | 'received' | 'pending'>('all');
-  const [paymentReceivedFilter, setPaymentReceivedFilter] = useState<'all' | 'pending' | 'partial' | 'full' | 'received' | 'not_received'>('all');
-  const [paymentMadeFilter, setPaymentMadeFilter] = useState<'all' | 'pending' | 'partial' | 'full' | 'paid' | 'not_paid'>('all');
-  const [closedStatusFilter, setClosedStatusFilter] = useState<'all' | 'open' | 'closed' | 'cancelled'>('all');
-  const [versionStatusFilter, setVersionStatusFilter] = useState<'all' | 'original' | 'resubmitted' | 'superseded'>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [actionSubmitting, setActionSubmitting] = useState(false);
@@ -146,18 +93,9 @@ export default function FinanceReviewPage() {
   const [actionLoadingKey, setActionLoadingKey] = useState<FinanceAction | null>(null);
   const [actionSuccess, setActionSuccess] = useState('');
 
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
   async function loadFinanceSubmissions() {
-    if (isMountedRef.current) {
-      setRowsLoading(true);
-      setRowsError('');
-    }
+    setRowsLoading(true);
+    setRowsError('');
 
     const res = await fetch('/api/submissions/finance', { method: 'GET', cache: 'no-store' });
     const json = await res.json().catch(() => ({}));
@@ -194,7 +132,7 @@ export default function FinanceReviewPage() {
       reimbursement_receipts: item.reimbursement_receipts || null,
       additional_information: item.additional_information || null,
       previous_submission_id: item.previous_submission_id || null,
-      business_line: normalizeBusinessLine(item.business_line || item.integration_metadata?.businessLine),
+      business_line: item.business_line || null,
       entity_type: item.entity_type || null,
       client_type: item.client_type || null,
       agency_name: item.agency_name || null,
@@ -202,10 +140,10 @@ export default function FinanceReviewPage() {
       brand_trade_name: item.brand_trade_name || null,
       integration_metadata: item.integration_metadata || null,
       intake_line_items: item.intake_line_items || [],
-      creator_invoice_received: normalizeCreatorInvoice(item.invoice_via_creators_received),
-      payment_received: normalizePaymentReceived(item.payment_received_status || item.payment_received),
-      payment_made: normalizePaymentMade(item.payment_made_status || item.payment_made),
-      closed_status: normalizeClosedStatus(item.closure_status || item.closed),
+      creator_invoice_received: item.invoice_via_creators_received || 'pending',
+      payment_received: item.payment_received_status || item.payment_received || 'pending',
+      payment_made: item.payment_made_status || item.payment_made || 'pending',
+      closed_status: item.closure_status || item.closed || 'open',
     }));
 
     const piById = new Map(mapped.map((entry) => [entry.id, entry.pi]));
@@ -220,16 +158,13 @@ export default function FinanceReviewPage() {
           : 'original',
     })) satisfies SubmissionRow[];
 
-    if (isMountedRef.current) {
-      setRows(versioned);
-      setRowsLoading(false);
-    }
+    setRows(versioned);
+    setRowsLoading(false);
   }
 
   useEffect(() => {
     let active = true;
     if (!user) return;
-    if (!canViewFinanceDashboard(user.role)) return;
     void loadFinanceSubmissions().catch((error) => {
       if (active) {
         setRowsError(error instanceof Error ? error.message : 'Failed to load finance submissions.');
@@ -241,13 +176,6 @@ export default function FinanceReviewPage() {
       active = false;
     };
   }, [user]);
-
-  useEffect(() => {
-    if (loading || !user) return;
-    if (!canViewFinanceDashboard(user.role)) {
-      router.replace(getDefaultDashboardPath(user.role));
-    }
-  }, [loading, router, user]);
 
   useEffect(() => {
     const submissionId = searchParams.get('submission_id');
@@ -284,29 +212,20 @@ export default function FinanceReviewPage() {
   }, [row]);
 
   const employeeOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(rows.flatMap((entry) => [entry.owner_name, entry.submitter_email]).filter(Boolean))
-      ) as string[],
+    () => Array.from(new Set(rows.map((entry) => entry.owner_name).filter(Boolean))) as string[],
     [rows]
   );
   const invoiceStatusOptions = useMemo(
-    () => Array.from(new Set(rows.map((entry) => entry.invoice_status).filter((status) => Boolean(status && status !== '-')))),
+    () => Array.from(new Set(rows.map((entry) => entry.invoice_status).filter(Boolean))),
     [rows]
   );
 
   const filteredRows = useMemo(() => {
     return rows.filter((entry) => {
-      const effectiveBusinessLine = normalizeBusinessLine(entry.business_line || entry.integration_metadata?.businessLine || null);
-      if (businessLineFilter !== 'all' && effectiveBusinessLine !== businessLineFilter) return false;
+      if (businessLineFilter !== 'all' && (entry.business_line || entry.integration_metadata?.businessLine) !== businessLineFilter) return false;
       if (intakeStatusFilter !== 'all' && entry.intake_status !== intakeStatusFilter) return false;
-      if (employeeFilter !== 'all' && entry.owner_name !== employeeFilter && entry.submitter_email !== employeeFilter) return false;
+      if (employeeFilter !== 'all' && entry.owner_name !== employeeFilter) return false;
       if (invoiceStatusFilter !== 'all' && entry.invoice_status !== invoiceStatusFilter) return false;
-      if (creatorInvoiceReceivedFilter !== 'all' && entry.creator_invoice_received !== creatorInvoiceReceivedFilter) return false;
-      if (paymentReceivedFilter !== 'all' && entry.payment_received !== paymentReceivedFilter) return false;
-      if (paymentMadeFilter !== 'all' && entry.payment_made !== paymentMadeFilter) return false;
-      if (closedStatusFilter !== 'all' && entry.closed_status !== closedStatusFilter) return false;
-      if (versionStatusFilter !== 'all' && (entry.version_status || 'original') !== versionStatusFilter) return false;
       if (dateFrom && new Date(entry.submitted_at) < new Date(`${dateFrom}T00:00:00`)) return false;
       if (dateTo && new Date(entry.submitted_at) > new Date(`${dateTo}T23:59:59`)) return false;
 
@@ -314,17 +233,9 @@ export default function FinanceReviewPage() {
         entry.pi,
         entry.entity,
         entry.owner_name,
-        entry.submitter_email,
         entry.creator_creators_name,
         entry.brand_name,
-        entry.agency_name,
-        entry.agency_trade_name,
-        entry.brand_trade_name,
-        entry.campaign_code,
-        entry.campaign_name,
-        entry.campaign_brand,
-        entry.integration_metadata?.billingBrandName,
-        entry.integration_metadata?.brandNamesText,
+        entry.deliverables,
         ...(entry.intake_line_items ?? []).flatMap((item) => [item.creator_name, item.brand_name, item.deliverable_name]),
       ]
         .filter(Boolean)
@@ -334,21 +245,7 @@ export default function FinanceReviewPage() {
       if (query.trim() && !haystack.includes(query.trim().toLowerCase())) return false;
       return true;
     });
-  }, [
-    rows,
-    businessLineFilter,
-    intakeStatusFilter,
-    employeeFilter,
-    invoiceStatusFilter,
-    creatorInvoiceReceivedFilter,
-    paymentReceivedFilter,
-    paymentMadeFilter,
-    closedStatusFilter,
-    versionStatusFilter,
-    dateFrom,
-    dateTo,
-    query,
-  ]);
+  }, [rows, businessLineFilter, intakeStatusFilter, employeeFilter, invoiceStatusFilter, dateFrom, dateTo, query]);
 
   function getActionLabel(action: FinanceAction) {
     if (actionLoadingKey !== action) {
@@ -373,7 +270,6 @@ export default function FinanceReviewPage() {
   async function runFinanceAction(action: FinanceAction, extra: Record<string, string> = {}) {
     if (!row) return;
     if (actionSubmitting) return;
-    if (!user || !canViewFinanceDashboard(user.role)) return;
     setActionSubmitting(true);
     setActionLoadingKey(action);
     setActionError('');
@@ -407,10 +303,10 @@ export default function FinanceReviewPage() {
     }
   }
 
-  const pendingCount = filteredRows.filter((entry) => entry.intake_status === 'submitted').length;
-  const acceptedCount = filteredRows.filter((entry) => entry.intake_status === 'accepted').length;
-  const rejectedCount = filteredRows.filter((entry) => entry.intake_status === 'rejected').length;
-  const totalValue = filteredRows.reduce((sum, entry) => sum + entry.amount, 0);
+  const pendingCount = rows.filter((entry) => entry.intake_status === 'submitted').length;
+  const acceptedCount = rows.filter((entry) => entry.intake_status === 'accepted').length;
+  const rejectedCount = rows.filter((entry) => entry.intake_status === 'rejected').length;
+  const totalValue = rows.reduce((sum, entry) => sum + entry.amount, 0);
 
   const financePanel = row ? (
     <div className="surface" style={{ padding: 16, display: 'grid', gap: 12 }}>
@@ -511,17 +407,19 @@ export default function FinanceReviewPage() {
     </div>
   ) : null;
 
-  if (loading || !user || !canViewFinanceDashboard(user.role)) return null;
+  if (loading || !user) return null;
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      <PageHeader
-        title={getFinanceDashboardTitle(user.role)}
-        description="Finance and admin roles can review all submissions, filter by workflow, update invoice/payment lifecycle fields, and request corrected resubmissions safely."
-      />
+      <header>
+        <h1 style={{ margin: 0 }}>{getFinanceDashboardTitle(user.role)}</h1>
+        <p className="text-muted">
+          Finance and admin roles can review all submissions, filter by workflow, update invoice/payment lifecycle fields, and request corrected resubmissions safely.
+        </p>
+      </header>
 
       {searchParams.get('submission_id') || searchParams.get('review_id') ? (
-        <SectionCard padding={16}>
+        <div className="surface" style={{ padding: 16, display: 'grid', gap: 6, borderColor: 'var(--primary)' }}>
           <strong>Notification Context</strong>
           <div className="text-muted">
             {searchParams.get('review_id') ? `Open pending master-data review ${searchParams.get('review_id')}` : null}
@@ -529,7 +427,7 @@ export default function FinanceReviewPage() {
             {searchParams.get('submission_id') ? `submission ${searchParams.get('submission_id')}` : null}
             {searchParams.get('context') ? ` (${searchParams.get('context')?.replace('_', ' ')})` : null}
           </div>
-        </SectionCard>
+        </div>
       ) : null}
 
       <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
@@ -543,7 +441,7 @@ export default function FinanceReviewPage() {
         />
       </section>
 
-      <SectionCard padding={16}>
+      <div className="surface" style={{ padding: 16, display: 'grid', gap: 12 }}>
         <div className="intake-form-grid">
           <label className="intake-field">
             <span className="intake-label">Search</span>
@@ -585,66 +483,6 @@ export default function FinanceReviewPage() {
             </select>
           </label>
           <label className="intake-field">
-            <span className="intake-label">Creator Invoice Received</span>
-            <select className="intake-input" value={creatorInvoiceReceivedFilter} onChange={(e) => setCreatorInvoiceReceivedFilter(e.target.value as 'all' | 'received' | 'pending')}>
-              <option value="all">All</option>
-              <option value="received">Received</option>
-              <option value="pending">Pending</option>
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Payment Received</span>
-            <select
-              className="intake-input"
-              value={paymentReceivedFilter}
-              onChange={(e) => setPaymentReceivedFilter(e.target.value as 'all' | 'pending' | 'partial' | 'full' | 'received' | 'not_received')}
-            >
-              <option value="all">All</option>
-              <option value="pending">Pending</option>
-              <option value="partial">Partial</option>
-              <option value="full">Full</option>
-              <option value="received">Received</option>
-              <option value="not_received">Not Received</option>
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Payment Made</span>
-            <select
-              className="intake-input"
-              value={paymentMadeFilter}
-              onChange={(e) => setPaymentMadeFilter(e.target.value as 'all' | 'pending' | 'partial' | 'full' | 'paid' | 'not_paid')}
-            >
-              <option value="all">All</option>
-              <option value="pending">Pending</option>
-              <option value="partial">Partial</option>
-              <option value="full">Full</option>
-              <option value="paid">Paid</option>
-              <option value="not_paid">Not Paid</option>
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Closed Status</span>
-            <select className="intake-input" value={closedStatusFilter} onChange={(e) => setClosedStatusFilter(e.target.value as 'all' | 'open' | 'closed' | 'cancelled')}>
-              <option value="all">All</option>
-              <option value="open">Open</option>
-              <option value="closed">Closed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Version Status</span>
-            <select
-              className="intake-input"
-              value={versionStatusFilter}
-              onChange={(e) => setVersionStatusFilter(e.target.value as 'all' | 'original' | 'resubmitted' | 'superseded')}
-            >
-              <option value="all">All</option>
-              <option value="original">Original</option>
-              <option value="resubmitted">Resubmitted</option>
-              <option value="superseded">Superseded</option>
-            </select>
-          </label>
-          <label className="intake-field">
             <span className="intake-label">Date From</span>
             <input className="intake-input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
           </label>
@@ -653,10 +491,10 @@ export default function FinanceReviewPage() {
             <input className="intake-input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
           </label>
         </div>
-      </SectionCard>
+      </div>
 
-      {rowsLoading ? <StatePanel>Loading finance submissions...</StatePanel> : null}
-      {rowsError ? <StatePanel tone="danger">{rowsError}</StatePanel> : null}
+      {rowsLoading ? <div className="surface text-muted" style={{ padding: 16 }}>Loading finance submissions...</div> : null}
+      {rowsError ? <div className="surface text-danger" style={{ padding: 16 }}>{rowsError}</div> : null}
 
       {!rowsLoading && !rowsError ? (
         <SubmissionTable
