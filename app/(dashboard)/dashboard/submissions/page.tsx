@@ -34,6 +34,8 @@ type MySubmissionApiRow = {
   reimbursement_receipts: string | null;
   additional_information: string | null;
   previous_submission_id: string | null;
+  finance_comment?: string | null;
+  creator_invoice_status?: string | null;
   payment_received?: string | null;
   payment_received_status?: string | null;
   payment_made?: string | null;
@@ -140,6 +142,8 @@ export default function EmployeeSubmissionsPage() {
           reimbursement_receipts: item.reimbursement_receipts || null,
           additional_information: item.additional_information || null,
           previous_submission_id: item.previous_submission_id || null,
+          finance_comment: item.finance_comment || undefined,
+          creator_invoice_received: normalizeStatusValue(item.creator_invoice_status) || undefined,
           payment_received: normalizeStatusValue(item.payment_received_status || item.payment_received) || undefined,
           payment_made: normalizeStatusValue(item.payment_made_status || item.payment_made) || undefined,
           business_line: item.business_line || null,
@@ -283,6 +287,7 @@ export default function EmployeeSubmissionsPage() {
           columns={['pi', 'entity', 'amount', 'intake_status', 'invoice_status', 'submitted_at', 'rejection_note', 'actions']}
           emptyLabel="No submissions found yet."
           getActionLabel={() => 'View'}
+          viewer="employee"
         />
       ) : null}
 

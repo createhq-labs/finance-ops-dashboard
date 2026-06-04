@@ -1,4 +1,11 @@
 import type { SubmissionRow } from './submission-table';
+import {
+  formatClosureStatus,
+  formatCreatorInvoiceStatus,
+  formatInvoiceStatus,
+  formatPaymentMadeStatus,
+  formatPaymentReceivedStatus,
+} from '../../lib/client/finance-status';
 import { canResubmitSubmission, canViewFinanceFields, canViewInvoiceStatus, canViewSystemFields } from '../../lib/client/dashboard-access';
 
 function money(value: number | null | undefined) {
@@ -99,6 +106,7 @@ export function SubmissionDrawer({
   const canSeeFinanceFields = canViewFinanceFields(viewer);
   const canSeeSystemFields = canViewSystemFields(viewer);
   const canSeeInvoice = canViewInvoiceStatus(viewer) || viewer === 'employee';
+  const shouldShowFinanceStatus = viewer === 'employee' || (canSeeFinanceFields && !financePanel);
   const canResubmit = viewer === 'employee' || canResubmitSubmission(viewer, row);
   const metadata = row.integration_metadata;
   const lineItems = [...(row.intake_line_items || [])].sort((a, b) => (a.line_order ?? 0) - (b.line_order ?? 0));
@@ -148,16 +156,16 @@ export function SubmissionDrawer({
             {row.previous_submission_pi ? <DetailItem label="Previous Submission" value={row.previous_submission_pi} /> : null}
             <DetailItem label="Proforma Invoice" value={row.pi} alwaysShow />
             <DetailItem label="Intake Status" value={row.intake_status} alwaysShow />
-            {canSeeInvoice ? <DetailItem label="Invoice Status" value={row.invoice_status || '-'} alwaysShow /> : null}
+            {canSeeInvoice ? <DetailItem label="Invoice Status" value={formatInvoiceStatus(row.invoice_status)} alwaysShow /> : null}
             <DetailItem label="Submitted At" value={new Date(row.submitted_at).toLocaleString()} alwaysShow />
             <DetailItem label="Submitter Name" value={metadata?.submitterName || row.owner_name} />
             <DetailItem label="Submitter Email" value={row.submitter_email} />
           </DetailSection>
 
           <DetailSection title="Business Workflow">
-            <DetailItem label="Business Line" value={businessLineLabel} />
-            <DetailItem label="Client Type" value={clientType} />
-            {!isIM ? <DetailItem label="Entry Type" value={entryTypeLabel} /> : null}
+            <DetailItem label="Business Line" value={businessLineLabel} alwaysShow />
+            <DetailItem label="Client Type" value={clientType} alwaysShow />
+            {!isIM ? <DetailItem label="Entry Type" value={entryTypeLabel} alwaysShow /> : null}
           </DetailSection>
 
           <DetailSection title="Billing Entity">
@@ -240,13 +248,14 @@ export function SubmissionDrawer({
               <DetailItem label="Rejection Note" value={row.rejection_note} />
             </DetailSection>
           ) : null}
-          {canSeeFinanceFields ? (
-            <DetailSection title="Finance">
-              <DetailItem label="Creator Invoice" value={row.creator_invoice_received || 'pending'} />
-              <DetailItem label="Payment Received" value={row.payment_received || 'pending'} />
-              <DetailItem label="Payment Made" value={row.payment_made || 'pending'} />
-              <DetailItem label="Closed Status" value={row.closed_status || 'open'} />
-              <DetailItem label="Comments" value={row.comments || 'No finance comments yet.'} />
+          {shouldShowFinanceStatus ? (
+            <DetailSection title="Finance Status">
+              <DetailItem label="Invoice Status" value={formatInvoiceStatus(row.invoice_status)} alwaysShow />
+              <DetailItem label="Creator Invoice" value={formatCreatorInvoiceStatus(row.creator_invoice_received || 'pending')} />
+              <DetailItem label="Payment Received" value={formatPaymentReceivedStatus(row.payment_received || 'pending')} />
+              <DetailItem label="Payment Made" value={formatPaymentMadeStatus(row.payment_made || 'pending')} />
+              <DetailItem label="Closure Status" value={formatClosureStatus(row.closed_status || 'open')} />
+              {row.finance_comment ? <DetailItem label="Finance Comments" value={row.finance_comment} /> : null}
             </DetailSection>
           ) : null}
           {canSeeSystemFields ? (
