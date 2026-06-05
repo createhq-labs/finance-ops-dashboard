@@ -16,31 +16,77 @@ type FinanceActionRequest = {
     | 'update_payment_status'
     | 'close_submission';
   rejection_note?: string;
+  invoice_status?: 'invoice_pending' | 'invoice_created' | 'po_created_estimate' | 'invoice_cancelled' | 'debit_note' | 'invoice_plus_debit_note';
   invoice_number?: string;
   debit_note_number?: string;
-  payment_received_status?: 'pending' | 'partial' | 'full' | 'not_received';
-  payment_made_status?: 'pending' | 'partial' | 'full' | 'not_paid';
-  closure_status?: 'open' | 'closed' | 'cancelled';
+  creator_invoice_status?: 'pending' | 'received' | 'part_payment_against_advance' | 'not_received' | 'multiple_creators' | 'gst_left';
+  payment_received_status?: 'pending' | 'full' | 'advance_received' | 'gst_left' | 'past_due' | 'advance_past_due' | 'not_received' | 'partial_left' | 'credit_note_issued';
+  payment_made_status?: 'pending' | 'full' | 'paid' | 'part_payment_against_advance' | 'not_paid' | 'multiple_creators' | 'gst_left';
+  closure_status?: 'open' | 'closed' | 'issues' | 'cancelled' | 'gst_left';
+  finance_comment?: string;
 };
+
+const DB_INVOICE_STATUS_BY_MACHINE = {
+  invoice_pending: 'Invoice Pending',
+  invoice_created: 'Invoice created',
+  po_created_estimate: 'Po Created/Estimate',
+  invoice_cancelled: 'Invoice Cancelled',
+  debit_note: 'Debit Note',
+  invoice_plus_debit_note: 'Invoice + Debit Note',
+} as const;
+
+function toDbInvoiceStatus(status: FinanceActionRequest['invoice_status'] | string | null | undefined) {
+  if (!status) return null;
+  return DB_INVOICE_STATUS_BY_MACHINE[status as keyof typeof DB_INVOICE_STATUS_BY_MACHINE] || status;
+}
 
 function toLegacyPaymentReceived(status: FinanceActionRequest['payment_received_status']) {
   if (status === 'full') return 'Yes - Full';
-  if (status === 'partial') return 'Partial';
-  if (status === 'not_received') return 'Not received';
+  if (status === 'advance_received') return 'Yes - Advance';
+  if (status === 'gst_left') return 'Yes - GST Left';
+  if (status === 'past_due') return 'No - Past Due Date';
+  if (status === 'advance_past_due') return 'Advance but Past Due Date';
+  if (status === 'not_received') return 'No';
+  if (status === 'partial_left') return 'Some Amount Left';
+  if (status === 'credit_note_issued') return 'Pending (Credit Note Issued Along)';
+  return 'Pending';
+}
+
+function toLegacyCreatorInvoice(status: FinanceActionRequest['creator_invoice_status']) {
+  if (status === 'received') return 'Yes';
+  if (status === 'part_payment_against_advance') return 'Part Payment Against Advance';
+  if (status === 'not_received') return 'No';
+  if (status === 'multiple_creators') return 'Multiple Creators';
+  if (status === 'gst_left') return 'GST Left';
   return 'Pending';
 }
 
 function toLegacyPaymentMade(status: FinanceActionRequest['payment_made_status']) {
   if (status === 'full') return 'Yes - Full';
-  if (status === 'partial') return 'Partial';
-  if (status === 'not_paid') return 'Not paid';
+  if (status === 'paid') return 'Yes';
+  if (status === 'part_payment_against_advance') return 'Part Payment Against Advance';
+  if (status === 'not_paid') return 'No';
+  if (status === 'multiple_creators') return 'Multiple Creators';
+  if (status === 'gst_left') return 'GST Left';
   return 'Pending';
 }
 
 function toLegacyClosed(status: FinanceActionRequest['closure_status']) {
   if (status === 'closed') return 'Yes';
+  if (status === 'issues') return 'Issues';
   if (status === 'cancelled') return 'Cancelled';
+  if (status === 'gst_left') return 'GST Left';
   return 'Open';
+}
+
+function invoiceStatusLabel(status: FinanceActionRequest['invoice_status'] | string | null | undefined) {
+  const normalized = toDbInvoiceStatus(status);
+  if (normalized === 'Invoice created') return 'Invoice Created';
+  if (normalized === 'Po Created/Estimate') return 'PO Created / Estimate';
+  if (normalized === 'Invoice Cancelled') return 'Cancelled';
+  if (normalized === 'Debit Note') return 'Debit Note';
+  if (normalized === 'Invoice + Debit Note') return 'Invoice + Debit Note';
+  return 'Pending';
 }
 
 export async function POST(req: NextRequest) {
@@ -68,7 +114,7 @@ export async function POST(req: NextRequest) {
 
     const { data: submission, error: submissionError } = await userClient
       .from('intake_submissions')
-      .select('id, submitted_by, proforma_invoice, agency_brand_name, intake_status, invoice_status, invoice_number, debit_note_number, payment_received_status, payment_made_status, closure_status, rejection_note')
+      .select('id, submitted_by, proforma_invoice, agency_brand_name, intake_status, invoice_status, invoice_number, debit_note_number, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, rejection_note')
       .eq('id', body.submission_id)
       .single();
 
@@ -96,6 +142,8 @@ export async function POST(req: NextRequest) {
           invoice_status: currentSubmission.invoice_status,
           invoice_number: currentSubmission.invoice_number,
           debit_note_number: currentSubmission.debit_note_number,
+          finance_comment: currentSubmission.finance_comment,
+          creator_invoice_status: currentSubmission.creator_invoice_status,
           payment_received_status: currentSubmission.payment_received_status,
           payment_made_status: currentSubmission.payment_made_status,
           closure_status: currentSubmission.closure_status,
@@ -154,18 +202,27 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.action === 'mark_invoice_created') {
+      const nextInvoiceStatus = body.invoice_status ? toDbInvoiceStatus(body.invoice_status) : currentSubmission.invoice_status;
       const nextInvoiceNumber = body.invoice_number?.trim() || currentSubmission.invoice_number || null;
-      if (currentSubmission.invoice_status === 'Invoice created' && (currentSubmission.invoice_number || null) === nextInvoiceNumber) {
-        return noChange('Invoice is already marked as created.');
+      const nextDebitNoteNumber = body.debit_note_number?.trim() || currentSubmission.debit_note_number || null;
+      if (
+        currentSubmission.invoice_status === nextInvoiceStatus &&
+        (currentSubmission.invoice_number || null) === nextInvoiceNumber &&
+        (currentSubmission.debit_note_number || null) === nextDebitNoteNumber
+      ) {
+        return noChange('Invoice tracking is already up to date.');
       }
-      patch.invoice_status = 'Invoice created';
+      if (body.invoice_status && nextInvoiceStatus) patch.invoice_status = nextInvoiceStatus;
       patch.reviewed_by = appUser.id;
       patch.reviewed_at = now;
       if (body.invoice_number?.trim()) patch.invoice_number = body.invoice_number.trim();
+      if (body.debit_note_number?.trim()) patch.debit_note_number = body.debit_note_number.trim();
       activityAction = 'invoice_created';
       notificationType = 'invoice_updated';
       notificationTitle = 'Invoice status updated';
-      notificationMessage = `${currentSubmission.proforma_invoice} is now marked as Invoice created.`;
+      notificationMessage = body.invoice_status
+        ? `${currentSubmission.proforma_invoice} is now marked as ${invoiceStatusLabel(nextInvoiceStatus)}.`
+        : `${currentSubmission.proforma_invoice} invoice details were updated by finance.`;
       changed = true;
     }
 
@@ -173,7 +230,7 @@ export async function POST(req: NextRequest) {
       const debitNoteNumber = body.debit_note_number?.trim();
       if (!debitNoteNumber) throw new Error('debit_note_number is required');
       const nextInvoiceNumber = body.invoice_number?.trim() || currentSubmission.invoice_number || null;
-      const nextInvoiceStatus = nextInvoiceNumber ? 'Invoice + Debit Note' : 'Debit Note';
+      const nextInvoiceStatus = toDbInvoiceStatus(body.invoice_status ?? (nextInvoiceNumber ? 'invoice_plus_debit_note' : 'debit_note'));
       if (
         (currentSubmission.debit_note_number || null) === debitNoteNumber &&
         (currentSubmission.invoice_number || null) === nextInvoiceNumber &&
@@ -189,18 +246,29 @@ export async function POST(req: NextRequest) {
       activityAction = 'debit_note_added';
       notificationType = 'invoice_updated';
       notificationTitle = 'Debit note added';
-      notificationMessage = `${currentSubmission.proforma_invoice} now includes debit note ${debitNoteNumber}.`;
+      notificationMessage = `${currentSubmission.proforma_invoice} invoice status is now ${invoiceStatusLabel(nextInvoiceStatus)}.`;
       changed = true;
     }
 
     if (body.action === 'update_payment_status') {
-      if (!body.payment_received_status && !body.payment_made_status) {
-        throw new Error('At least one payment status is required');
+      if (!body.creator_invoice_status && !body.payment_received_status && !body.payment_made_status && body.finance_comment === undefined) {
+        throw new Error('At least one finance status is required');
       }
+      const nextCreatorInvoice = body.creator_invoice_status ?? currentSubmission.creator_invoice_status ?? 'pending';
       const nextReceived = body.payment_received_status ?? currentSubmission.payment_received_status ?? 'pending';
       const nextMade = body.payment_made_status ?? currentSubmission.payment_made_status ?? 'pending';
-      if ((currentSubmission.payment_received_status ?? 'pending') === nextReceived && (currentSubmission.payment_made_status ?? 'pending') === nextMade) {
-        return noChange('Payment statuses are already up to date.');
+      const nextFinanceComment = body.finance_comment !== undefined ? body.finance_comment.trim() || null : currentSubmission.finance_comment ?? null;
+      if (
+        (currentSubmission.creator_invoice_status ?? 'pending') === nextCreatorInvoice &&
+        (currentSubmission.payment_received_status ?? 'pending') === nextReceived &&
+        (currentSubmission.payment_made_status ?? 'pending') === nextMade &&
+        (currentSubmission.finance_comment ?? null) === nextFinanceComment
+      ) {
+        return noChange('Finance statuses are already up to date.');
+      }
+      if (body.creator_invoice_status) {
+        patch.creator_invoice_status = body.creator_invoice_status;
+        patch.invoice_via_creators_received = toLegacyCreatorInvoice(body.creator_invoice_status);
       }
       if (body.payment_received_status) {
         patch.payment_received_status = body.payment_received_status;
@@ -210,12 +278,15 @@ export async function POST(req: NextRequest) {
         patch.payment_made_status = body.payment_made_status;
         patch.payment_made = toLegacyPaymentMade(body.payment_made_status);
       }
+      if (body.finance_comment !== undefined) {
+        patch.finance_comment = nextFinanceComment;
+      }
       patch.reviewed_by = appUser.id;
       patch.reviewed_at = now;
       activityAction = 'payment_status_updated';
       notificationType = 'invoice_updated';
       notificationTitle = 'Payment status updated';
-      notificationMessage = `${currentSubmission.proforma_invoice} payment tracking was updated by finance.`;
+      notificationMessage = `${currentSubmission.proforma_invoice} finance tracking was updated by finance.`;
       changed = true;
     }
 
@@ -243,7 +314,7 @@ export async function POST(req: NextRequest) {
       .from('intake_submissions')
       .update(patch)
       .eq('id', body.submission_id)
-      .select('id, intake_status, invoice_status, invoice_number, debit_note_number, payment_received_status, payment_made_status, closure_status, rejection_note, reviewed_at')
+      .select('id, intake_status, invoice_status, invoice_number, debit_note_number, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, rejection_note, reviewed_at')
       .single();
 
     if (updateError || !updated) {
