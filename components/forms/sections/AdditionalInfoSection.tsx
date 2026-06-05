@@ -22,19 +22,11 @@ export function AdditionalInfoSection({ values, onChange, errors = {} }: Props) 
       <div className="intake-section-header">
         <div>
           <h3 className="intake-section-title">Additional Information</h3>
-          <p className="text-muted intake-section-copy">
-            Here add any additional information important for the finance team to know. It could be:
-            <br />- Purchase Order Number
-            <br />- Additional information or deliverables which need to be mentioned by us or which the brand has asked for
-            <br />- If invoice needs to be made in another currency, mention it here like USD, AED, etc.
-            <br />
-            <br />Note:
-            <br />Do not add the deliverable already selected above. For example, if reel is selected, do not add reel + story here. Do not add amount here either.
-          </p>
+          <p className="text-muted intake-section-copy">Add relevant details like PO numbers or special instructions.</p>
         </div>
       </div>
 
-      <div className="intake-section-body">
+      <div className="intake-section-body" style={{ display: "grid", gap: 12 }}>
         <label className="intake-field">
           <span className="intake-label">Internal Notes / Additional Information</span>
           <textarea
@@ -44,9 +36,11 @@ export function AdditionalInfoSection({ values, onChange, errors = {} }: Props) 
             value={values.additionalInformation}
             onChange={(e) => onChange("additionalInformation", e.target.value)}
             data-field="additionalInformation"
-            style={{ minHeight: 40, maxHeight: 180, overflowY: "auto", resize: "vertical" }}
+            style={{ minHeight: 36, maxHeight: 160, overflowY: "auto", resize: "vertical" }}
           />
-          {errors.additionalInformation ? <p className="text-danger intake-inline-error">{errors.additionalInformation}</p> : null}
+          <div style={{ minHeight: 16 }}>
+            {errors.additionalInformation ? <p className="text-danger intake-inline-error">{errors.additionalInformation}</p> : null}
+          </div>
         </label>
       </div>
     </section>

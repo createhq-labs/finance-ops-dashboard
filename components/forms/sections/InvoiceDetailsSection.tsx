@@ -48,14 +48,25 @@ export function InvoiceDetailsSection({ values, onChange, errors = {} }: Props) 
       <div className="intake-section-header">
         <div>
           <h3 className="intake-section-title">Invoice and Finance</h3>
-          <p className="text-muted intake-section-copy">Set the invoice type and payment terms used downstream by the finance team.</p>
+          <p className="text-muted intake-section-copy">Configure invoice type and payment terms.</p>
         </div>
       </div>
 
-      <div className="intake-section-body intake-form-grid" style={{ alignItems: "start" }}>
+      <div
+        className="intake-section-body"
+        style={{ display: "grid", gap: 10, alignItems: "start", gridTemplateColumns: "repeat(1, minmax(0, 1fr))", padding: "10px 12px 12px" }}
+      >
+        <style>{`
+          @media (min-width: 768px) {
+            .invoice-details-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+        `}</style>
+        <div className="invoice-details-grid" style={{ display: "grid", gap: 12, alignItems: "start" }}>
         <label className="intake-field" style={{ alignSelf: "start" }}>
           <span className="intake-label">Invoice Type *</span>
-          <div style={{ display: "grid", gap: 8, minHeight: 72 }}>
+          <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
             <SearchableSelect
               value={invoiceTypeInput}
               options={[...INVOICE_TYPES]}
@@ -66,19 +77,25 @@ export function InvoiceDetailsSection({ values, onChange, errors = {} }: Props) 
               data-field="invoiceType"
               placeholder="Select invoice type"
             />
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", minHeight: 28 }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", minHeight: selectedInvoiceTypes.length ? 24 : 0 }}>
               {selectedInvoiceTypes.map((item) => (
-                <span key={item} className="badge badge-submitted" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span
+                  key={item}
+                  className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-1 text-xs text-blue-700 dark:bg-blue-900 dark:text-blue-200"
+                  style={{ display: "inline-flex", alignItems: "center" }}
+                >
                   {item}
-                  <button type="button" onClick={() => removeInvoiceType(item)} style={{ border: 0, background: "transparent", color: "inherit", cursor: "pointer", padding: 0 }}>
+                  <button type="button" onClick={() => removeInvoiceType(item)} style={{ border: 0, background: "transparent", color: "inherit", cursor: "pointer", padding: 0, fontSize: 12 }}>
                     ×
                   </button>
                 </span>
               ))}
             </div>
           </div>
-          {errors.invoiceType ? <p className="text-danger intake-inline-error">{errors.invoiceType}</p> : null}
-          {invoiceTypeError ? <p className="text-danger intake-inline-error">{invoiceTypeError}</p> : null}
+          <div style={{ display: "grid", gap: 2, minHeight: 20 }}>
+            {errors.invoiceType ? <p className="text-danger intake-inline-error">{errors.invoiceType}</p> : null}
+            {invoiceTypeError ? <p className="text-danger intake-inline-error">{invoiceTypeError}</p> : null}
+          </div>
         </label>
 
         <label className="intake-field" style={{ alignSelf: "start" }}>
@@ -90,8 +107,11 @@ export function InvoiceDetailsSection({ values, onChange, errors = {} }: Props) 
             data-field="billDue"
             placeholder="Select bill due"
           />
-          {errors.billDue ? <p className="text-danger intake-inline-error">{errors.billDue}</p> : null}
+          <div style={{ minHeight: 16 }}>
+            {errors.billDue ? <p className="text-danger intake-inline-error">{errors.billDue}</p> : null}
+          </div>
         </label>
+        </div>
       </div>
     </section>
   );

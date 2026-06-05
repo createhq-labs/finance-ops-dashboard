@@ -222,17 +222,20 @@ export default function NewSubmissionPage() {
         eyebrow="CREATE Ledger Intake"
         title={<span className="intake-page-title">New Submission</span>}
         description={<span className="intake-page-copy">Prepare a billing intake for finance review using the CREATE ledger flow adapted for this dashboard.</span>}
+        className="intake-page-header-compact"
       />
 
-      <section className="intake-banner">
-        <p className="text-muted" style={{ margin: 0 }}>
+      <section className="intake-callout">
+        <p className="intake-callout-title">Before You Submit</p>
+        <p className="intake-callout-copy">
           Review all fields carefully before final submit. Once submitted, finance will process this intake in the workflow.
         </p>
       </section>
 
       {resubmitId ? (
-        <section className="intake-banner">
-          <p style={{ margin: 0, fontWeight: 600 }}>
+        <section className="intake-callout">
+          <p className="intake-callout-title">Resubmission Mode</p>
+          <p className="intake-callout-copy" style={{ fontWeight: 600 }}>
             You are editing a previous submission. Submitting will create a new version.
           </p>
         </section>
