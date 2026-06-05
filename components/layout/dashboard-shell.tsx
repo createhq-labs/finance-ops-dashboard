@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { Bell, BookOpen, BriefcaseBusiness, FilePlus, Home, ListChecks, Settings } from 'lucide-react';
+import { NotificationBellIcon } from '../dashboard/notification-bell-icon';
 import { canAccessDashboardPath, canViewNotifications, getDefaultDashboardPath, getInvoiceIntakePath, getSubmissionsLabel } from '../../lib/client/dashboard-access';
 import { DashboardSessionProvider, useDashboardSession } from './dashboard-session';
 
@@ -28,26 +29,6 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
       router.replace(getDefaultDashboardPath(user.role));
     }
   }, [loading, pathname, router, user]);
-
-  useEffect(() => {
-    let active = true;
-    if (!user || !canViewNotifications(user.role)) return;
-
-    fetch('/api/notifications/my?limit=20', { method: 'GET', cache: 'no-store' })
-      .then(async (res) => {
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json?.success) return;
-        if (active) setUnreadCount(Number(json.unread_count ?? 0));
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!active) return;
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [user]);
 
   const items = useMemo(() => {
     const role = user?.role;
@@ -148,7 +129,15 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <main style={{ padding: 20 }}>{children}</main>
+      <main className="relative p-5">
+        {user && canViewNotifications(user.role) ? (
+          <div className="fixed right-4 top-4 z-40">
+            <NotificationBellIcon onUnreadCountChange={setUnreadCount} />
+          </div>
+        ) : null}
+
+        {children}
+      </main>
     </div>
   );
 }

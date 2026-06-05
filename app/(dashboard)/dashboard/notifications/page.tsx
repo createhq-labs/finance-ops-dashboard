@@ -1,27 +1,34 @@
-"use client";
+'use client';
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { Check, ChevronRight } from 'lucide-react';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
+import {
+  formatNotificationType,
+  formatRelativeTime,
+  getNotificationCategory,
+  getNotificationCategoryLabel,
+  type NotificationCategory,
+  type NotificationRow,
+} from '../../../../lib/client/notification-utils';
 
-type NotificationRow = {
-  id: string;
-  role_target: string | null;
-  type: string;
-  title: string;
-  message: string;
-  related_submission_id: string | null;
-  related_review_id: string | null;
-  target_path: string;
-  is_read: boolean;
-  created_at: string;
-};
+const CATEGORY_ORDER: NotificationCategory[] = ['needs_action', 'master_data', 'updates'];
 
-function formatTypeLabel(type: string) {
-  return type
-    .split('_')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
+function NotificationTypeChip({ type }: { type: string }) {
+  const category = getNotificationCategory(type);
+  const tone =
+    category === 'needs_action'
+      ? 'border-orange-200/70 bg-orange-50 text-orange-700 dark:border-orange-400/20 dark:bg-orange-400/10 dark:text-orange-200'
+      : category === 'master_data'
+        ? 'border-cyan-200/70 bg-cyan-50 text-cyan-700 dark:border-cyan-400/20 dark:bg-cyan-400/10 dark:text-cyan-200'
+        : 'border-slate-200/80 bg-slate-50 text-slate-600 dark:border-slate-400/20 dark:bg-slate-400/10 dark:text-slate-200';
+
+  return (
+    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium ${tone}`}>
+      {formatNotificationType(type)}
+    </span>
+  );
 }
 
 export default function NotificationsPage() {
@@ -65,6 +72,15 @@ export default function NotificationsPage() {
     [notifications, unreadOnly]
   );
 
+  const grouped = useMemo(
+    () =>
+      CATEGORY_ORDER.map((category) => ({
+        category,
+        items: visibleNotifications.filter((item) => getNotificationCategory(item.type) === category),
+      })),
+    [visibleNotifications]
+  );
+
   async function markRead(id: string) {
     await fetch('/api/notifications/read', {
       method: 'POST',
@@ -93,87 +109,130 @@ export default function NotificationsPage() {
   if (loading || !user) return null;
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end', gap: 12, flexWrap: 'wrap' }}>
+    <div className="grid gap-5">
+      <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 style={{ margin: 0 }}>Notifications</h1>
-          <p className="text-muted">Open the exact submission or review context from each notification without leaving the current workflow pattern.</p>
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">Notifications</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Review action items, master data updates, and recent workflow activity.
+          </p>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+
+        <div className="flex flex-wrap gap-2">
           <button
-            className="btn"
             type="button"
             onClick={() => setUnreadOnly(false)}
-            style={{ background: unreadOnly ? 'var(--card)' : 'var(--primary)', color: unreadOnly ? 'var(--fg)' : '#fff', border: unreadOnly ? '1px solid var(--border)' : 'none' }}
+            className={[
+              'inline-flex items-center rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+              unreadOnly ? 'border-border bg-card text-foreground hover:bg-muted/40' : 'border-primary bg-primary text-primary-foreground',
+            ].join(' ')}
           >
             All
           </button>
           <button
-            className="btn"
             type="button"
             onClick={() => setUnreadOnly(true)}
-            style={{ background: unreadOnly ? 'var(--primary)' : 'var(--card)', color: unreadOnly ? '#fff' : 'var(--fg)', border: unreadOnly ? 'none' : '1px solid var(--border)' }}
+            className={[
+              'inline-flex items-center rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+              unreadOnly ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-foreground hover:bg-muted/40',
+            ].join(' ')}
           >
             Unread ({unreadCount})
           </button>
-          <button className="btn" type="button" onClick={() => void markAllRead()} disabled={unreadCount === 0}>
+          <button
+            type="button"
+            onClick={() => void markAllRead()}
+            disabled={unreadCount === 0}
+            className="inline-flex items-center rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
+          >
             Mark all read
           </button>
         </div>
       </header>
 
-      {pageLoading ? <div className="surface text-muted" style={{ padding: 16 }}>Loading notifications...</div> : null}
-      {error ? <div className="surface text-danger" style={{ padding: 16 }}>{error}</div> : null}
+      {pageLoading ? (
+        <div className="rounded-xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
+          Loading notifications...
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-6 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
 
       {!pageLoading && !error && visibleNotifications.length === 0 ? (
-        <div className="surface text-muted" style={{ padding: 16 }}>
+        <div className="rounded-xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
           No notifications to show.
         </div>
       ) : null}
 
       {!pageLoading && !error ? (
-        <div style={{ display: 'grid', gap: 12 }}>
-          {visibleNotifications.map((item) => (
-            <article
-              key={item.id}
-              className="surface"
-              style={{
-                padding: 16,
-                display: 'grid',
-                gap: 10,
-                borderColor: item.is_read ? 'var(--border)' : 'var(--primary)',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <strong>{item.title}</strong>
-                    <span className="text-muted" style={{ fontSize: 12 }}>{formatTypeLabel(item.type)}</span>
-                    {!item.is_read ? (
-                      <span style={{ fontSize: 11, color: '#fff', background: 'var(--primary)', borderRadius: 999, padding: '2px 8px' }}>
-                        Unread
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="text-muted" style={{ margin: 0 }}>{item.message}</p>
-                </div>
-                <span className="text-muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                  {new Date(item.created_at).toLocaleString()}
-                </span>
-              </div>
+        <div className="grid gap-4">
+          {grouped.map(({ category, items }) => {
+            if (items.length === 0) return null;
 
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button className="btn btn-primary" type="button" onClick={() => void openNotification(item)}>
-                  Open Related Item
-                </button>
-                {!item.is_read ? (
-                  <button className="btn" type="button" onClick={() => void markRead(item.id)}>
-                    Mark as read
-                  </button>
-                ) : null}
-              </div>
-            </article>
-          ))}
+            return (
+              <section key={category} className="overflow-hidden rounded-xl border border-border bg-card">
+                <div className="flex items-center justify-between border-b border-border/60 bg-muted/20 px-4 py-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">{getNotificationCategoryLabel(category)}</h2>
+                    <p className="text-xs text-muted-foreground">{items.length} item{items.length > 1 ? 's' : ''}</p>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-border/60">
+                  {items.map((item) => (
+                    <article
+                      key={item.id}
+                      className={`grid w-full gap-2 px-4 py-3 text-left transition-colors hover:bg-muted/30 ${item.is_read ? 'bg-card' : 'bg-primary/5'}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="truncate text-sm font-medium text-foreground">{item.title}</span>
+                            <NotificationTypeChip type={item.type} />
+                            {!item.is_read ? (
+                              <span className="inline-flex rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                                Unread
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.message}</p>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-2">
+                          {!item.is_read ? (
+                            <button
+                              type="button"
+                              onClick={() => void markRead(item.id)}
+                              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                              title="Mark as read"
+                            >
+                              <Check size={14} />
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => void openNotification(item)}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40"
+                          >
+                            Open <ChevronRight size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                        <span>{formatRelativeTime(item.created_at)}</span>
+                        <span className="truncate">{item.target_path}</span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
       ) : null}
     </div>
