@@ -10,10 +10,10 @@ export function FormActions({ onReset, submitting, submitEnabled }: Props) {
       <div className="intake-section-body">
         <div className="intake-actions">
           <div>
-            <strong>Review before submitting</strong>
-            <p className="text-muted intake-actions-copy">Reset keeps your submitter identity but clears the working form back to its default state.</p>
+            <strong style={{ fontSize: 14 }}>Review before submitting</strong>
+            <p className="text-muted intake-actions-copy">Review before submitting.</p>
           </div>
-          <div className="intake-actions-buttons">
+          <div className="intake-actions-buttons" style={{ minHeight: 44, alignItems: "center" }}>
             <button className="btn" type="button" onClick={onReset}>
               Reset Form
             </button>

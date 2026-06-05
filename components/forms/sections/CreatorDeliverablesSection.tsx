@@ -96,28 +96,60 @@ export function CreatorDeliverablesSection({
       <div className="intake-section-header">
         <div>
           <h3 className="intake-section-title">Campaign Details</h3>
-          <p className="text-muted intake-section-copy">Capture the campaign reference, brand, deliverables, and any internal notes for IM submissions.</p>
+          <p className="text-muted intake-section-copy">Campaign reference and deliverables.</p>
         </div>
       </div>
 
-      <div className="intake-section-body" style={{ display: "grid", gap: 16 }}>
-        <div className="intake-row-grid intake-row-grid-multi">
+      <div className="intake-section-body" style={{ display: "grid", gap: 10, padding: "10px 12px 12px" }}>
+        <style>{`
+          .campaign-grid {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(1, minmax(0, 1fr));
+          }
+          .campaign-extra-grid {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(1, minmax(0, 1fr));
+            align-items: start;
+          }
+          @media (min-width: 640px) {
+            .campaign-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+          @media (min-width: 1024px) {
+            .campaign-grid {
+              grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+            .campaign-extra-grid {
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+          }
+        `}</style>
+        <div className="campaign-grid">
           <label className="intake-field">
             <span className="intake-label">Campaign Code *</span>
             <input className="intake-input" value={values.campaignCode} onChange={(e) => onChange("campaignCode", e.target.value)} data-field="campaignCode" autoComplete="off" />
-            {errors.campaignCode ? <p className="text-danger intake-inline-error">{errors.campaignCode}</p> : null}
+            <div style={{ minHeight: 16 }}>
+              {errors.campaignCode ? <p className="text-danger intake-inline-error">{errors.campaignCode}</p> : null}
+            </div>
           </label>
 
           <label className="intake-field">
             <span className="intake-label">Campaign Name *</span>
             <input className="intake-input" value={values.campaignName} onChange={(e) => onChange("campaignName", e.target.value)} data-field="campaignName" autoComplete="off" />
-            {errors.campaignName ? <p className="text-danger intake-inline-error">{errors.campaignName}</p> : null}
+            <div style={{ minHeight: 16 }}>
+              {errors.campaignName ? <p className="text-danger intake-inline-error">{errors.campaignName}</p> : null}
+            </div>
           </label>
 
           <label className="intake-field">
             <span className="intake-label">Campaign Brand *</span>
             <SearchableSelect value={values.campaignBrand} options={brandOptions} allowCustom onChange={(next) => onChange("campaignBrand", next)} placeholder="Select brand" data-field="campaignBrand" />
-            {errors.campaignBrand ? <p className="text-danger intake-inline-error">{errors.campaignBrand}</p> : null}
+            <div style={{ minHeight: 16 }}>
+              {errors.campaignBrand ? <p className="text-danger intake-inline-error">{errors.campaignBrand}</p> : null}
+            </div>
           </label>
 
           <label className="intake-field">
@@ -129,9 +161,11 @@ export function CreatorDeliverablesSection({
               placeholder="Select deliverable"
               data-field="campaignDeliverable"
             />
-            {errors.campaignDeliverable ? <p className="text-danger intake-inline-error">{errors.campaignDeliverable}</p> : null}
+            <div style={{ minHeight: 16 }}>
+              {errors.campaignDeliverable ? <p className="text-danger intake-inline-error">{errors.campaignDeliverable}</p> : null}
+            </div>
             {values.campaignDeliverable === "Product Reimbursement" ? (
-              <div className="grid gap-1" style={{ marginTop: 8, maxWidth: 320 }}>
+              <div className="grid gap-1" style={{ marginTop: 6, maxWidth: 320 }}>
                 <input
                   className="intake-input"
                   type="file"
@@ -140,9 +174,11 @@ export function CreatorDeliverablesSection({
                   onChange={(e) => onProductReimbursementFileChange("campaign-0", e.target.files?.[0] ?? null)}
                 />
                 <p className="text-muted intake-section-copy" style={{ margin: 0 }}>
-                  PDF, image, document, or spreadsheet. Ideal size: 5 MB. Hard max: 10 MB.
+                  PDF, image, document, or spreadsheet. Max 10 MB.
                 </p>
-                {getProductReimbursementError("campaign-0") ? <p className="text-danger intake-inline-error">{getProductReimbursementError("campaign-0")}</p> : null}
+                <div style={{ minHeight: 16 }}>
+                  {getProductReimbursementError("campaign-0") ? <p className="text-danger intake-inline-error">{getProductReimbursementError("campaign-0")}</p> : null}
+                </div>
                 {getProductReimbursementFile("campaign-0") ? (
                   <p className="text-muted intake-section-copy" style={{ margin: 0 }}>
                     {getProductReimbursementFile("campaign-0")?.name}
@@ -154,14 +190,7 @@ export function CreatorDeliverablesSection({
         </div>
 
         {values.campaignExtraDeliverables.length ? (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 16,
-              alignItems: "start",
-            }}
-          >
+          <div className="campaign-extra-grid">
             {values.campaignExtraDeliverables.map((deliverable, index) => (
               <div key={`im-deliverable-${index}`} className="grid gap-2">
                 <label className="intake-field">
@@ -173,7 +202,9 @@ export function CreatorDeliverablesSection({
                     placeholder="Select deliverable"
                     data-field={`campaignExtraDeliverables.${index}`}
                   />
-                  {errors[`campaignExtraDeliverables.${index}`] ? <p className="text-danger intake-inline-error">{errors[`campaignExtraDeliverables.${index}`]}</p> : null}
+                  <div style={{ minHeight: 16 }}>
+                    {errors[`campaignExtraDeliverables.${index}`] ? <p className="text-danger intake-inline-error">{errors[`campaignExtraDeliverables.${index}`]}</p> : null}
+                  </div>
                 </label>
                 <button className="btn intake-row-action" type="button" onClick={() => removeImDeliverable(index)} style={{ width: "fit-content" }}>
                   Remove
@@ -188,9 +219,11 @@ export function CreatorDeliverablesSection({
                       onChange={(e) => onProductReimbursementFileChange(`campaign-${index + 1}`, e.target.files?.[0] ?? null)}
                     />
                     <p className="text-muted intake-section-copy" style={{ margin: 0 }}>
-                      PDF, image, document, or spreadsheet. Ideal size: 5 MB. Hard max: 10 MB.
+                      PDF, image, document, or spreadsheet. Max 10 MB.
                     </p>
-                    {getProductReimbursementError(`campaign-${index + 1}`) ? <p className="text-danger intake-inline-error">{getProductReimbursementError(`campaign-${index + 1}`)}</p> : null}
+                    <div style={{ minHeight: 16 }}>
+                      {getProductReimbursementError(`campaign-${index + 1}`) ? <p className="text-danger intake-inline-error">{getProductReimbursementError(`campaign-${index + 1}`)}</p> : null}
+                    </div>
                     {getProductReimbursementFile(`campaign-${index + 1}`) ? (
                       <p className="text-muted intake-section-copy" style={{ margin: 0 }}>
                         {getProductReimbursementFile(`campaign-${index + 1}`)?.name}
@@ -207,12 +240,15 @@ export function CreatorDeliverablesSection({
           <button className="btn" type="button" onClick={addImDeliverable}>
             + Add Deliverable
           </button>
-          {errors.creatorDeliverables ? <p className="text-danger intake-inline-error" style={{ marginTop: 8 }}>{errors.creatorDeliverables}</p> : null}
+          <div style={{ minHeight: 16, marginTop: 6 }}>
+            {errors.creatorDeliverables ? <p className="text-danger intake-inline-error">{errors.creatorDeliverables}</p> : null}
+          </div>
         </div>
 
         <label className="intake-field intake-field-wide">
           <span className="intake-label">Campaign Notes</span>
-          <textarea className="intake-input intake-textarea" rows={1} value={values.campaignNotes} onChange={(e) => onChange("campaignNotes", e.target.value)} data-field="campaignNotes" style={{ minHeight: 40, maxHeight: 160, overflowY: "auto" }} />
+          <textarea className="intake-input intake-textarea" rows={1} value={values.campaignNotes} onChange={(e) => onChange("campaignNotes", e.target.value)} data-field="campaignNotes" style={{ minHeight: 36, maxHeight: 140, overflowY: "auto" }} />
+          <div style={{ minHeight: 16 }} />
         </label>
       </div>
     </section>
