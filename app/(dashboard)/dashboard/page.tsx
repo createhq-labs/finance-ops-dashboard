@@ -79,66 +79,98 @@ function normalizeBusinessLine(value: string | null | undefined) {
 }
 
 function CompactMetricCard({ title, value, hint }: { title: string; value: string; hint: string }) {
+  const normalizedTitle = title.toLowerCase();
+  const metricIcon = normalizedTitle.includes('payment')
+    ? (
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 opacity-80" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M2 7h20" />
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M16 15h2" />
+        <path d="M6 13h4" />
+      </svg>
+    )
+    : normalizedTitle.includes('paid')
+    ? (
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 opacity-80" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="6" width="18" height="12" rx="2" />
+        <path d="M3 10h18" />
+        <path d="M8 14h.01" />
+        <path d="M12 14h4" />
+      </svg>
+    )
+    : normalizedTitle.includes('resubmission')
+      ? (
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 opacity-80" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 7h10a4 4 0 1 1 0 8H8" />
+          <path d="m3 11 4-4-4-4" />
+        </svg>
+      )
+      : normalizedTitle.includes('invoice')
+        ? (
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 opacity-80" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16l4-2 4 2 4-2 4 2V8z" />
+            <path d="M14 2v6h6" />
+          </svg>
+        )
+        : normalizedTitle.includes('closed')
+          ? (
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 opacity-80" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 11V7a4 4 0 1 1 8 0v4" />
+              <rect x="5" y="11" width="14" height="10" rx="2" />
+            </svg>
+          )
+          : normalizedTitle.includes('checked')
+            ? (
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 opacity-80" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            )
+            : (
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 opacity-80" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 3" />
+              </svg>
+            );
+
   return (
-    <div className="group relative overflow-hidden rounded-2xl p-[2px] transition duration-300 hover:-translate-y-1 hover:rotate-[-0.35deg]">
-      <div
-        className="absolute inset-[-64%] opacity-0 transition duration-500 group-hover:opacity-100"
-        style={{
-          background: 'conic-gradient(from 0deg, transparent 0deg, transparent 76deg, rgba(255,255,255,0.96) 92deg, rgba(53,213,255,0.96) 108deg, transparent 126deg, transparent 360deg)',
-          animation: 'overviewKpiOrbit 1.8s linear infinite',
-        }}
-      />
-      <div
-        className="relative transition duration-500 group-hover:-translate-y-1.5 group-hover:rotate-[-0.6deg] group-hover:shadow-[0_18px_38px_rgba(8,15,40,0.18)] group-hover:brightness-[1.06]"
-        style={{
-        borderRadius: 14,
-        padding: '14px 16px',
-        minHeight: 92,
-        color: '#fff',
-        background: 'linear-gradient(135deg, #11aee3 0%, #10c7df 58%, #45d3ef 100%)',
-        boxShadow: '0 14px 34px -26px rgba(15, 104, 168, 0.7)',
-        display: 'grid',
-        alignContent: 'space-between',
-        overflow: 'hidden',
-        position: 'relative',
-        transition: 'filter 180ms ease, box-shadow 180ms ease',
-      }}
-    >
-      <div style={{ position: 'absolute', right: -24, top: -28, width: 86, height: 86, borderRadius: 999, background: 'rgba(255,255,255,0.22)' }} />
-      <div style={{ position: 'absolute', left: 22, bottom: -52, width: 116, height: 116, borderRadius: 999, background: 'rgba(255,255,255,0.12)' }} />
-      <div style={{ position: 'relative', display: 'grid', alignContent: 'space-between', minHeight: 64 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', opacity: 0.9 }}>{title}</div>
-      <div>
-        <div style={{ fontSize: 28, lineHeight: 1, fontWeight: 800 }}>{value}</div>
-        <div style={{ marginTop: 6, fontSize: 12, opacity: 0.88 }}>{hint}</div>
+    <div className="group rounded-2xl border border-border/60 bg-card p-3.5 shadow-[0_1px_3px_rgba(15,23,42,0.05)] transition duration-150 hover:border-primary/15 hover:shadow-[0_4px_12px_rgba(15,23,42,0.06)]">
+      <div className="flex min-h-[92px] flex-col justify-between gap-3">
+        <div className="flex items-start justify-between gap-3">
+          <p className="pr-3 text-[14px] font-medium leading-5 text-foreground">
+            {title}
+          </p>
+          <div className="shrink-0 pt-0.5 text-sky-500/75 dark:text-sky-300/75">
+            {metricIcon}
+          </div>
+        </div>
+
+        <div>
+          <p className="break-words text-[clamp(1.75rem,2.1vw,2.35rem)] font-bold leading-none tracking-[-0.06em] text-foreground">
+            {value}
+          </p>
+          <p className="mt-1 text-sm leading-5 text-muted-foreground">
+            {hint}
+          </p>
+        </div>
       </div>
-      </div>
-      </div>
-      <style jsx>{`
-        @keyframes overviewKpiOrbit {
-          from {
-            transform: rotate(0deg);
-          }
-          to {
-            transform: rotate(360deg);
-          }
-        }
-      `}</style>
     </div>
   );
 }
 
 function StatusChip({ label, tone = 'cyan' }: { label: string; tone?: 'cyan' | 'green' | 'amber' | 'orange' | 'rose' | 'slate' }) {
-  const palette = {
-    cyan: ['rgba(14, 165, 233, 0.12)', '#0369a1', 'rgba(14, 165, 233, 0.25)'],
-    green: ['rgba(34, 197, 94, 0.12)', '#047857', 'rgba(34, 197, 94, 0.25)'],
-    amber: ['rgba(245, 158, 11, 0.14)', '#92400e', 'rgba(245, 158, 11, 0.28)'],
-    orange: ['rgba(249, 115, 22, 0.14)', '#9a3412', 'rgba(249, 115, 22, 0.28)'],
-    rose: ['rgba(244, 63, 94, 0.12)', '#be123c', 'rgba(244, 63, 94, 0.25)'],
-    slate: ['rgba(100, 116, 139, 0.12)', '#475569', 'rgba(100, 116, 139, 0.25)'],
-  }[tone];
   return (
-    <span style={{ display: 'inline-flex', borderRadius: 999, padding: '4px 9px', fontSize: 12, fontWeight: 700, background: palette[0], color: palette[1], border: `1px solid ${palette[2]}` }}>
+    <span
+      className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
+        {
+          cyan: 'border-sky-200/70 bg-sky-50 text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200',
+          green: 'border-emerald-200/70 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200',
+          amber: 'border-amber-200/70 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200',
+          orange: 'border-orange-200/70 bg-orange-50 text-orange-700 dark:border-orange-400/20 dark:bg-orange-400/10 dark:text-orange-200',
+          rose: 'border-rose-200/70 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200',
+          slate: 'border-slate-200/70 bg-slate-50 text-slate-600 dark:border-slate-400/20 dark:bg-slate-400/10 dark:text-slate-200',
+        }[tone]
+      }`}
+    >
       {label}
     </span>
   );
@@ -164,20 +196,64 @@ function PremiumOverviewCard({
   children: ReactNode;
 }) {
   return (
-    <section
-      className="group relative overflow-visible rounded-2xl border border-cyan-100/80 bg-white p-5 shadow-[0_18px_48px_-40px_rgba(15,104,168,0.45)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_58px_-42px_rgba(15,104,168,0.62)] dark:border-cyan-400/14 dark:bg-[#07111d]"
-      style={{ minHeight: '100%' }}
-    >
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_18%_0%,rgba(53,213,255,0.16),transparent_38%),linear-gradient(90deg,rgba(14,165,233,0.08),transparent)] opacity-90" />
-      <div className="pointer-events-none absolute -right-14 -top-16 h-36 w-36 rounded-full bg-cyan-300/12 transition duration-300 group-hover:scale-110" />
-      <div className="relative">
-        <div className="mb-4">
-          <h2 className="text-base font-bold tracking-[-0.02em] text-foreground">{title}</h2>
-          {description ? <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p> : null}
-        </div>
-        {children}
+    <section className="min-h-full rounded-xl border border-border/70 bg-card p-3.5 shadow-sm">
+      <div className="mb-2.5">
+        <h2 className="text-base font-semibold tracking-tight text-foreground">
+          {title}
+        </h2>
+        {description ? (
+          <p className="mt-1 text-sm leading-5 text-muted-foreground">
+            {description}
+          </p>
+        ) : null}
       </div>
+
+      {children}
     </section>
+  );
+}
+
+function OverviewListRow({
+  title,
+  meta,
+  note,
+  primaryChip,
+  secondaryChip,
+  action,
+}: {
+  title: ReactNode;
+  meta?: ReactNode;
+  note?: ReactNode;
+  primaryChip?: ReactNode;
+  secondaryChip?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-border/50 py-2 last:border-b-0">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="truncate text-sm font-semibold text-foreground">
+            {title}
+          </div>
+          {primaryChip}
+          {secondaryChip}
+        </div>
+
+        {meta ? (
+          <div className="mt-1 truncate text-xs text-muted-foreground">
+            {meta}
+          </div>
+        ) : null}
+
+        {note ? (
+          <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+            {note}
+          </div>
+        ) : null}
+      </div>
+
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
   );
 }
 
@@ -203,7 +279,7 @@ function AnimatedDonutChart({
   const [selected, setSelected] = useState<DonutSegment | null>(null);
   const visibleSegments = segments.filter((segment) => segment.value > 0);
   const total = visibleSegments.reduce((sum, segment) => sum + segment.value, 0);
-  const activeSegment = hovered || selected;
+  const activeSegment = hovered || selected || visibleSegments[0] || segments[0] || null;
   const radius = 39;
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
@@ -214,107 +290,147 @@ function AnimatedDonutChart({
   }, [segments]);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 190px) minmax(0, 1fr)', gap: 24, alignItems: 'center' }}>
-      <div style={{ position: 'relative', width: 184, maxWidth: '100%', aspectRatio: '1 / 1' }} onMouseLeave={() => setHovered(null)}>
-        <svg viewBox="0 0 120 120" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)', filter: 'drop-shadow(0 14px 20px rgba(34, 211, 238, 0.14))' }}>
-          <circle cx="60" cy="60" r={radius} fill="none" stroke="rgba(103,232,249,0.14)" strokeWidth="14" />
-          {total > 0
-            ? visibleSegments.map((segment) => {
-              const length = (segment.value / total) * circumference;
-                const gap = Math.min(2.4, Math.max(0, length * 0.065));
-                const dashLength = Math.max(0, length - gap);
-                const dash = ready ? `${dashLength} ${circumference - dashLength}` : `0 ${circumference}`;
-                const currentOffset = -offset;
-                offset += length;
-                return (
-                  <circle
-                    key={segment.label}
-                    cx="60"
-                    cy="60"
-                    r={radius}
-                    fill="none"
-                    stroke={segment.color}
-                    strokeWidth={activeSegment?.label === segment.label ? 17 : 14}
-                    strokeDasharray={dash}
-                    strokeDashoffset={currentOffset}
-                    strokeLinecap="butt"
-                    opacity={hovered && hovered.label !== segment.label ? 0.34 : 1}
-                    onMouseEnter={() => setHovered(segment)}
-                    onMouseLeave={() => setHovered(null)}
-                    onClick={() => setSelected((current) => (current?.label === segment.label ? null : segment))}
-                    style={{ cursor: 'pointer', filter: activeSegment?.label === segment.label ? 'brightness(1.08)' : 'none', transition: 'stroke-dasharray 850ms cubic-bezier(.2,.8,.2,1), stroke-width 140ms ease, opacity 140ms ease, filter 140ms ease' }}
-                  />
-                );
-              })
-            : null}
-        </svg>
-        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center' }}>
-          <div>
-            <div style={{ fontWeight: 900, fontSize: 'clamp(1.25rem, 2.4vw, 1.75rem)', letterSpacing: '-0.06em', color: 'var(--foreground)' }}>{centerValue}</div>
-            <div className="text-muted" style={{ marginTop: 2, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em' }}>{centerLabel}</div>
+    <div className="grid gap-3">
+      <div className="flex justify-center">
+        <div
+          className="relative flex aspect-square w-[150px] max-w-full items-center justify-center"
+          onMouseLeave={() => setHovered(null)}
+        >
+          <svg viewBox="0 0 120 120" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+            <circle cx="60" cy="60" r={radius} fill="none" stroke="rgba(148,163,184,0.16)" strokeWidth="14" />
+            {total > 0
+              ? visibleSegments.map((segment) => {
+                  const length = (segment.value / total) * circumference;
+                  const dash = ready ? `${length} ${circumference - length}` : `0 ${circumference}`;
+                  const currentOffset = -offset;
+                  offset += length;
+                  return (
+                    <circle
+                      key={segment.label}
+                      cx="60"
+                      cy="60"
+                      r={radius}
+                      fill="none"
+                      stroke={segment.color}
+                      strokeWidth={activeSegment?.label === segment.label ? 16 : 14}
+                      strokeDasharray={dash}
+                      strokeDashoffset={currentOffset}
+                      strokeLinecap="butt"
+                      onMouseEnter={() => setHovered(segment)}
+                      onMouseLeave={() => setHovered(null)}
+                      onClick={() => setSelected((current) => (current?.label === segment.label ? null : segment))}
+                      style={{
+                        cursor: 'pointer',
+                        filter: hovered?.label === segment.label ? 'drop-shadow(0 0 8px rgba(0, 0, 0, 0.15))' : 'none',
+                        transition: 'stroke-dasharray 850ms cubic-bezier(.2,.8,.2,1), stroke-width 160ms ease, opacity 160ms ease',
+                      }}
+                    />
+                  );
+                })
+              : null}
+          </svg>
+
+          <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center', pointerEvents: 'none' }}>
+            <div>
+              <div style={{ fontWeight: 900, fontSize: 'clamp(1.35rem, 2.2vw, 1.8rem)', letterSpacing: '-0.06em', color: 'var(--foreground)' }}>
+                {centerValue}
+              </div>
+              <div className="text-muted" style={{ marginTop: 2, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+                {centerLabel}
+              </div>
+            </div>
           </div>
         </div>
-        {activeSegment ? (
-          <div className="absolute left-full top-1/2 z-10 ml-4 min-w-44 -translate-y-1/2 rounded-2xl border border-cyan-100 bg-white px-4 py-3 text-sm text-slate-900 shadow-[0_22px_60px_-26px_rgba(15,104,168,0.32)] dark:border-cyan-400/22 dark:bg-[#07111d] dark:text-white">
-            <div style={{ fontWeight: 800 }}>{activeSegment.label}</div>
-            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 9, color: 'var(--muted-foreground)' }}>
-              <span style={{ width: 11, height: 11, borderRadius: 999, background: activeSegment.color }} />
-              <span style={{ color: 'var(--foreground)', fontWeight: 700 }}>{valueFormatter(activeSegment.value)}</span>
-              <strong style={{ marginLeft: 'auto', color: '#06b6d4' }}>{Math.round((activeSegment.value / total) * 100)}%</strong>
-            </div>
-          </div>
-        ) : null}
       </div>
-      <div style={{ display: 'grid', gap: 9 }}>
-        {total === 0 ? (
-          <div className="text-muted" style={{ fontSize: 13, lineHeight: 1.6 }}>No data available yet.</div>
+
+      {total === 0 ? (
+          <div className="text-center text-sm text-muted-foreground">No data available yet.</div>
         ) : (
-          segments.map((segment) => (
-            <div
-              key={segment.label}
-              onMouseEnter={() => setHovered(segment)}
-              onMouseLeave={() => setHovered(null)}
-              onClick={() => setSelected((current) => (current?.label === segment.label ? null : segment))}
-              style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', fontSize: 13, opacity: segment.value > 0 ? 1 : 0.55, cursor: 'pointer' }}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 999, background: segment.color, boxShadow: `0 0 0 4px ${segment.color}18` }} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{segment.label}</span>
-              </span>
-              <strong style={{ whiteSpace: 'nowrap' }}>{valueFormatter(segment.value)}</strong>
+          <>
+            {activeSegment ? (
+              <div className="text-center text-sm text-muted-foreground">
+                <strong className="text-foreground">{valueFormatter(activeSegment.value)}</strong>{' '}
+                {activeSegment.label.toLowerCase()}
+                {total > 0 ? (
+                <>
+                  {' '}· <span className="font-semibold text-sky-500 dark:text-sky-300">{Math.round((activeSegment.value / total) * 100)}%</span>
+                </>
+              ) : null}
             </div>
-          ))
-        )}
-      </div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs">
+            {segments.map((segment) => (
+              <button
+                key={segment.label}
+                type="button"
+                onMouseEnter={() => setHovered(segment)}
+                onMouseLeave={() => setHovered(null)}
+                onClick={() => setSelected((current) => (current?.label === segment.label ? null : segment))}
+                className="inline-flex items-center gap-2 text-muted-foreground transition hover:text-foreground"
+              >
+                <span
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 3,
+                    background: segment.color,
+                  }}
+                />
+                <span>{segment.label}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
 function WorkflowFunnel({ steps }: { steps: Array<{ label: string; count: number }> }) {
   const max = Math.max(1, ...steps.map((step) => step.count));
+
   return (
-    <PremiumOverviewCard title="Workflow Funnel" description="Submitted to closed, with bottlenecks visible at a glance.">
-      <div style={{ display: 'grid', gap: 12 }}>
-        {steps.map((step) => (
-          <div key={step.label} style={{ display: 'grid', gap: 7 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 44px', gap: 14, fontSize: 13, fontWeight: 800, alignItems: 'center' }}>
-              <span>{step.label}</span>
-              <span style={{ justifySelf: 'start', color: '#0284c7' }}>{step.count}</span>
+    <PremiumOverviewCard title="Workflow Pipeline">
+      <div className="grid gap-3 pt-1">
+        {steps.map((step) => {
+          const width = `${(step.count / max) * 100}%`;
+          return (
+            <div
+              key={step.label}
+              className="grid items-center gap-4"
+              style={{ gridTemplateColumns: '168px minmax(0, 1fr) 40px' }}
+            >
+              <div className="text-[15px] font-medium leading-6 text-foreground">
+                {step.label}
+              </div>
+              <div className="relative h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800/70">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full bg-[linear-gradient(90deg,#22d3ee,#2563eb)] transition-all duration-300"
+                  style={{ width }}
+                />
+              </div>
+              <div className="text-right text-[15px] font-semibold tabular-nums leading-6 text-foreground">
+                {step.count}
+              </div>
             </div>
-            <div style={{ height: 10, borderRadius: 999, background: 'rgba(14, 165, 233, 0.10)', overflow: 'hidden', boxShadow: 'inset 0 1px 2px rgba(15, 104, 168, 0.08)' }}>
-              <div style={{ width: `${Math.max(8, (step.count / max) * 100)}%`, height: '100%', borderRadius: 999, background: 'linear-gradient(90deg, #0ea5e9, #22d3ee, #67e8f9)', transition: 'width 700ms ease' }} />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </PremiumOverviewCard>
   );
 }
 
-function BusinessLineSummary({ tm, im }: { tm: number; im: number }) {
+function BusinessLineSummary({
+  tm,
+  im,
+}: {
+  tm: number;
+  im: number;
+}) {
   const total = tm + im;
   return (
-    <PremiumOverviewCard title="Business Line Split" description="TM vs IM distribution for visible intake.">
+    <PremiumOverviewCard title="Business Line Split">
       <AnimatedDonutChart
         centerValue={String(total)}
         centerLabel="Visible"
@@ -359,21 +475,21 @@ function SubmissionJourney({ steps }: { steps: Array<{ label: string; count: num
   const max = Math.max(1, ...steps.map((step) => step.count));
   return (
     <PremiumOverviewCard title="Submission Journey" description="A compact view of where your submissions are.">
-      <div style={{ position: 'relative', paddingTop: 34, paddingBottom: 34 }}>
-        <div style={{ position: 'absolute', left: 28, right: 28, top: '50%', height: 3, transform: 'translateY(-50%)', borderRadius: 999, background: 'linear-gradient(90deg, rgba(34,211,238,0.18), rgba(59,130,246,0.16), rgba(34,211,238,0.18))' }} />
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))`, gap: 12, alignItems: 'center' }}>
+      <div style={{ position: 'relative', paddingTop: 26, paddingBottom: 26 }}>
+        <div style={{ position: 'absolute', left: 24, right: 24, top: '50%', height: 3, transform: 'translateY(-50%)', borderRadius: 999, background: 'linear-gradient(90deg, rgba(34,211,238,0.18), rgba(59,130,246,0.16), rgba(34,211,238,0.18))' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))`, gap: 10, alignItems: 'center' }}>
           {steps.map((step, index) => (
-            <div key={step.label} className="group/step relative" style={{ display: 'grid', justifyItems: 'center', gap: 10, minWidth: 0 }}>
-              {index % 2 === 0 ? <div style={{ minHeight: 34 }} /> : <div style={{ fontSize: 13, fontWeight: 800, lineHeight: 1.2, textAlign: 'center' }}>{step.label}</div>}
+            <div key={step.label} className="group/step relative" style={{ display: 'grid', justifyItems: 'center', gap: 8, minWidth: 0 }}>
+              {index % 2 === 0 ? <div style={{ minHeight: 28 }} /> : <div style={{ fontSize: 12, fontWeight: 800, lineHeight: 1.2, textAlign: 'center' }}>{step.label}</div>}
               <div
                 style={{
-                  width: 36,
-                  height: 36,
+                  width: 32,
+                  height: 32,
                   borderRadius: 999,
                   display: 'grid',
                   placeItems: 'center',
                   color: '#fff',
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: 900,
                   background: 'linear-gradient(135deg, #0284c7, #22d3ee)',
                   boxShadow: '0 12px 24px -16px rgba(14, 165, 233, 0.75)',
@@ -383,9 +499,9 @@ function SubmissionJourney({ steps }: { steps: Array<{ label: string; count: num
               >
                 {step.count}
               </div>
-              {index % 2 === 1 ? <div style={{ minHeight: 34 }} /> : <div style={{ fontSize: 13, fontWeight: 800, lineHeight: 1.2, textAlign: 'center' }}>{step.label}</div>}
+              {index % 2 === 1 ? <div style={{ minHeight: 28 }} /> : <div style={{ fontSize: 12, fontWeight: 800, lineHeight: 1.2, textAlign: 'center' }}>{step.label}</div>}
               <div
-                className="pointer-events-none absolute z-20 w-60 rounded-2xl border border-cyan-100 bg-white px-4 py-3 text-xs opacity-0 shadow-[0_18px_50px_-30px_rgba(15,104,168,0.36)] transition duration-150 group-hover/step:opacity-100 dark:border-cyan-400/24 dark:bg-[#07111d]"
+                className="pointer-events-none absolute z-20 w-56 rounded-2xl border border-cyan-100 bg-white px-3.5 py-2.5 text-xs opacity-0 shadow-[0_18px_50px_-30px_rgba(15,104,168,0.36)] transition duration-150 group-hover/step:opacity-100 dark:border-cyan-400/24 dark:bg-[#07111d]"
                 style={{
                   left: '50%',
                   transform: 'translateX(-50%)',
@@ -395,7 +511,7 @@ function SubmissionJourney({ steps }: { steps: Array<{ label: string; count: num
               >
                 <div style={{ fontWeight: 800, color: 'var(--foreground)' }}>{step.label}</div>
                 <div className="text-muted" style={{ marginTop: 4, display: 'grid', gap: 3 }}>
-                  {(step.tooltipLines || [`${step.count} ${step.description || 'submissions'}`]).map((line) => (
+                  {[`${step.count} items`].map((line) => (
                     <span
                       key={line}
                       style={{
@@ -539,31 +655,45 @@ export default function DashboardHomePage() {
     }).length;
     const employeeActionRows = visibleRows.filter((entry) => entry.intake_status === 'rejected');
     const totalSubmittedValue = visibleRows.reduce((sum, entry) => sum + entry.amount, 0);
-    const paidValue = visibleRows.reduce((sum, entry) => {
+    const isPaidEntry = (entry: SubmissionRow) => {
       const paymentMade = normalizeOverviewStatus(entry.payment_made);
       const paymentReceived = normalizeOverviewStatus(entry.payment_received);
-      return paymentMade === 'paid' || paymentMade === 'full' || paymentReceived === 'full' || paymentReceived === 'received'
-        ? sum + entry.amount
-        : sum;
+      return paymentMade === 'paid' || paymentMade === 'full' || paymentReceived === 'full' || paymentReceived === 'received';
+    };
+    const isInvoiceStageEntry = (entry: SubmissionRow) => {
+      const invoiceStatus = normalizeOverviewStatus(entry.invoice_status);
+      return (
+        invoiceStatus === 'invoice_created'
+        || invoiceStatus === 'po_created_estimate'
+        || invoiceStatus === 'debit_note'
+        || invoiceStatus === 'invoice_plus_debit_note'
+      );
+    };
+    const paidValue = visibleRows.reduce((sum, entry) => {
+      return isPaidEntry(entry) ? sum + entry.amount : sum;
     }, 0);
     const awaitingReviewValue = visibleRows.reduce((sum, entry) => (entry.intake_status === 'submitted' ? sum + entry.amount : sum), 0);
     const invoiceCreatedValue = visibleRows.reduce((sum, entry) => {
-      const paymentMade = normalizeOverviewStatus(entry.payment_made);
-      const paymentReceived = normalizeOverviewStatus(entry.payment_received);
-      const isPaid = paymentMade === 'paid' || paymentMade === 'full' || paymentReceived === 'full' || paymentReceived === 'received';
-      return !isPaid && normalizeOverviewStatus(entry.invoice_status) === 'invoice_created' ? sum + entry.amount : sum;
+      return entry.intake_status === 'accepted' && !isPaidEntry(entry) && isInvoiceStageEntry(entry)
+        ? sum + entry.amount
+        : sum;
     }, 0);
-    const pendingValue = Math.max(0, totalSubmittedValue - paidValue - awaitingReviewValue - invoiceCreatedValue);
+    const pendingValue = visibleRows.reduce((sum, entry) => {
+      return entry.intake_status === 'accepted' && !isPaidEntry(entry) && !isInvoiceStageEntry(entry)
+        ? sum + entry.amount
+        : sum;
+    }, 0);
     const invoiceCreatedCount = visibleRows.filter((entry) => normalizeOverviewStatus(entry.invoice_status) === 'invoice_created').length;
     const latestSubmitted = visibleRows.find((entry) => entry.intake_status === 'submitted');
     const totalSubmissionCount = visibleRows.length;
     const percentOfTotal = (count: number) => (totalSubmissionCount > 0 ? `${Math.round((count / totalSubmissionCount) * 100)}%` : '');
 
     return (
-      <div style={{ display: 'grid', gap: 16 }}>
+      <div style={{ display: 'grid', gap: 12 }}>
         <PageHeader
           title={getOverviewTitle(user.role)}
           description="Only your submissions, statuses, rejection notes, and next actions appear here."
+          className="gap-4 pb-4"
           actions={canSubmitInvoice(user.role) ? (
             <Link href={getInvoiceIntakePath()} className="btn btn-primary" style={{ textDecoration: 'none' }}>
               Submit Invoice
@@ -580,36 +710,37 @@ export default function DashboardHomePage() {
 
         <PremiumOverviewCard title="Items Needing Action" description="Submissions returned by finance for correction.">
           {employeeActionRows.length === 0 ? (
-            <div className="text-muted">No correction requests right now.</div>
+            <div className="text-sm text-muted-foreground">No correction requests right now.</div>
           ) : (
-            <div style={{ display: 'grid', gap: 10, maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                <span className="text-muted" style={{ fontSize: 13 }}>
+            <div>
+              <div className="mb-1.5 flex items-center justify-between gap-3 border-b border-border/50 pb-1.5">
+                <span className="text-xs text-muted-foreground">
                   {employeeActionRows.length} item{employeeActionRows.length > 1 ? 's' : ''} need attention
                 </span>
                 <button className="btn" type="button" onClick={() => setShowAllEmployeeActions((current) => !current)}>
                   {showAllEmployeeActions ? 'Collapse' : 'Expand'}
                 </button>
               </div>
-              <div style={{ display: 'grid', gap: 10, maxHeight: showAllEmployeeActions ? 320 : undefined, overflowY: showAllEmployeeActions ? 'auto' : 'visible', paddingRight: showAllEmployeeActions ? 4 : 0 }}>
-              {(showAllEmployeeActions ? employeeActionRows : employeeActionRows.slice(0, 2)).map((entry) => (
-                <div key={`employee-action-${entry.id}`} className="surface" style={{ padding: 12, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', border: '1px solid var(--border)' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <strong>{entry.pi}</strong>
-                      <StatusChip label="Resubmission" tone="orange" />
-                    </div>
-                    <div className="text-muted" style={{ fontSize: 13, marginTop: 4 }}>{entry.rejection_note || 'Finance requested corrections.'}</div>
-                  </div>
-                  <button className="btn" type="button" onClick={() => setOpenId(entry.id)}>Open</button>
-                </div>
-              ))}
+              <div className="max-h-72 overflow-y-auto pr-1">
+                {(showAllEmployeeActions ? employeeActionRows : employeeActionRows.slice(0, 1)).map((entry) => (
+                  <OverviewListRow
+                    key={`employee-action-${entry.id}`}
+                    title={entry.pi}
+                    primaryChip={<StatusChip label="Resubmission" tone="orange" />}
+                    note={entry.rejection_note || 'Finance requested corrections.'}
+                    action={
+                      <button className="btn" type="button" onClick={() => setOpenId(entry.id)}>
+                        Open
+                      </button>
+                    }
+                  />
+                ))}
               </div>
             </div>
           )}
         </PremiumOverviewCard>
 
-        <section style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+        <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
           <PaymentSummary
             totalValue={totalSubmittedValue}
             paidValue={paidValue}
@@ -662,40 +793,31 @@ export default function DashboardHomePage() {
         </section>
 
         <PremiumOverviewCard title="Recent Updates" description="Latest submission changes and recent submissions.">
-          <div>
-            {visibleRows.length === 0 ? (
-              <div className="text-muted">No recent updates yet.</div>
-            ) : (
-              <div style={{ display: 'grid', gap: 10 }}>
-                {employeeRecentRows.map((entry) => (
-                  <div
-                    key={`recent-${entry.id}`}
-                    className="surface"
-                    style={{ padding: 12, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600 }}>{entry.pi}</div>
-                      <div style={{ marginTop: 6 }}>
-                        <StatusChip label={titleCaseStatus(entry.intake_status)} tone={overviewTone(entry.intake_status)} />
-                      </div>
-                      <div className="text-muted" style={{ fontSize: 13 }}>
-                        {formatDateTime(entry.submitted_at)}
-                        {entry.invoice_status ? ` · ${titleCaseStatus(entry.invoice_status)}` : ''}
-                      </div>
-                      {entry.intake_status === 'rejected' && entry.rejection_note ? (
-                        <div className="text-muted" style={{ fontSize: 13, marginTop: 4 }}>
-                          {entry.rejection_note}
-                        </div>
-                      ) : null}
-                    </div>
+          {visibleRows.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No recent updates yet.</div>
+          ) : (
+            <div className="max-h-80 overflow-y-auto pr-1">
+              {employeeRecentRows.map((entry) => (
+                <OverviewListRow
+                  key={`recent-${entry.id}`}
+                  title={entry.pi}
+                  primaryChip={<StatusChip label={titleCaseStatus(entry.intake_status)} tone={overviewTone(entry.intake_status)} />}
+                  meta={
+                    <>
+                      {formatDateTime(entry.submitted_at)}
+                      {entry.invoice_status ? ` · ${titleCaseStatus(entry.invoice_status)}` : ''}
+                    </>
+                  }
+                  note={entry.intake_status === 'rejected' && entry.rejection_note ? entry.rejection_note : undefined}
+                  action={
                     <button className="btn" type="button" onClick={() => setOpenId(entry.id)}>
                       {canResubmitSubmission(user.role, entry) ? 'Resubmit' : 'View'}
                     </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  }
+                />
+              ))}
+            </div>
+          )}
         </PremiumOverviewCard>
 
         <SubmissionDrawer open={Boolean(row)} onClose={() => setOpenId(null)} row={row} viewer={getDrawerViewerRole(user.role)} />
@@ -709,11 +831,12 @@ export default function DashboardHomePage() {
     const rejectedCount = visibleRows.filter((entry) => entry.intake_status === 'rejected').length;
 
     return (
-      <div style={{ display: 'grid', gap: 16 }}>
+      <div style={{ display: 'grid', gap: 12 }}>
         <PageHeader
           title={getOverviewTitle(user.role)}
           description="Team leads see their own work plus their team pipeline, not company-wide finance metrics."
           secondaryDescription="Finance-wide role data is still under development; full overview metrics will appear after that wiring is complete."
+          className="gap-4 pb-4"
           actions={canSubmitInvoice(user.role) ? (
             <Link href={getInvoiceIntakePath()} className="btn btn-primary" style={{ textDecoration: 'none' }}>
               Submit Invoice
@@ -760,11 +883,12 @@ export default function DashboardHomePage() {
     const failedSyncs = visibleRows.filter((entry) => entry.sync_status === 'failed').length;
 
     return (
-      <div style={{ display: 'grid', gap: 16 }}>
+      <div style={{ display: 'grid', gap: 12 }}>
         <PageHeader
           title={getOverviewTitle(user.role)}
           description="Developer access is limited to technical visibility, sync health, and debugging context."
           secondaryDescription="Finance-role overview data is not fully developed yet and will be shown after implementation is completed."
+          className="gap-4 pb-4"
         />
 
         <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
@@ -782,7 +906,6 @@ export default function DashboardHomePage() {
     );
   }
 
-  const totalValue = visibleRows.reduce((sum, entry) => sum + entry.amount, 0);
   const pendingCount = visibleRows.filter((entry) => entry.intake_status === 'submitted').length;
   const pendingPaymentsCount = visibleRows.filter((entry) => {
     const paymentMade = normalizeOverviewStatus(entry.payment_made);
@@ -817,11 +940,12 @@ export default function DashboardHomePage() {
   const imCount = visibleRows.filter((entry) => normalizeBusinessLine(entry.business_line || entry.integration_metadata?.businessLine) === 'IM').length;
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
+    <div style={{ display: 'grid', gap: 12 }}>
       <PageHeader
         title={getOverviewTitle(user.role)}
         description={undefined}
         secondaryDescription={undefined}
+        className="gap-4 pb-4"
         actions={canSubmitInvoice(user.role) ? (
           <Link href={getInvoiceIntakePath()} className="btn btn-primary" style={{ textDecoration: 'none' }}>
             Submit Invoice
@@ -835,15 +959,10 @@ export default function DashboardHomePage() {
         <CompactMetricCard title="Resubmissions" value={String(rejectedCount)} hint="Returned items" />
         <CompactMetricCard title="Invoices Created" value={String(invoicesCreatedCount)} hint="Invoice stage" />
         <CompactMetricCard title="Closed This Month" value={String(closedThisMonthCount)} hint="Completed" />
-        <CompactMetricCard
-          title="Total Intake Value"
-          value={new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0, notation: 'compact' }).format(totalValue)}
-          hint="Visible intake"
-        />
       </section>
 
-      <section style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-        <WorkflowFunnel
+        <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+          <WorkflowFunnel
           steps={[
             { label: 'Submitted', count: pendingCount },
             { label: 'Checked', count: checkedCount },
@@ -851,32 +970,33 @@ export default function DashboardHomePage() {
             { label: 'Paid', count: paidCount },
             { label: 'Closed', count: closedThisMonthCount },
           ]}
-        />
-        <BusinessLineSummary tm={tmCount} im={imCount} />
-      </section>
+          />
+          <BusinessLineSummary tm={tmCount} im={imCount} />
+        </section>
 
-      <section style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+      <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
         <PremiumOverviewCard title="Recent Activity" description="Latest operational movement across the visible finance queue.">
           {financeRecentRows.length === 0 ? (
-            <div className="text-muted">No recent activity yet.</div>
+            <div className="text-sm text-muted-foreground">No recent activity yet.</div>
           ) : (
-            <div style={{ display: 'grid', gap: 10, maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
+            <div className="max-h-80 overflow-y-auto pr-1">
               {financeRecentRows.map((entry) => (
-                <div key={`activity-${entry.id}`} className="surface" style={{ padding: 12, display: 'grid', gap: 6, border: '1px solid var(--border)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <strong>{entry.pi}</strong>
-                      <StatusChip label={titleCaseStatus(entry.intake_status)} tone={overviewTone(entry.intake_status)} />
-                    </div>
+                <OverviewListRow
+                  key={`activity-${entry.id}`}
+                  title={entry.pi}
+                  primaryChip={<StatusChip label={titleCaseStatus(entry.intake_status)} tone={overviewTone(entry.intake_status)} />}
+                  meta={
+                    <>
+                      {entry.owner_name || 'Unknown owner'} · {formatDateTime(entry.submitted_at)}
+                      {entry.invoice_status ? ` · ${titleCaseStatus(entry.invoice_status)}` : ''}
+                    </>
+                  }
+                  action={
                     <Link className="btn" href={`/dashboard/finance?submission_id=${entry.id}`} style={{ textDecoration: 'none' }}>
                       Open
                     </Link>
-                  </div>
-                  <div className="text-muted" style={{ fontSize: 13 }}>
-            {entry.owner_name || 'Unknown owner'} - {formatDateTime(entry.submitted_at)}
-            {entry.invoice_status ? ` - ${titleCaseStatus(entry.invoice_status)}` : ''}
-                  </div>
-                </div>
+                  }
+                />
               ))}
             </div>
           )}
@@ -884,32 +1004,28 @@ export default function DashboardHomePage() {
 
         <PremiumOverviewCard title="Top 10 Needing Action" description="Prioritize pending checks, payment follow-up, and resubmission requests.">
           {topActionRows.length === 0 ? (
-            <div className="text-muted">Nothing urgent in the current visible queue.</div>
+            <div className="text-sm text-muted-foreground">Nothing urgent in the current visible queue.</div>
           ) : (
-            <div style={{ display: 'grid', gap: 10, maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
+            <div className="max-h-80 overflow-y-auto pr-1">
               {topActionRows.map((entry) => (
-                <div
+                <OverviewListRow
                   key={`action-${entry.id}`}
-                  className="surface"
-          style={{ padding: 12, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', border: '1px solid var(--border)' }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <strong>{entry.pi}</strong>
-                      <StatusChip label={titleCaseStatus(entry.intake_status)} tone={overviewTone(entry.intake_status)} />
-                      <StatusChip
-                        label={entry.intake_status === 'rejected' ? 'High Priority' : entry.intake_status === 'submitted' ? 'Review' : 'Follow Up'}
-                        tone={entry.intake_status === 'rejected' ? 'rose' : entry.intake_status === 'submitted' ? 'amber' : 'cyan'}
-                      />
-                    </div>
-                    <div className="text-muted" style={{ fontSize: 13 }}>
-              {entry.entity} - {titleCaseStatus(entry.intake_status)}
-                    </div>
-                  </div>
-          <Link className="btn" href={`/dashboard/finance?submission_id=${entry.id}`} style={{ textDecoration: 'none' }}>
-            Open
-          </Link>
-                </div>
+                  title={entry.pi}
+                  primaryChip={<StatusChip label={titleCaseStatus(entry.intake_status)} tone={overviewTone(entry.intake_status)} />}
+                  secondaryChip={
+                    entry.intake_status === 'submitted' ? (
+                      <StatusChip label="Review" tone="amber" />
+                    ) : entry.intake_status === 'accepted' ? (
+                      <StatusChip label="Follow Up" tone="cyan" />
+                    ) : undefined
+                  }
+                  meta={`${entry.entity} · ${titleCaseStatus(entry.intake_status)}`}
+                  action={
+                    <Link className="btn" href={`/dashboard/finance?submission_id=${entry.id}`} style={{ textDecoration: 'none' }}>
+                      Open
+                    </Link>
+                  }
+                />
               ))}
             </div>
           )}
@@ -920,3 +1036,5 @@ export default function DashboardHomePage() {
     </div>
   );
 }
+
+
