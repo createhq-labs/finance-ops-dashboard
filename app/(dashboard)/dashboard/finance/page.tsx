@@ -168,6 +168,56 @@ function normalizeInvoiceStatus(value: string | null | undefined) {
   return 'invoice_pending';
 }
 
+function formatDateDigitsInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function parseDateFilterInput(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  const display = formatDateDigitsInput(value);
+
+  if (!digits.length) {
+    return { display: '', iso: '', complete: false, valid: true };
+  }
+
+  if (digits.length < 8) {
+    return { display, iso: '', complete: false, valid: true };
+  }
+
+  const day = Number(digits.slice(0, 2));
+  const month = Number(digits.slice(2, 4));
+  const year = Number(digits.slice(4, 8));
+
+  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) {
+    return { display, iso: '', complete: true, valid: false };
+  }
+
+  const iso = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const date = new Date(`${iso}T00:00:00`);
+  const isValid = !Number.isNaN(date.getTime())
+    && date.getFullYear() === year
+    && date.getMonth() + 1 === month
+    && date.getDate() === day;
+
+  return {
+    display,
+    iso: isValid ? iso : '',
+    complete: true,
+    valid: isValid,
+  };
+}
+
+function formatDateFilterInput(value: string) {
+  if (!value) return '';
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
+
 function TrackingRow({
   label,
   value,
@@ -214,6 +264,57 @@ function TrackingRow({
   );
 }
 
+function DateFilterInput({
+  label,
+  committedValue,
+  onCommit,
+}: {
+  label: string;
+  committedValue: string;
+  onCommit: (value: string) => void;
+}) {
+  const [inputValue, setInputValue] = useState(() => formatDateFilterInput(committedValue));
+  const [invalid, setInvalid] = useState(false);
+
+  useEffect(() => {
+    setInputValue(formatDateFilterInput(committedValue));
+    if (!committedValue) setInvalid(false);
+  }, [committedValue]);
+
+  return (
+    <label className="grid gap-1">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <input
+        className={`intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20 ${invalid ? 'border-destructive focus:border-destructive focus:ring-destructive/15' : ''}`}
+        type="text"
+        inputMode="numeric"
+        placeholder="dd/mm/yyyy"
+        value={inputValue}
+        onChange={(e) => {
+          const parsed = parseDateFilterInput(e.target.value);
+          setInputValue(parsed.display);
+          if (!parsed.display) {
+            setInvalid(false);
+            onCommit('');
+            return;
+          }
+          if (!parsed.complete) {
+            setInvalid(false);
+            return;
+          }
+          if (!parsed.valid) {
+            setInvalid(true);
+            return;
+          }
+          setInvalid(false);
+          onCommit(parsed.iso);
+        }}
+      />
+      {invalid ? <span className="text-xs text-destructive">Enter a valid date.</span> : null}
+    </label>
+  );
+}
+
 export default function FinanceReviewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -235,6 +336,7 @@ export default function FinanceReviewPage() {
   const [versionStatusFilter, setVersionStatusFilter] = useState<'all' | 'original' | 'resubmitted' | 'superseded'>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [actionError, setActionError] = useState('');
   const [rejectionNote, setRejectionNote] = useState('');
@@ -595,8 +697,27 @@ export default function FinanceReviewPage() {
   const pendingCount = filteredRows.filter((entry) => entry.intake_status === 'submitted').length;
   const acceptedCount = filteredRows.filter((entry) => entry.intake_status === 'accepted').length;
   const rejectedCount = filteredRows.filter((entry) => entry.intake_status === 'rejected').length;
-  const totalValue = filteredRows.reduce((sum, entry) => sum + entry.amount, 0);
+  const activeAdvancedFilterCount = [
+    invoiceStatusFilter !== 'all',
+    creatorInvoiceReceivedFilter !== 'all',
+    paymentReceivedFilter !== 'all',
+    paymentMadeFilter !== 'all',
+    closedStatusFilter !== 'all',
+    versionStatusFilter !== 'all',
+    Boolean(dateFrom),
+    Boolean(dateTo),
+  ].filter(Boolean).length;
 
+  function resetAdvancedFilters() {
+    setInvoiceStatusFilter('all');
+    setCreatorInvoiceReceivedFilter('all');
+    setPaymentReceivedFilter('all');
+    setPaymentMadeFilter('all');
+    setClosedStatusFilter('all');
+    setVersionStatusFilter('all');
+    setDateFrom('');
+    setDateTo('');
+  }
   const financePanel = row ? (
     <div className="surface" style={{ padding: 16, display: 'grid', gap: 12 }}>
       <div>
@@ -857,119 +978,113 @@ export default function FinanceReviewPage() {
         <KpiCard title="Pending Review" value={String(pendingCount)} hint="Requires finance action" />
         <KpiCard title="Accepted" value={String(acceptedCount)} hint="Approved by finance" />
         <KpiCard title="Rejected" value={String(rejectedCount)} hint="Returned with notes" />
-        <KpiCard
-          title="Total Intake Value"
-          value={new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(totalValue)}
-          hint="Across visible company intake"
-        />
       </section>
 
       <SectionCard padding={16}>
-        <div className="intake-form-grid">
-          <label className="intake-field">
-            <span className="intake-label">Search</span>
-            <input className="intake-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search PI, creator, agency, or brand" />
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Business Line</span>
-            <select className="intake-input" value={businessLineFilter} onChange={(e) => setBusinessLineFilter(e.target.value as 'all' | 'TM' | 'IM')}>
-              <option value="all">All</option>
-              <option value="TM">TM</option>
-              <option value="IM">IM</option>
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Status</span>
-            <select className="intake-input" value={intakeStatusFilter} onChange={(e) => setIntakeStatusFilter(e.target.value as 'all' | 'submitted' | 'accepted' | 'rejected')}>
-              <option value="all">All</option>
-              <option value="submitted">Submitted</option>
-              <option value="accepted">Accepted</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Employee</span>
-            <select className="intake-input" value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}>
-              <option value="all">All</option>
-              {employeeOptions.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Invoice Status</span>
-            <select className="intake-input" value={invoiceStatusFilter} onChange={(e) => setInvoiceStatusFilter(e.target.value)}>
-              <option value="all">All</option>
-              {invoiceStatusOptions.map((status) => (
-                <option key={status} value={status}>{formatInvoiceStatus(status)}</option>
-              ))}
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Creator Invoice Received</span>
-            <select className="intake-input" value={creatorInvoiceReceivedFilter} onChange={(e) => setCreatorInvoiceReceivedFilter(e.target.value as 'all' | 'received' | 'pending')}>
-              <option value="all">All</option>
-              {CREATOR_INVOICE_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Payment Received</span>
-            <select
-              className="intake-input"
-              value={paymentReceivedFilter}
-              onChange={(e) => setPaymentReceivedFilter(e.target.value)}
-            >
-              <option value="all">All</option>
-              {PAYMENT_RECEIVED_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Payment Made</span>
-            <select
-              className="intake-input"
-              value={paymentMadeFilter}
-              onChange={(e) => setPaymentMadeFilter(e.target.value)}
-            >
-              <option value="all">All</option>
-              {PAYMENT_MADE_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Closed Status</span>
-            <select className="intake-input" value={closedStatusFilter} onChange={(e) => setClosedStatusFilter(e.target.value)}>
-              <option value="all">All</option>
-              {CLOSURE_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Version Status</span>
-            <select
-              className="intake-input"
-              value={versionStatusFilter}
-              onChange={(e) => setVersionStatusFilter(e.target.value as 'all' | 'original' | 'resubmitted' | 'superseded')}
-            >
-              <option value="all">All</option>
-              <option value="original">Original</option>
-              <option value="resubmitted">Resubmitted</option>
-              <option value="superseded">Superseded</option>
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Date From</span>
-            <input className="intake-input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Date To</span>
-            <input className="intake-input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-          </label>
+        <div className="grid gap-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,0.7fr))_auto]">
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-muted-foreground">Search</span>
+              <input className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search PI, creator, agency, or brand" />
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-muted-foreground">Business Line</span>
+              <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={businessLineFilter} onChange={(e) => setBusinessLineFilter(e.target.value as 'all' | 'TM' | 'IM')}>
+                <option value="all">All</option>
+                <option value="TM">TM</option>
+                <option value="IM">IM</option>
+              </select>
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-muted-foreground">Status</span>
+              <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={intakeStatusFilter} onChange={(e) => setIntakeStatusFilter(e.target.value as 'all' | 'submitted' | 'accepted' | 'rejected')}>
+                <option value="all">All</option>
+                <option value="submitted">Submitted</option>
+                <option value="accepted">Accepted</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-muted-foreground">Employee</span>
+              <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}>
+                <option value="all">All</option>
+                {employeeOptions.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </label>
+            <div className="flex items-end">
+              <button className="btn w-full xl:w-auto shrink-0" type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
+                More Filters{activeAdvancedFilterCount > 0 ? ` (${activeAdvancedFilterCount})` : ''}
+              </button>
+            </div>
+          </div>
+
+          {showAdvancedFilters ? (
+            <div className="rounded-xl border border-border/60 bg-card/90 p-3 dark:bg-card/70">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <DateFilterInput label="Date From" committedValue={dateFrom} onCommit={setDateFrom} />
+                <DateFilterInput label="Date To" committedValue={dateTo} onCommit={setDateTo} />
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Invoice Status</span>
+                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={invoiceStatusFilter} onChange={(e) => setInvoiceStatusFilter(e.target.value)}>
+                    <option value="all">All</option>
+                    {invoiceStatusOptions.map((status) => (
+                      <option key={status} value={status}>{formatInvoiceStatus(status)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Creator Invoice Received</span>
+                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={creatorInvoiceReceivedFilter} onChange={(e) => setCreatorInvoiceReceivedFilter(e.target.value as 'all' | 'received' | 'pending')}>
+                    <option value="all">All</option>
+                    {CREATOR_INVOICE_STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Payment Received</span>
+                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={paymentReceivedFilter} onChange={(e) => setPaymentReceivedFilter(e.target.value)}>
+                    <option value="all">All</option>
+                    {PAYMENT_RECEIVED_STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Payment Made</span>
+                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={paymentMadeFilter} onChange={(e) => setPaymentMadeFilter(e.target.value)}>
+                    <option value="all">All</option>
+                    {PAYMENT_MADE_STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Closed Status</span>
+                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={closedStatusFilter} onChange={(e) => setClosedStatusFilter(e.target.value)}>
+                    <option value="all">All</option>
+                    {CLOSURE_STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Version Status</span>
+                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={versionStatusFilter} onChange={(e) => setVersionStatusFilter(e.target.value as 'all' | 'original' | 'resubmitted' | 'superseded')}>
+                    <option value="all">All</option>
+                    <option value="original">Original</option>
+                    <option value="resubmitted">Resubmitted</option>
+                    <option value="superseded">Superseded</option>
+                  </select>
+                </label>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button className="btn" type="button" onClick={resetAdvancedFilters}>Reset Advanced</button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </SectionCard>
 

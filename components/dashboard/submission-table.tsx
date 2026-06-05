@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -9,6 +10,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -222,47 +224,47 @@ const COLUMN_TITLES: Record<SheetColumnId, string> = {
 };
 
 const COLUMN_WIDTHS: Record<SheetColumnId, number> = {
-  pi: 144,
-  submitted_at: 148,
-  intake_status: 144,
-  invoice_status: 150,
-  payment_received: 160,
-  payment_made: 152,
-  closed_status: 144,
-  email_address: 182,
-  business_line: 102,
-  entry_type: 126,
-  entity_type: 110,
-  client_type: 110,
-  agency_name: 166,
-  agency_trade_name: 166,
-  brand_name: 166,
-  brand_trade_name: 166,
-  gst_number: 144,
-  address: 220,
-  city: 122,
-  state: 122,
-  country: 122,
-  pincode: 102,
-  invoice_type: 110,
-  bill_due: 110,
-  creator_name: 172,
-  creator_brand: 172,
-  deliverables: 192,
-  line_amounts: 124,
-  campaign_code: 128,
-  campaign_name: 168,
-  campaign_brand: 158,
-  campaign_notes: 182,
-  product_reimbursement_upload: 168,
-  commercials: 146,
-  additional_agency_commission: 146,
-  additional_information: 182,
-  invoice_number: 146,
-  debit_note_number: 146,
-  creator_invoice_received: 162,
-  finance_comment: 188,
-  actions: 108,
+  pi: 128,
+  submitted_at: 124,
+  intake_status: 132,
+  invoice_status: 136,
+  payment_received: 140,
+  payment_made: 136,
+  closed_status: 130,
+  email_address: 166,
+  business_line: 68,
+  entry_type: 108,
+  entity_type: 96,
+  client_type: 96,
+  agency_name: 132,
+  agency_trade_name: 128,
+  brand_name: 138,
+  brand_trade_name: 128,
+  gst_number: 132,
+  address: 156,
+  city: 102,
+  state: 102,
+  country: 102,
+  pincode: 88,
+  invoice_type: 94,
+  bill_due: 90,
+  creator_name: 144,
+  creator_brand: 136,
+  deliverables: 142,
+  line_amounts: 110,
+  campaign_code: 108,
+  campaign_name: 126,
+  campaign_brand: 126,
+  campaign_notes: 144,
+  product_reimbursement_upload: 150,
+  commercials: 126,
+  additional_agency_commission: 132,
+  additional_information: 144,
+  invoice_number: 126,
+  debit_note_number: 126,
+  creator_invoice_received: 146,
+  finance_comment: 156,
+  actions: 92,
 };
 
 const STICKY_LEFTS: Record<'pi' | 'intake_status', number> = {
@@ -280,7 +282,7 @@ const STATUS_AUDIT_FIELDS = new Set<FinanceEditableField>([
 ]);
 
 const STATUS_PILL_BASE =
-  'inline-flex min-h-8 items-center gap-2 rounded-full border px-3 py-1.5 text-[0.8rem] font-semibold tracking-[-0.01em] shadow-sm transition duration-100';
+  'inline-flex h-6 max-w-full items-center gap-1 rounded-md border px-2 text-[11px] font-medium leading-none';
 
 function money(n: number) {
   return new Intl.NumberFormat('en-IN', {
@@ -315,8 +317,8 @@ function joinLines(values: Array<string | null | undefined>) {
 function businessLineLabel(row: SubmissionRow) {
   const raw = row.business_line || row.integration_metadata?.businessLine || '';
   const normalized = normalizeText(raw);
-  if (normalized === 'tm' || normalized === 'talent management') return 'Talent Management';
-  if (normalized === 'im' || normalized === 'influencer marketing') return 'Influencer Marketing';
+  if (normalized === 'tm' || normalized === 'talent management') return 'TM';
+  if (normalized === 'im' || normalized === 'influencer marketing') return 'IM';
   return fieldValue(raw || '-');
 }
 
@@ -329,7 +331,9 @@ function entryTypeLabel(row: SubmissionRow) {
 
 function getCreatorData(row: SubmissionRow) {
   const lineItems = sortLineItems(row);
-  const isTM = businessLineLabel(row) === 'Talent Management';
+  const rawBusinessLine = row.business_line || row.integration_metadata?.businessLine || '';
+  const normalizedBusinessLine = normalizeText(rawBusinessLine);
+  const isTM = normalizedBusinessLine == 'tm' || normalizedBusinessLine == 'talent management';
   const creatorNames = joinLines(
     lineItems.map((item) => item.creator_name).length ? lineItems.map((item) => item.creator_name) : [row.creator_creators_name]
   );
@@ -579,7 +583,8 @@ function ExpandableText({
 }) {
   const [expanded, setExpanded] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
-  const needsClamp = value.length > 42 || value.includes('\n');
+  const textRef = useRef<HTMLDivElement | null>(null);
+  const [needsClamp, setNeedsClamp] = useState(value.length > 36 || value.includes('\n'));
 
   useEffect(() => {
     if (!expanded) return undefined;
@@ -592,13 +597,31 @@ function ExpandableText({
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [expanded]);
 
+  useEffect(() => {
+    const element = textRef.current;
+    if (!element) return undefined;
+
+    const checkOverflow = () => {
+      setNeedsClamp(element.scrollHeight > element.clientHeight + 1 || value.length > 36 || value.includes('\n'));
+    };
+
+    checkOverflow();
+
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(checkOverflow);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [expanded, value]);
+
   return (
     <div ref={ref} className="relative max-w-full" onDoubleClick={onCopy} title={value}>
       <CopyNotice active={copied} />
       <div
+        ref={textRef}
         className={[
-          'whitespace-pre-line break-words pr-8 text-[0.82rem] leading-5 text-slate-700 dark:text-slate-100',
-          expanded ? '' : 'line-clamp-2',
+          expanded
+            ? 'whitespace-pre-line break-words pr-7 text-[13px] leading-4 text-foreground'
+            : 'line-clamp-2 break-words pr-7 text-[13px] leading-4 text-foreground',
         ].join(' ')}
       >
         {value}
@@ -606,8 +629,9 @@ function ExpandableText({
       {needsClamp ? (
         <button
           type="button"
+          onMouseDown={(event) => event.stopPropagation()}
           onClick={() => setExpanded((current) => !current)}
-          className="absolute bottom-0 right-0 inline-flex h-8 w-8 items-center justify-center rounded-full text-[0.72rem] font-bold text-cyan-700 transition hover:bg-cyan-500/12 hover:text-cyan-900 dark:text-cyan-200 dark:hover:bg-cyan-300/12"
+          className="absolute bottom-0 right-0 inline-flex h-6 w-6 items-center justify-center rounded-md text-[0.68rem] font-semibold text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground"
           aria-label={expanded ? 'Collapse cell' : 'Expand cell'}
         >
           {expanded ? '▲' : '▼'}
@@ -711,16 +735,18 @@ function FinanceCommentCell({
         }}
         disabled={saving}
         placeholder="Add comment"
-        rows={expanded ? 5 : 2}
+        rows={expanded ? 4 : 1}
         className={[
-          'w-full resize-none rounded-2xl border border-slate-200/80 bg-white px-3 py-2 pr-9 text-[0.82rem] leading-5 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/25 disabled:cursor-wait disabled:opacity-70 dark:border-cyan-400/18 dark:bg-slate-950/85 dark:text-slate-100 dark:placeholder:text-slate-500',
-          expanded ? '' : 'line-clamp-2',
+          'w-full resize-none rounded-md border border-border/70 bg-popover px-2 py-1.5 pr-8 text-xs leading-5 text-popover-foreground outline-none transition-[border-color,box-shadow] duration-75 placeholder:text-muted-foreground focus:border-primary/40 focus:ring-1 focus:ring-primary/30 disabled:cursor-wait disabled:opacity-70',
+          expanded ? '' : 'h-[26px] overflow-hidden whitespace-nowrap',
         ].join(' ')}
+        title={draft}
       />
       <button
         type="button"
+        onMouseDown={(event) => event.stopPropagation()}
         onClick={() => setExpanded((current) => !current)}
-        className="absolute bottom-1 right-1 inline-flex h-8 w-8 items-center justify-center rounded-full text-[0.72rem] font-bold text-cyan-700 transition hover:bg-cyan-500/12 dark:text-cyan-200"
+        className="absolute bottom-0 right-0 inline-flex h-6 w-6 items-center justify-center rounded-md text-[0.68rem] font-semibold text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground"
         aria-label={expanded ? 'Collapse finance comment' : 'Expand finance comment'}
       >
         {expanded ? '^' : 'v'}
@@ -737,8 +763,11 @@ function BadgeSelectCell({
   value,
   saving,
   copied,
+  active,
   onCopy,
   onChange,
+  onActivate,
+  onClose,
   onOpenAudit,
 }: {
   row: SubmissionRow;
@@ -748,53 +777,117 @@ function BadgeSelectCell({
   value: string;
   saving: boolean;
   copied: boolean;
+  active: boolean;
   onCopy: () => void;
   onChange: (value: string) => Promise<void>;
+  onActivate: () => void;
+  onClose: () => void;
   onOpenAudit?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
 }) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [menuRect, setMenuRect] = useState<DOMRect | null>(null);
   const tone = getStatusTone(field, value);
   const currentValue = getEditableValue(row, field);
+  const options = getEditableOptions(field);
+
+  useEffect(() => {
+    if (!active) return undefined;
+    function handleOutside(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      if (rootRef.current?.contains(target as Node)) return;
+      if (target?.closest?.('[data-status-menu="true"]')) return;
+      onClose();
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [active, onClose]);
+
+  useEffect(() => {
+    if (!active) {
+      setMenuRect(null);
+      return;
+    }
+    const updateRect = () => {
+      const rect = rootRef.current?.getBoundingClientRect() || null;
+      setMenuRect(rect);
+    };
+    updateRect();
+    window.addEventListener('resize', updateRect);
+    window.addEventListener('scroll', updateRect, true);
+    return () => {
+      window.removeEventListener('resize', updateRect);
+      window.removeEventListener('scroll', updateRect, true);
+    };
+  }, [active]);
 
   return (
-    <div className="relative inline-flex max-w-full items-center gap-2" onDoubleClick={onCopy}>
+    <div ref={rootRef} className="relative inline-flex max-w-full items-center gap-1.5" onDoubleClick={onCopy}>
       <CopyNotice active={copied} />
-      <div className="group/status relative inline-flex max-w-full items-center">
-        <span
-          className={[STATUS_PILL_BASE, 'max-w-[132px]', tone, saving ? 'ring-2 ring-cyan-300/60 shadow-cyan-300/40' : ''].join(' ')}
+      <div className="relative max-w-full">
+        <button
+          type="button"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={editable ? (active ? onClose : onActivate) : undefined}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              onClose();
+            }
+          }}
+          className={[
+            STATUS_PILL_BASE,
+            'max-w-[124px] transition-none',
+            tone,
+            saving ? 'ring-1 ring-primary/40 bg-primary/5' : '',
+            active ? 'ring-1 ring-primary/40' : '',
+          ].join(' ')}
           title={saving ? 'Saving...' : label}
         >
           <span className="truncate">{saving ? 'Saving...' : truncateStatusLabel(label)}</span>
-          {editable ? <span className="text-[0.68rem] font-bold opacity-80">v</span> : null}
-        </span>
-        <span className="pointer-events-none absolute bottom-full left-1/2 z-[70] mb-2 min-w-36 max-w-64 -translate-x-1/2 rounded-2xl border border-cyan-200/80 bg-white/95 px-3 py-2 text-center text-xs font-semibold text-slate-900 opacity-0 shadow-[0_18px_48px_-28px_rgba(15,104,168,0.52)] transition duration-100 group-hover/status:-translate-y-0.5 group-hover/status:opacity-100 dark:border-cyan-400/24 dark:bg-[#07111d]/95 dark:text-slate-50">
-          {saving ? 'Saving...' : label}
-        </span>
-        {editable ? (
-          <select
-            value={currentValue}
-            disabled={saving}
-            onChange={(event) => void onChange(event.target.value)}
-            onDoubleClick={onCopy}
-            className="absolute inset-0 cursor-pointer appearance-none rounded-full opacity-0"
-            aria-label={COLUMN_TITLES[field as SheetColumnId]}
+          {editable ? <span className="text-[10px] font-semibold opacity-70">v</span> : null}
+        </button>
+        {editable && active && menuRect && typeof document !== 'undefined'
+          ? createPortal(
+          <div
+            data-status-menu="true"
+            className="fixed z-[9999] min-w-[152px] rounded-md border border-border/70 bg-popover p-1 text-popover-foreground shadow-sm"
+            style={{ top: menuRect.bottom + 4, left: menuRect.left }}
           >
-            {getEditableOptions(field).map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            {options.map((option) => {
+              const selected = option.value === currentValue;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={saving}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    void onChange(option.value).finally(onClose);
+                  }}
+                  className={[
+                    'flex w-full items-center justify-between rounded-sm px-2 py-1 text-left text-[11px] transition-none hover:bg-muted/40',
+                    selected ? 'bg-primary/5 text-foreground' : 'text-popover-foreground',
+                  ].join(' ')}
+                >
+                  <span className="truncate">{option.label}</span>
+                  {selected ? <span className="ml-2 text-[10px] text-primary">•</span> : null}
+                </button>
+              );
+            })}
+          </div>,
+          document.body
         ) : null}
       </div>
       {onOpenAudit ? (
         <button
           type="button"
+          onMouseDown={(event) => event.stopPropagation()}
           onClick={onOpenAudit}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-950 transition duration-100 hover:bg-slate-900/6 dark:text-slate-100 dark:hover:bg-white/8"
+          className="inline-flex h-5 w-5 items-center justify-center rounded-md text-foreground transition-none hover:bg-muted/40"
           aria-label="Open audit details"
           title="Status audit"
         >
-          <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current text-[0.62rem] font-semibold leading-none opacity-80">
+          <span className="inline-flex h-3 w-3 items-center justify-center rounded-full border border-current text-[0.5rem] font-medium leading-none opacity-85">
             i
           </span>
         </button>
@@ -802,6 +895,89 @@ function BadgeSelectCell({
     </div>
   );
 }
+
+const MemoDataCell = memo(function MemoDataCell({
+  rowRef,
+  rowIndex,
+  columnIndex,
+  sticky,
+  cellStyle,
+  isFocused,
+  isActiveEditor,
+  isCopied,
+  flash,
+  isSaving,
+  registerCellRef,
+  onFocusCell,
+  onClickCell,
+  onKeyDownCell,
+  renderContent,
+}: {
+  rowRef: SubmissionRow;
+  rowIndex: number;
+  columnIndex: number;
+  sticky: boolean;
+  cellStyle: CSSProperties;
+  isFocused: boolean;
+  isActiveEditor: boolean;
+  isCopied: boolean;
+  flash: FlashState | null;
+  isSaving: boolean;
+  registerCellRef: (key: string, node: HTMLTableCellElement | null) => void;
+  onFocusCell: (rowIndex: number, columnIndex: number) => void;
+  onClickCell: (rowIndex: number, columnIndex: number) => void;
+  onKeyDownCell: (event: ReactKeyboardEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) => void;
+  renderContent: () => ReactNode;
+}) {
+  return (
+    <td
+      ref={(node) => registerCellRef(`${rowIndex}:${columnIndex}`, node)}
+      data-sheet-cell={`${rowIndex}:${columnIndex}`}
+      data-row-id={rowRef.id}
+      data-active-editor={isActiveEditor ? 'true' : undefined}
+      data-copied={isCopied ? 'true' : undefined}
+      tabIndex={0}
+      onFocus={() => onFocusCell(rowIndex, columnIndex)}
+      onClick={() => onClickCell(rowIndex, columnIndex)}
+      onKeyDown={(event) => onKeyDownCell(event, rowIndex, columnIndex)}
+      className={[
+        'relative h-9 max-h-10 border-b border-r border-border/50 px-2.5 py-1 align-middle text-[12px] leading-4 text-foreground outline-none transition-none group-hover:bg-muted/30',
+        isActiveEditor ? 'z-50 overflow-visible' : 'overflow-hidden',
+        sticky ? 'bg-card border-r border-border/60 group-hover:bg-muted/30' : 'bg-card',
+        isFocused ? 'bg-primary/5 ring-1 ring-primary/40 ring-inset' : '',
+      ].join(' ')}
+      style={cellStyle}
+    >
+      {renderContent()}
+      {isSaving ? (
+        <span className="pointer-events-none absolute right-1.5 top-1.5 rounded-full bg-cyan-500 px-1.5 py-0.5 text-[9px] font-semibold text-white dark:bg-cyan-300 dark:text-slate-950">
+          Saving...
+        </span>
+      ) : null}
+      {flash ? (
+        <span
+          className={[
+            'pointer-events-none absolute right-1.5 top-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-semibold',
+            flashToneClasses(flash.tone),
+          ].join(' ')}
+        >
+          {flash.message}
+        </span>
+      ) : null}
+    </td>
+  );
+}, (prev, next) =>
+  prev.rowRef === next.rowRef &&
+  prev.rowIndex === next.rowIndex &&
+  prev.columnIndex === next.columnIndex &&
+  prev.sticky === next.sticky &&
+  prev.isFocused === next.isFocused &&
+  prev.isActiveEditor === next.isActiveEditor &&
+  prev.isCopied === next.isCopied &&
+  prev.isSaving === next.isSaving &&
+  prev.flash?.message === next.flash?.message &&
+  prev.flash?.tone === next.flash?.tone
+);
 
 export function SubmissionTable({
   rows,
@@ -823,13 +999,14 @@ export function SubmissionTable({
   void columns;
   const activeColumns = useMemo(() => getColumns(viewer), [viewer]);
   const isFinanceViewer = viewer === 'finance' || viewer === 'admin';
-  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [flash, setFlash] = useState<FlashState | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [auditPopover, setAuditPopover] = useState<{ key: string; rect: DOMRect; row: SubmissionRow } | null>(null);
   const [focusedCell, setFocusedCell] = useState<{ rowIndex: number; columnIndex: number } | null>(null);
+  const [activeEditor, setActiveEditor] = useState<{ rowIndex: number; columnIndex: number } | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const cellRefs = useRef(new Map<string, HTMLTableCellElement>());
 
   useEffect(() => {
     if (!flash) return undefined;
@@ -842,6 +1019,14 @@ export function SubmissionTable({
     const timer = window.setTimeout(() => setCopiedKey(null), 1200);
     return () => window.clearTimeout(timer);
   }, [copiedKey]);
+
+  useEffect(() => {
+    if (!activeEditor) return undefined;
+    const cell = cellRefs.current.get(`${activeEditor.rowIndex}:${activeEditor.columnIndex}`);
+    const target = cell?.querySelector<HTMLElement>('button, textarea');
+    target?.focus();
+    return undefined;
+  }, [activeEditor]);
 
   const copyCell = useCallback(async (key: string, text: string) => {
     const value = text.trim();
@@ -887,14 +1072,12 @@ export function SubmissionTable({
     setAuditPopover({ key: `${row.id}:${field}`, rect, row });
   }
 
-  function stickyStyle(column: SheetColumnId, hovered: boolean): CSSProperties | undefined {
+  function stickyStyle(column: SheetColumnId): CSSProperties | undefined {
     if (column !== 'pi' && column !== 'intake_status') return undefined;
     return {
       position: 'sticky',
       left: STICKY_LEFTS[column],
-      zIndex: column === 'intake_status' ? 24 : 23,
-      background: hovered ? 'rgb(232, 245, 255)' : 'rgb(255,255,255)',
-      boxShadow: '10px 0 28px -24px rgba(14, 67, 120, 0.42)',
+      zIndex: column === 'intake_status' ? 36 : 35,
     };
   }
 
@@ -903,42 +1086,92 @@ export function SubmissionTable({
     return {
       position: 'sticky',
       left: STICKY_LEFTS[column],
-      zIndex: column === 'intake_status' ? 48 : 47,
-      background: 'linear-gradient(135deg, #16a6e0 0%, #1db7ea 48%, #47caef 100%)',
-      boxShadow: '10px 0 28px -24px rgba(17, 138, 193, 0.52)',
+      zIndex: column === 'intake_status' ? 62 : 61,
     };
   }
 
-  function focusCell(rowIndex: number, columnIndex: number) {
+  const focusCell = useCallback((rowIndex: number, columnIndex: number) => {
     const nextRow = Math.max(0, Math.min(rows.length - 1, rowIndex));
     const nextColumn = Math.max(0, Math.min(activeColumns.length - 1, columnIndex));
     setFocusedCell({ rowIndex: nextRow, columnIndex: nextColumn });
-    window.requestAnimationFrame(() => {
-      const cell = viewportRef.current?.querySelector<HTMLElement>(
-        `[data-sheet-cell="${nextRow}:${nextColumn}"]`
-      );
-      cell?.focus({ preventScroll: true });
-      cell?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
-    });
-  }
+    const cell = cellRefs.current.get(`${nextRow}:${nextColumn}`);
+    const viewport = viewportRef.current;
+    cell?.focus({ preventScroll: true });
+    if (!cell || !viewport) return;
 
-  function handleCellKeyDown(event: ReactKeyboardEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) {
+    const cellRect = cell.getBoundingClientRect();
+    const viewportRect = viewport.getBoundingClientRect();
+    const stickyWidth = COLUMN_WIDTHS.pi + COLUMN_WIDTHS.intake_status + 8;
+
+    if (cellRect.left < viewportRect.left + stickyWidth) {
+      viewport.scrollLeft -= viewportRect.left + stickyWidth - cellRect.left;
+    } else if (cellRect.right > viewportRect.right - 8) {
+      viewport.scrollLeft += cellRect.right - (viewportRect.right - 8);
+    }
+
+    if (cellRect.top < viewportRect.top + 4) {
+      viewport.scrollTop -= viewportRect.top + 4 - cellRect.top;
+    } else if (cellRect.bottom > viewportRect.bottom - 4) {
+      viewport.scrollTop += cellRect.bottom - (viewportRect.bottom - 4);
+    }
+  }, [activeColumns.length, rows.length]);
+
+  const registerCellRef = useCallback((key: string, node: HTMLTableCellElement | null) => {
+    if (node) cellRefs.current.set(key, node);
+    else cellRefs.current.delete(key);
+  }, []);
+
+  const handleCellFocus = useCallback((rowIndex: number, columnIndex: number) => {
+    setFocusedCell({ rowIndex, columnIndex });
+  }, []);
+
+  const handleCellClick = useCallback((rowIndex: number, columnIndex: number) => {
+    setFocusedCell({ rowIndex, columnIndex });
+    setActiveEditor((current) =>
+      current && (current.rowIndex !== rowIndex || current.columnIndex !== columnIndex) ? null : current
+    );
+  }, []);
+
+  const handleCellKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) => {
+    const column = activeColumns[columnIndex];
+    const isEditableStatusCell =
+      isFinanceViewer &&
+      (
+        column === 'intake_status' ||
+        column === 'invoice_status' ||
+        column === 'creator_invoice_received' ||
+        column === 'payment_received' ||
+        column === 'payment_made' ||
+        column === 'closed_status'
+      );
+
     if (event.key === 'ArrowRight') {
       event.preventDefault();
+      setActiveEditor(null);
       focusCell(rowIndex, columnIndex + 1);
     } else if (event.key === 'ArrowLeft') {
       event.preventDefault();
+      setActiveEditor(null);
       focusCell(rowIndex, columnIndex - 1);
     } else if (event.key === 'ArrowDown') {
       event.preventDefault();
+      setActiveEditor(null);
       focusCell(rowIndex + 1, columnIndex);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
+      setActiveEditor(null);
       focusCell(rowIndex - 1, columnIndex);
+    } else if (event.key === 'Enter' && isEditableStatusCell) {
+      event.preventDefault();
+      setActiveEditor({ rowIndex, columnIndex });
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setActiveEditor(null);
+      focusCell(rowIndex, columnIndex);
     }
-  }
+  }, [activeColumns, focusCell, isFinanceViewer]);
 
-  function renderCell(column: SheetColumnId, row: SubmissionRow) {
+  function renderCell(column: SheetColumnId, row: SubmissionRow, rowIndex: number, columnIndex: number) {
     const cellKey = `${row.id}:${column}`;
     const creatorData = getCreatorData(row);
     const isCopied = copiedKey === cellKey;
@@ -957,9 +1190,9 @@ export function SubmissionTable({
                 ? 'border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-300/20 dark:bg-blue-300/12 dark:text-blue-100'
                 : 'border-slate-300/80 bg-slate-100 text-slate-700 dark:border-slate-300/12 dark:bg-slate-200/10 dark:text-slate-100';
         return (
-          <div className="relative" onDoubleClick={() => void copyCell(cellKey, row.pi)}>
+          <div className="relative" onDoubleClick={() => void copyCell(cellKey, row.pi)} title={row.pi}>
             <CopyNotice active={isCopied} />
-            <span className={['inline-flex rounded-full border px-3.5 py-1.5 text-[0.9rem] font-semibold tracking-[-0.01em]', piClasses].join(' ')}>
+            <span className={['inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium', piClasses].join(' ')}>
               {row.pi}
             </span>
           </div>
@@ -986,8 +1219,11 @@ export function SubmissionTable({
             value={rawValue}
             saving={isSaving}
             copied={isCopied}
+            active={activeEditor?.rowIndex === rowIndex && activeEditor?.columnIndex === columnIndex}
             onCopy={() => void copyCell(cellKey, label)}
             onChange={(value) => updateFinanceValue(row, field, value)}
+            onActivate={() => setActiveEditor({ rowIndex, columnIndex })}
+            onClose={() => setActiveEditor(null)}
             onOpenAudit={editable && STATUS_AUDIT_FIELDS.has(field) ? (event) => openAudit(row, field, event) : undefined}
           />
         );
@@ -1069,7 +1305,7 @@ export function SubmissionTable({
           <button
             type="button"
             onClick={() => onOpen?.(row.id)}
-            className="inline-flex items-center rounded-full border border-cyan-300/60 bg-white px-3.5 py-1.5 text-[0.8rem] font-semibold text-slate-800 shadow-sm transition duration-100 hover:border-cyan-400 hover:bg-cyan-500/8 hover:text-cyan-900 dark:border-cyan-400/18 dark:bg-slate-950/70 dark:text-slate-100 dark:hover:bg-cyan-400/12 dark:hover:text-cyan-100"
+            className="inline-flex h-6 items-center rounded-md border border-border/70 bg-card px-2 text-[11px] font-medium text-foreground hover:bg-muted/30"
           >
             {getActionLabel ? getActionLabel(row) : 'View'}
           </button>
@@ -1080,32 +1316,31 @@ export function SubmissionTable({
   }
 
   return (
-    <div className="max-w-full overflow-hidden rounded-[22px] border border-slate-200/85 bg-white/95 shadow-[0_18px_50px_-38px_rgba(22,82,142,0.28)] dark:border-cyan-400/14 dark:bg-[#07111d]">
+    <div className="max-w-full overflow-hidden rounded-xl border border-border/70 bg-card">
       <div
         ref={viewportRef}
-        className="max-w-full overflow-auto"
+        className="max-w-full overflow-auto [scrollbar-width:thin]"
         style={{
           maxHeight: '610px',
-          scrollSnapType: 'x proximity',
           overscrollBehaviorX: 'contain',
           overscrollBehaviorY: 'contain',
           position: 'relative',
           isolation: 'isolate',
           touchAction: 'pan-x pan-y',
-          scrollBehavior: 'smooth',
           WebkitOverflowScrolling: 'touch',
           scrollbarGutter: 'stable both-edges',
-          willChange: 'scroll-position',
-          contain: 'paint layout',
         }}
       >
-        <table className="min-w-max border-separate border-spacing-0 text-sm">
+        <table className="min-w-max border-separate border-spacing-0 text-[13px]">
           <thead>
             <tr>
               {activeColumns.map((column) => (
                 <th
                   key={column}
-                  className="snap-start border-b border-r border-cyan-100/70 bg-[linear-gradient(135deg,#16a6e0_0%,#1db7ea_48%,#47caef_100%)] px-2.5 py-2 text-left text-[0.72rem] font-semibold uppercase tracking-[0.05em] text-white shadow-[inset_0_-1px_0_rgba(255,255,255,0.14)]"
+                  className={[
+                    'h-8 overflow-hidden border-b border-r border-border/60 bg-card px-2.5 py-1 text-left text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground',
+                    column === 'pi' || column === 'intake_status' ? 'bg-card border-r border-border/60' : '',
+                  ].join(' ')}
                   style={{
                     width: COLUMN_WIDTHS[column],
                     minWidth: COLUMN_WIDTHS[column],
@@ -1122,67 +1357,36 @@ export function SubmissionTable({
           </thead>
           <tbody>
             {rows.map((row, rowIndex) => {
-              const hovered = hoveredRow === row.id;
               return (
-                <tr
-                  key={row.id}
-                  onMouseEnter={() => setHoveredRow(row.id)}
-                  onMouseLeave={() => setHoveredRow((current) => (current === row.id ? null : current))}
-                >
+                <tr key={row.id} className="group">
                   {activeColumns.map((column, columnIndex) => {
                     const sticky = column === 'pi' || column === 'intake_status';
                     const isFocused = focusedCell?.rowIndex === rowIndex && focusedCell.columnIndex === columnIndex;
-                    const financeTint =
-                      isFinanceViewer &&
-                      (column === 'intake_status' ||
-                        column === 'invoice_status' ||
-                        column === 'invoice_number' ||
-                        column === 'debit_note_number' ||
-                        column === 'creator_invoice_received' ||
-                        column === 'payment_received' ||
-                        column === 'payment_made' ||
-                        column === 'closed_status' ||
-                        column === 'finance_comment');
+                    const flashForCell = flash?.key === `${row.id}:${column}` ? flash : null;
 
                     return (
-                      <td
+                      <MemoDataCell
                         key={`${row.id}:${column}`}
-                        data-sheet-cell={`${rowIndex}:${columnIndex}`}
-                        tabIndex={0}
-                        onFocus={() => setFocusedCell({ rowIndex, columnIndex })}
-                        onClick={() => setFocusedCell({ rowIndex, columnIndex })}
-                        onKeyDown={(event) => handleCellKeyDown(event, rowIndex, columnIndex)}
-                        className={[
-                          'relative snap-start border-b border-r border-cyan-100/75 px-2.5 py-2 align-top text-[0.8rem] text-slate-700 outline-none transition-colors duration-100 dark:border-cyan-400/10 dark:text-slate-100',
-                          hovered
-                            ? 'bg-sky-50/90 shadow-[inset_0_0_0_1px_rgba(52,193,255,0.12)] dark:bg-cyan-950/30'
-                            : 'bg-white dark:bg-[#07111d]',
-                          financeTint && !sticky ? 'bg-cyan-50/24 dark:bg-[#081523]' : '',
-                          isFocused ? 'shadow-[inset_0_0_0_2px_rgba(14,165,233,0.42)]' : '',
-                        ].join(' ')}
-                        style={{
+                        rowRef={row}
+                        rowIndex={rowIndex}
+                        columnIndex={columnIndex}
+                        sticky={sticky}
+                        cellStyle={{
                           width: COLUMN_WIDTHS[column],
                           minWidth: COLUMN_WIDTHS[column],
-                          ...stickyStyle(column, hovered),
+                          ...stickyStyle(column),
                         }}
-                      >
-                        {renderCell(column, row)}
-                        {savingKey === `${row.id}:${column}` ? (
-                          <span className="pointer-events-none absolute right-2 top-2 rounded-full bg-cyan-500 px-2 py-0.5 text-[10px] font-semibold text-white shadow-lg dark:bg-cyan-300 dark:text-slate-950">
-                            Saving...
-                          </span>
-                        ) : null}
-                        {flash?.key === `${row.id}:${column}` ? (
-                          <span
-                            className={[
-                              'pointer-events-none absolute right-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-semibold shadow-lg',
-                              flashToneClasses(flash.tone),
-                            ].join(' ')}
-                          >
-                            {flash.message}
-                          </span>
-                        ) : null}
-                      </td>
+                        isFocused={isFocused}
+                        isActiveEditor={activeEditor?.rowIndex === rowIndex && activeEditor?.columnIndex === columnIndex}
+                        isCopied={copiedKey === `${row.id}:${column}`}
+                        flash={flashForCell}
+                        isSaving={savingKey === `${row.id}:${column}`}
+                        registerCellRef={registerCellRef}
+                        onFocusCell={handleCellFocus}
+                        onClickCell={handleCellClick}
+                        onKeyDownCell={handleCellKeyDown}
+                        renderContent={() => renderCell(column, row, rowIndex, columnIndex)}
+                      />
                     );
                   })}
                 </tr>
@@ -1192,7 +1396,7 @@ export function SubmissionTable({
               <tr>
                 <td
                   colSpan={activeColumns.length}
-                  className="border-b border-cyan-100/75 px-6 py-16 text-center text-sm text-slate-500 dark:border-cyan-400/10 dark:text-slate-400"
+                  className="border-b border-border/50 px-6 py-12 text-center text-sm text-muted-foreground"
                 >
                   {emptyLabel || 'No submissions yet.'}
                 </td>

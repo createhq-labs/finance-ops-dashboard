@@ -95,6 +95,7 @@ export default function EmployeeSubmissionsPage() {
   const [intakeStatusFilter, setIntakeStatusFilter] = useState<'all' | SubmissionRow['intake_status']>('all');
   const [versionStatusFilter, setVersionStatusFilter] = useState<'all' | NonNullable<SubmissionRow['version_status']>>('all');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<EmployeePaymentFilter>('all');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [rows, setRows] = useState<SubmissionRow[]>([]);
   const [rowsLoading, setRowsLoading] = useState(true);
   const [rowsError, setRowsError] = useState('');
@@ -207,6 +208,12 @@ export default function EmployeeSubmissionsPage() {
     });
   }, [intakeStatusFilter, paymentStatusFilter, query, rows, versionStatusFilter]);
   const row = useMemo(() => filteredRows.find((entry) => entry.id === openId) || null, [filteredRows, openId]);
+  const activeAdvancedFilterCount = [versionStatusFilter !== 'all', paymentStatusFilter !== 'all'].filter(Boolean).length;
+
+  function resetAdvancedFilters() {
+    setVersionStatusFilter('all');
+    setPaymentStatusFilter('all');
+  }
 
   useEffect(() => {
     const submissionId = searchParams.get('submission_id');
@@ -231,50 +238,67 @@ export default function EmployeeSubmissionsPage() {
       />
 
       <SectionCard padding={16}>
-        <div className="intake-form-grid">
-          <label className="intake-field">
-            <span className="intake-label">Search</span>
-            <input
-              className="intake-input"
-              placeholder="Search PI, entity, creator, or brand"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Intake Status</span>
-            <select className="intake-input" value={intakeStatusFilter} onChange={(e) => setIntakeStatusFilter(e.target.value as 'all' | SubmissionRow['intake_status'])}>
-              <option value="all">All</option>
-              <option value="submitted">Submitted</option>
-              <option value="accepted">Accepted</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Version Status</span>
-            <select
-              className="intake-input"
-              value={versionStatusFilter}
-              onChange={(e) => setVersionStatusFilter(e.target.value as 'all' | NonNullable<SubmissionRow['version_status']>)}
-            >
-              <option value="all">All</option>
-              <option value="original">Original</option>
-              <option value="resubmitted">Resubmitted</option>
-              <option value="superseded">Superseded</option>
-            </select>
-          </label>
-          <label className="intake-field">
-            <span className="intake-label">Payment Status</span>
-            <select className="intake-input" value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value as EmployeePaymentFilter)}>
-              <option value="all">All</option>
-              <option value="pending">Pending</option>
-              <option value="partial">Partial</option>
-              <option value="paid">Paid</option>
-              <option value="received">Received</option>
-              <option value="not_paid">Not Paid</option>
-              <option value="not_received">Not Received</option>
-            </select>
-          </label>
+        <div className="grid gap-3">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(0,0.8fr)_auto]">
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-muted-foreground">Search</span>
+              <input
+                className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
+                placeholder="Search PI, entity, creator, or brand"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-medium text-muted-foreground">Status</span>
+              <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={intakeStatusFilter} onChange={(e) => setIntakeStatusFilter(e.target.value as 'all' | SubmissionRow['intake_status'])}>
+                <option value="all">All</option>
+                <option value="submitted">Submitted</option>
+                <option value="accepted">Accepted</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </label>
+            <div className="flex items-end">
+              <button className="btn w-full md:w-auto" type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
+                More Filters{activeAdvancedFilterCount > 0 ? ` (${activeAdvancedFilterCount})` : ''}
+              </button>
+            </div>
+          </div>
+
+          {showAdvancedFilters ? (
+            <div className="rounded-xl border border-border/60 bg-card/90 p-3 dark:bg-card/70">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-2">
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Version Status</span>
+                  <select
+                    className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
+                    value={versionStatusFilter}
+                    onChange={(e) => setVersionStatusFilter(e.target.value as 'all' | NonNullable<SubmissionRow['version_status']>)}
+                  >
+                    <option value="all">All</option>
+                    <option value="original">Original</option>
+                    <option value="resubmitted">Resubmitted</option>
+                    <option value="superseded">Superseded</option>
+                  </select>
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Payment Status</span>
+                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value as EmployeePaymentFilter)}>
+                    <option value="all">All</option>
+                    <option value="pending">Pending</option>
+                    <option value="partial">Partial</option>
+                    <option value="paid">Paid</option>
+                    <option value="received">Received</option>
+                    <option value="not_paid">Not Paid</option>
+                    <option value="not_received">Not Received</option>
+                  </select>
+                </label>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button className="btn" type="button" onClick={resetAdvancedFilters}>Reset Advanced</button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </SectionCard>
 
