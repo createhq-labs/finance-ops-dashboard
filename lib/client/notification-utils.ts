@@ -12,6 +12,7 @@ export type NotificationRow = {
 };
 
 export type NotificationCategory = 'needs_action' | 'master_data' | 'updates';
+export type NotificationTone = 'danger' | 'warning' | 'action' | 'info' | 'success' | 'neutral';
 
 export function getNotificationCategory(type: string): NotificationCategory {
   if (
@@ -36,6 +37,36 @@ export function getNotificationCategoryLabel(category: NotificationCategory) {
   if (category === 'needs_action') return 'Needs Action';
   if (category === 'master_data') return 'Master Data';
   return 'Updates';
+}
+
+export function getNotificationDisplayType(type: string, role?: string | null) {
+  if (role === 'employee' && type === 'submission_rejected') {
+    return 'Correction Requested';
+  }
+
+  return formatNotificationType(type);
+}
+
+export function getNotificationTone(type: string): NotificationTone {
+  if (type === 'submission_rejected') return 'danger';
+  if (type === 'resubmission_requested' || type === 'resubmitted_form') return 'warning';
+  if (type === 'finance_action_pending') return 'action';
+  if (type === 'new_submission') return 'success';
+  if (type === 'pending_master_data_review' || type === 'invoice_updated') return 'info';
+  return 'neutral';
+}
+
+export function sortNotificationsLatestFirst<T extends Pick<NotificationRow, 'created_at'>>(items: T[]) {
+  return [...items].sort((left, right) => {
+    const leftTime = new Date(left.created_at).getTime();
+    const rightTime = new Date(right.created_at).getTime();
+
+    if (Number.isNaN(leftTime) && Number.isNaN(rightTime)) return 0;
+    if (Number.isNaN(leftTime)) return 1;
+    if (Number.isNaN(rightTime)) return -1;
+
+    return rightTime - leftTime;
+  });
 }
 
 export function formatNotificationType(type: string) {
