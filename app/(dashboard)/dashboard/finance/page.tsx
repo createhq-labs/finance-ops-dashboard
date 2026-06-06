@@ -962,18 +962,6 @@ export default function FinanceReviewPage() {
         description="Finance and admin roles can review all submissions, filter by workflow, update invoice/payment lifecycle fields, and request corrected resubmissions safely."
       />
 
-      {searchParams.get('submission_id') || searchParams.get('review_id') ? (
-        <SectionCard padding={16}>
-          <strong>Notification Context</strong>
-          <div className="text-muted">
-            {searchParams.get('review_id') ? `Open pending master-data review ${searchParams.get('review_id')}` : null}
-            {searchParams.get('review_id') && searchParams.get('submission_id') ? ' for ' : null}
-            {searchParams.get('submission_id') ? `submission ${searchParams.get('submission_id')}` : null}
-            {searchParams.get('context') ? ` (${searchParams.get('context')?.replace('_', ' ')})` : null}
-          </div>
-        </SectionCard>
-      ) : null}
-
       <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
         <KpiCard title="Pending Review" value={String(pendingCount)} hint="Requires finance action" />
         <KpiCard title="Accepted" value={String(acceptedCount)} hint="Approved by finance" />

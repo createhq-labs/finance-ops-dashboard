@@ -3,11 +3,15 @@
 import Link from 'next/link';
 import { Bell, Check, ExternalLink, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDashboardSession } from '../layout/dashboard-session';
+import { isEmployeeRole } from '../../lib/client/dashboard-access';
 import {
-  formatNotificationType,
+  getNotificationDisplayType,
+  getNotificationTone,
   formatRelativeTime,
   getNotificationCategory,
   getNotificationCategoryLabel,
+  sortNotificationsLatestFirst,
   type NotificationCategory,
   type NotificationRow,
 } from '../../lib/client/notification-utils';
@@ -18,30 +22,51 @@ type Props = {
 
 const CATEGORY_ORDER: NotificationCategory[] = ['needs_action', 'master_data', 'updates'];
 
-function NotificationTypeChip({ type }: { type: string }) {
-  const category = getNotificationCategory(type);
-  const tone =
-    category === 'needs_action'
-      ? 'border-orange-200/70 bg-orange-50 text-orange-700 dark:border-orange-400/20 dark:bg-orange-400/10 dark:text-orange-200'
-      : category === 'master_data'
-        ? 'border-cyan-200/70 bg-cyan-50 text-cyan-700 dark:border-cyan-400/20 dark:bg-cyan-400/10 dark:text-cyan-200'
-        : 'border-slate-200/80 bg-slate-50 text-slate-600 dark:border-slate-400/20 dark:bg-slate-400/10 dark:text-slate-200';
+function getToneTextClass(type: NotificationRow['type'], isEmployeeView: boolean) {
+  if (isEmployeeView && type === 'resubmission_requested') return 'text-destructive';
 
-  return (
-    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium ${tone}`}>
-      {formatNotificationType(type)}
-    </span>
-  );
+  const tone = getNotificationTone(type);
+
+  if (tone === 'danger') return 'text-destructive';
+  if (tone === 'warning') return 'text-violet-700 dark:text-violet-300';
+  if (tone === 'action') return 'text-orange-700 dark:text-orange-300';
+  if (tone === 'info') return 'text-sky-700 dark:text-sky-300';
+  if (tone === 'success') return 'text-emerald-700 dark:text-emerald-300';
+  return 'text-foreground';
+}
+
+function getCategoryHeaderClass(category: NotificationCategory) {
+  if (category === 'needs_action') {
+    return {
+      section: 'bg-muted/10',
+      badge: 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    };
+  }
+
+  if (category === 'master_data') {
+    return {
+      section: 'bg-muted/10',
+      badge: 'border-indigo-500/25 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300',
+    };
+  }
+
+  return {
+    section: 'bg-muted/10',
+    badge: 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300',
+  };
 }
 
 export function NotificationBellIcon({ onUnreadCountChange }: Props) {
+  const { user } = useDashboardSession();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
+  const [apiUnreadCount, setApiUnreadCount] = useState(0);
   const [showAllUpdates, setShowAllUpdates] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  const isEmployeeView = !!user && isEmployeeRole(user.role);
 
-  const unreadCount = useMemo(() => notifications.filter((item) => !item.is_read).length, [notifications]);
+  const unreadCount = apiUnreadCount;
 
   const grouped = useMemo(
     () =>
@@ -61,9 +86,11 @@ export function NotificationBellIcon({ onUnreadCountChange }: Props) {
       });
       const json = await res.json().catch(() => ({}));
       if (res.ok && json?.success && Array.isArray(json.notifications)) {
-        const next = json.notifications as NotificationRow[];
+        const next = sortNotificationsLatestFirst(json.notifications as NotificationRow[]);
         setNotifications(next);
-        onUnreadCountChange?.(Number(json.unread_count ?? next.filter((item) => !item.is_read).length));
+        const nextUnreadCount = Number(json.unread_count ?? 0);
+        setApiUnreadCount(nextUnreadCount);
+        onUnreadCountChange?.(nextUnreadCount);
       }
     } finally {
       setLoading(false);
@@ -91,10 +118,6 @@ export function NotificationBellIcon({ onUnreadCountChange }: Props) {
     return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [open]);
 
-  useEffect(() => {
-    onUnreadCountChange?.(unreadCount);
-  }, [onUnreadCountChange, unreadCount]);
-
   async function markRead(id: string) {
     await fetch('/api/notifications/read', {
       method: 'POST',
@@ -102,7 +125,20 @@ export function NotificationBellIcon({ onUnreadCountChange }: Props) {
       body: JSON.stringify({ id }),
     });
 
-    setNotifications((prev) => prev.map((item) => (item.id === id ? { ...item, is_read: true } : item)));
+    setNotifications((prev) => {
+      const current = prev.find((item) => item.id === id);
+      const next = prev.map((item) => (item.id === id ? { ...item, is_read: true } : item));
+
+      if (current && !current.is_read) {
+        setApiUnreadCount((count) => {
+          const nextCount = Math.max(0, count - 1);
+          onUnreadCountChange?.(nextCount);
+          return nextCount;
+        });
+      }
+
+      return next;
+    });
   }
 
   async function markAllRead() {
@@ -113,6 +149,8 @@ export function NotificationBellIcon({ onUnreadCountChange }: Props) {
     });
 
     setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true })));
+    setApiUnreadCount(0);
+    onUnreadCountChange?.(0);
   }
 
   return (
@@ -120,21 +158,21 @@ export function NotificationBellIcon({ onUnreadCountChange }: Props) {
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-sm transition-colors hover:bg-muted/50"
+        className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-sm transition-colors hover:bg-muted/30"
         title="Notifications"
         aria-label="Notifications"
       >
         <Bell size={16} className="text-foreground" />
         {unreadCount > 0 ? (
           <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
-            {unreadCount > 9 ? '9+' : unreadCount}
+            {unreadCount}
           </span>
         ) : null}
       </button>
 
       {open ? (
-        <div className="fixed right-4 top-14 z-50 flex max-h-[440px] w-[360px] flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-xl">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="surface fixed right-4 top-14 z-50 flex max-h-[420px] w-[360px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-lg">
+          <div className="flex items-center justify-between border-b border-border/70 bg-popover px-4 py-3">
             <div>
               <h3 className="text-sm font-semibold">Notifications</h3>
               <p className="text-xs text-muted-foreground">{unreadCount} unread</p>
@@ -142,7 +180,7 @@ export function NotificationBellIcon({ onUnreadCountChange }: Props) {
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground"
               aria-label="Close notifications"
             >
               <X size={16} />
@@ -159,55 +197,65 @@ export function NotificationBellIcon({ onUnreadCountChange }: Props) {
                 if (items.length === 0) return null;
 
                 const visibleItems = category === 'updates' && !showAllUpdates ? items.slice(0, 2) : items;
+                const categoryClasses = getCategoryHeaderClass(category);
 
                 return (
                   <section key={category}>
-                    <div className="border-b border-border/60 bg-muted/30 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      {getNotificationCategoryLabel(category)} ({items.length})
+                    <div className={`flex items-center justify-between border-b border-border/60 px-4 py-1.5 ${categoryClasses.section}`}>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                        {getNotificationCategoryLabel(category)}
+                      </span>
+                      <span className={`inline-flex min-w-5 items-center justify-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${categoryClasses.badge}`}>
+                        {items.length}
+                      </span>
                     </div>
 
                     <div className="divide-y divide-border/60">
                       {visibleItems.map((item) => (
                         <article
                           key={item.id}
-                          className={`grid gap-1 px-4 py-3 transition-colors hover:bg-muted/40 ${item.is_read ? 'bg-popover' : 'bg-primary/5'}`}
+                          className={[
+                            'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-2 transition-colors hover:bg-muted/15',
+                            item.is_read ? 'bg-popover' : 'border-l-2 border-l-[rgba(34,211,238,0.65)] bg-[linear-gradient(90deg,rgba(34,211,238,0.10),transparent)]',
+                          ].join(' ')}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
-                                <NotificationTypeChip type={item.type} />
-                              </div>
-                              <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{item.message}</p>
-                            </div>
-
-                            <div className="flex shrink-0 items-center gap-2">
-                              {!item.is_read ? (
-                                <button
-                                  type="button"
-                                  onClick={() => void markRead(item.id)}
-                                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                                  title="Mark as read"
-                                >
-                                  <Check size={14} />
-                                </button>
-                              ) : null}
-                              <Link
-                                href={item.target_path}
-                                onClick={() => {
-                                  if (!item.is_read) void markRead(item.id);
-                                  setOpen(false);
-                                }}
-                                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/40"
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              {!item.is_read ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-destructive" /> : null}
+                              <p
+                                className={`truncate text-sm ${item.is_read ? 'font-medium' : 'font-semibold'} ${getToneTextClass(item.type, isEmployeeView)}`}
                               >
-                                Open <ExternalLink size={12} />
-                              </Link>
+                                {item.title}
+                              </p>
+                            </div>
+                            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{item.message}</p>
+                            <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                              <span className={getToneTextClass(item.type, isEmployeeView)}>{getNotificationDisplayType(item.type, user?.role)}</span>
+                              <span>&middot;</span>
+                              <span>{formatRelativeTime(item.created_at)}</span>
                             </div>
                           </div>
 
-                          <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
-                            <span>{formatRelativeTime(item.created_at)}</span>
-                            <span className="truncate">{item.target_path}</span>
+                          <div className="row-span-2 flex items-center gap-1">
+                            {!item.is_read ? (
+                              <button
+                                type="button"
+                                onClick={() => void markRead(item.id)}
+                                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground"
+                                title="Mark as read"
+                              >
+                                <Check size={13} />
+                              </button>
+                            ) : null}
+                            <Link
+                              href={item.target_path}
+                              onClick={() => {
+                                setOpen(false);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/20"
+                            >
+                              Open <ExternalLink size={12} />
+                            </Link>
                           </div>
                         </article>
                       ))}
@@ -217,7 +265,7 @@ export function NotificationBellIcon({ onUnreadCountChange }: Props) {
                       <button
                         type="button"
                         onClick={() => setShowAllUpdates(true)}
-                        className="w-full border-b border-border px-4 py-2 text-left text-xs font-medium text-primary transition-colors hover:bg-muted/40"
+                        className="w-full border-b border-border px-4 py-2 text-left text-xs font-medium text-primary transition-colors hover:bg-muted/20"
                       >
                         Show {items.length - 2} more updates
                       </button>
@@ -232,7 +280,7 @@ export function NotificationBellIcon({ onUnreadCountChange }: Props) {
             <Link
               href="/dashboard/notifications"
               onClick={() => setOpen(false)}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium transition-colors hover:bg-muted/20"
             >
               View All <ExternalLink size={13} />
             </Link>

@@ -376,7 +376,7 @@ function formatSubmittedAt(value: string | null | undefined) {
     day: 'numeric',
     month: 'numeric',
     year: 'numeric',
-    hour: 'numeric',
+    hour: '2-digit',
     minute: '2-digit',
     hour12: true,
   });
@@ -426,6 +426,16 @@ function renderStatusLabel(field: Exclude<FinanceEditableField, 'finance_comment
   if (value === 'accepted') return 'Accepted';
   if (value === 'rejected') return 'Resubmission';
   return 'Submitted';
+}
+
+function getStatusTextTone(field: Exclude<FinanceEditableField, 'finance_comment'>, value: string | null | undefined) {
+  const tone = getStatusTone(field, value);
+  if (tone.includes('cyan')) return 'text-cyan-700 dark:text-cyan-300';
+  if (tone.includes('emerald')) return 'text-emerald-700 dark:text-emerald-300';
+  if (tone.includes('orange')) return 'text-orange-700 dark:text-orange-300';
+  if (tone.includes('rose')) return 'text-rose-700 dark:text-rose-300';
+  if (tone.includes('slate')) return 'text-slate-600 dark:text-slate-300';
+  return 'text-amber-700 dark:text-amber-300';
 }
 
 function truncateStatusLabel(label: string) {
@@ -1039,6 +1049,92 @@ export function SubmissionTable({
     }
   }, []);
 
+  const getCellCopyText = useCallback((column: SheetColumnId, row: SubmissionRow) => {
+    const creatorData = getCreatorData(row);
+
+    switch (column) {
+      case 'pi':
+        return row.pi;
+      case 'submitted_at':
+        return formatSubmittedAt(row.submitted_at);
+      case 'intake_status':
+      case 'invoice_status':
+      case 'creator_invoice_received':
+      case 'payment_received':
+      case 'payment_made':
+      case 'closed_status':
+        return renderStatusLabel(column as Exclude<FinanceEditableField, 'finance_comment'>, String(getEditableValue(row, column as Exclude<FinanceEditableField, 'finance_comment'>) || ''));
+      case 'email_address':
+        return fieldValue(row.submitter_email);
+      case 'business_line':
+        return businessLineLabel(row);
+      case 'entry_type':
+        return entryTypeLabel(row);
+      case 'entity_type':
+        return fieldValue(row.entity_type || row.integration_metadata?.entityType);
+      case 'client_type':
+        return fieldValue(row.client_type || row.integration_metadata?.clientType);
+      case 'agency_name':
+        return fieldValue(row.agency_name);
+      case 'agency_trade_name':
+        return fieldValue(row.agency_trade_name);
+      case 'brand_name':
+        return fieldValue(row.brand_name || row.integration_metadata?.billingBrandName);
+      case 'brand_trade_name':
+        return fieldValue(row.brand_trade_name);
+      case 'gst_number':
+        return fieldValue(row.gst_number);
+      case 'address':
+        return fieldValue(row.address);
+      case 'city':
+        return fieldValue(row.integration_metadata?.city);
+      case 'state':
+        return fieldValue(row.integration_metadata?.state);
+      case 'country':
+        return fieldValue(row.integration_metadata?.country);
+      case 'pincode':
+        return fieldValue(row.integration_metadata?.pincode);
+      case 'invoice_type':
+        return fieldValue(row.invoice_type);
+      case 'bill_due':
+        return fieldValue(row.bill_due);
+      case 'creator_name':
+        return creatorData.creatorNames;
+      case 'creator_brand':
+        return creatorData.creatorBrands;
+      case 'deliverables':
+        return creatorData.deliverables;
+      case 'line_amounts':
+        return creatorData.amounts;
+      case 'campaign_code':
+        return fieldValue(row.campaign_code || row.integration_metadata?.campaignCode);
+      case 'campaign_name':
+        return fieldValue(row.campaign_name || row.integration_metadata?.campaignName);
+      case 'campaign_brand':
+        return fieldValue(row.campaign_brand || row.integration_metadata?.campaignBrand);
+      case 'campaign_notes':
+        return fieldValue(row.campaign_notes || row.integration_metadata?.campaignNotes);
+      case 'product_reimbursement_upload':
+        return hasProductReimbursement(row) ? fieldValue(row.reimbursement_receipts) : '-';
+      case 'commercials':
+        return money(row.amount);
+      case 'additional_agency_commission':
+        return row.additional_agency_commission ? money(row.additional_agency_commission) : '-';
+      case 'additional_information':
+        return fieldValue(row.additional_information);
+      case 'invoice_number':
+        return fieldValue(row.invoice_number);
+      case 'debit_note_number':
+        return fieldValue(row.debit_note_number);
+      case 'finance_comment':
+        return fieldValue(row.finance_comment);
+      case 'actions':
+        return getActionLabel ? getActionLabel(row) : 'View';
+      default:
+        return '-';
+    }
+  }, [getActionLabel]);
+
   const updateFinanceValue = useCallback(
     async (row: SubmissionRow, field: FinanceEditableField, value: string) => {
       if (!onFinanceUpdate) return;
@@ -1171,6 +1267,30 @@ export function SubmissionTable({
     }
   }, [activeColumns, focusCell, isFinanceViewer]);
 
+  const handleViewportKeyDownCapture = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const isCopy = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c';
+    if (!isCopy || !focusedCell) return;
+
+    const target = event.target as HTMLElement | null;
+    if (
+      target?.tagName === 'INPUT' ||
+      target?.tagName === 'TEXTAREA' ||
+      target?.tagName === 'SELECT' ||
+      target?.isContentEditable ||
+      target?.closest('[data-active-editor="true"]') ||
+      target?.closest('[data-status-menu="true"]')
+    ) {
+      return;
+    }
+
+    const row = rows[focusedCell.rowIndex];
+    const column = activeColumns[focusedCell.columnIndex];
+    if (!row || !column) return;
+
+    event.preventDefault();
+    void copyCell(`${row.id}:${column}`, getCellCopyText(column, row));
+  }, [activeColumns, copyCell, focusedCell, getCellCopyText, rows]);
+
   function renderCell(column: SheetColumnId, row: SubmissionRow, rowIndex: number, columnIndex: number) {
     const cellKey = `${row.id}:${column}`;
     const creatorData = getCreatorData(row);
@@ -1199,7 +1319,16 @@ export function SubmissionTable({
         );
         }
       case 'submitted_at':
-        return commonText(formatSubmittedAt(row.submitted_at));
+        return (
+          <div
+            className="truncate text-[11px] leading-4 text-foreground"
+            onDoubleClick={() => void copyCell(cellKey, formatSubmittedAt(row.submitted_at))}
+            title={formatSubmittedAt(row.submitted_at)}
+          >
+            <CopyNotice active={isCopied} />
+            {formatSubmittedAt(row.submitted_at)}
+          </div>
+        );
       case 'intake_status':
       case 'invoice_status':
       case 'creator_invoice_received':
@@ -1210,6 +1339,17 @@ export function SubmissionTable({
         const rawValue = String(getEditableValue(row, field) || '');
         const label = renderStatusLabel(field, rawValue);
         const editable = isFinanceViewer && Boolean(onFinanceUpdate);
+        if (viewer === 'employee') {
+          return (
+            <div className="max-w-full" onDoubleClick={() => void copyCell(cellKey, label)} title={label}>
+              <CopyNotice active={isCopied} />
+              <span className={['block truncate text-sm font-medium', getStatusTextTone(field, rawValue)].join(' ')}>
+                {label}
+              </span>
+            </div>
+          );
+        }
+
         return (
           <BadgeSelectCell
             row={row}
@@ -1319,11 +1459,12 @@ export function SubmissionTable({
     <div className="max-w-full overflow-hidden rounded-xl border border-border/70 bg-card">
       <div
         ref={viewportRef}
+        onKeyDownCapture={handleViewportKeyDownCapture}
         className="max-w-full overflow-auto [scrollbar-width:thin]"
         style={{
           maxHeight: '610px',
-          overscrollBehaviorX: 'contain',
-          overscrollBehaviorY: 'contain',
+          overscrollBehaviorX: 'auto',
+          overscrollBehaviorY: 'auto',
           position: 'relative',
           isolation: 'isolate',
           touchAction: 'pan-x pan-y',
@@ -1338,7 +1479,7 @@ export function SubmissionTable({
                 <th
                   key={column}
                   className={[
-                    'h-8 overflow-hidden border-b border-r border-border/60 bg-card px-2.5 py-1 text-left text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground',
+                    'h-8 overflow-hidden border-b border-r border-border/60 bg-card px-2.5 py-1 text-left text-[10px] font-bold uppercase tracking-[0.07em] text-muted-foreground',
                     column === 'pi' || column === 'intake_status' ? 'bg-card border-r border-border/60' : '',
                   ].join(' ')}
                   style={{
