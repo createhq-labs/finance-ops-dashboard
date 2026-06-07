@@ -1,9 +1,9 @@
-"use client";
+﻿"use client";
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useMemo, useState } from 'react';
-import { Bell, BookOpen, BriefcaseBusiness, FilePlus, Home, ListChecks, Settings } from 'lucide-react';
+import { Bell, BookOpen, BriefcaseBusiness, Database, FilePlus, Home, ListChecks, Settings } from 'lucide-react';
 import { NotificationBellIcon } from '../dashboard/notification-bell-icon';
 import { canAccessDashboardPath, canViewNotifications, getDefaultDashboardPath, getInvoiceIntakePath, getSubmissionsLabel } from '../../lib/client/dashboard-access';
 import { DashboardSessionProvider, useDashboardSession } from './dashboard-session';
@@ -39,6 +39,7 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
       { href: '/dashboard/notifications', label: 'Notifications', icon: Bell, badge: unreadCount > 0 ? unreadCount : undefined },
       { href: '/dashboard/guide', label: 'Guide', icon: BookOpen },
       { href: '/dashboard/finance', label: 'Finance Review', icon: BriefcaseBusiness },
+      { href: '/dashboard/master-data', label: 'Master Data', icon: Database },
       { href: '/dashboard/users', label: 'Users' },
       { href: '/dashboard/system', label: 'System' },
     ];
@@ -141,3 +142,4 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
     </div>
   );
 }
+

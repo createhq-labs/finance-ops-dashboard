@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+﻿import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AppRole, AppUser } from '../types/submissions';
 
 type NotificationType =
@@ -114,7 +114,7 @@ export async function createPendingMasterReviewNotifications(params: {
 
   const inserts: NotificationInsert[] = [];
   for (const review of createdReviews) {
-    const targetPath = `/dashboard/finance?tab=master-data&review_id=${review.id}&submission_id=${submissionId}`;
+    const targetPath = `/dashboard/master-data?review_id=${review.id}`;
     const title = `${review.type[0].toUpperCase()}${review.type.slice(1)} master review pending`;
     const message = `"${review.submitted_value}" needs finance/admin approval before it becomes a reusable dropdown value.`;
 
@@ -161,3 +161,4 @@ export async function createEmployeeNotification(params: {
 export function summarizeCreatedReviews(createdReviews: MasterReviewSummary[]) {
   return uniqueStrings(createdReviews.map((review) => `${review.type}:${review.submitted_value}`));
 }
+
