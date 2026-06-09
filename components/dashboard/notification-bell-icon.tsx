@@ -18,6 +18,7 @@ import {
 
 type Props = {
   onUnreadCountChange?: (count: number) => void;
+  variant?: 'default' | 'navbar';
 };
 
 const CATEGORY_ORDER: NotificationCategory[] = ['needs_action', 'master_data', 'updates'];
@@ -56,7 +57,7 @@ function getCategoryHeaderClass(category: NotificationCategory) {
   };
 }
 
-export function NotificationBellIcon({ onUnreadCountChange }: Props) {
+export function NotificationBellIcon({ onUnreadCountChange, variant = 'default' }: Props) {
   const { user } = useDashboardSession();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -158,7 +159,12 @@ export function NotificationBellIcon({ onUnreadCountChange }: Props) {
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-sm transition-colors hover:bg-muted/30"
+        className={[
+          'relative inline-flex h-9 w-9 items-center justify-center transition-colors duration-150',
+          variant === 'navbar'
+            ? 'rounded-md text-muted-foreground hover:bg-[linear-gradient(135deg,rgba(34,211,238,0.16),rgba(37,99,235,0.14))] hover:text-sky-700 dark:hover:text-sky-200'
+            : 'rounded-lg border border-border bg-card text-foreground shadow-sm hover:bg-muted/30',
+        ].join(' ')}
         title="Notifications"
         aria-label="Notifications"
       >

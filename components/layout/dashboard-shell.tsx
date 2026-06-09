@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useMemo, useState } from 'react';
-import { Bell, BookOpen, BriefcaseBusiness, Database, FilePlus, Home, ListChecks, Settings } from 'lucide-react';
-import { NotificationBellIcon } from '../dashboard/notification-bell-icon';
+import { Bell, BookOpen, BriefcaseBusiness, Database, FilePlus, Home, ListChecks, LogOut, Settings, Users } from 'lucide-react';
 import { canAccessDashboardPath, canViewNotifications, getDefaultDashboardPath, getInvoiceIntakePath, getSubmissionsLabel } from '../../lib/client/dashboard-access';
+import { DashboardNavbar } from './dashboard-navbar';
 import { DashboardSessionProvider, useDashboardSession } from './dashboard-session';
 
 export function DashboardShell({ children }: { children: ReactNode }) {
@@ -40,7 +40,7 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
       { href: '/dashboard/guide', label: 'Guide', icon: BookOpen },
       { href: '/dashboard/finance', label: 'Finance Review', icon: BriefcaseBusiness },
       { href: '/dashboard/master-data', label: 'Master Data', icon: Database },
-      { href: '/dashboard/users', label: 'Users' },
+      { href: '/dashboard/users', label: 'Users', icon: Users },
       { href: '/dashboard/system', label: 'System' },
     ];
 
@@ -102,20 +102,6 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="sidebar-bottom">
-          <div className="user-profile-btn" style={{ cursor: 'default' }}>
-            <div className="user-avatar">
-              {user?.full_name?.charAt(0)?.toUpperCase() || 'U'}
-            </div>
-            <div className="sidebar-copy" style={{ opacity: collapsed ? 0 : 1 }}>
-              <div style={{ overflow: 'hidden' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {user?.full_name || 'User'}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{user?.role}</div>
-              </div>
-            </div>
-          </div>
-
           <Link
             href="/dashboard/settings"
             className="nav-item"
@@ -127,19 +113,36 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
               Settings
             </span>
           </Link>
+
+          <form action="/api/auth/logout" method="post">
+            <button
+              type="submit"
+              className="nav-item w-full text-muted-foreground transition-colors hover:text-destructive"
+              title={collapsed ? 'Logout' : undefined}
+              style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
+            >
+              <LogOut size={16} style={{ flexShrink: 0 }} />
+              <span className="sidebar-nav-label" style={{ opacity: collapsed ? 0 : 1 }}>
+                Logout
+              </span>
+            </button>
+          </form>
         </div>
       </aside>
 
-      <main className="relative p-5">
-        {user && canViewNotifications(user.role) ? (
-          <div className="fixed right-4 top-4 z-40">
-            <NotificationBellIcon onUnreadCountChange={setUnreadCount} />
-          </div>
+      <main className="min-w-0">
+        {user ? (
+          <DashboardNavbar
+            user={user}
+            showNotifications={canViewNotifications(user.role)}
+            onUnreadCountChange={setUnreadCount}
+          />
         ) : null}
 
-        {children}
+        <div className="p-5">
+          {children}
+        </div>
       </main>
     </div>
   );
 }
-

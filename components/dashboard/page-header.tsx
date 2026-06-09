@@ -30,18 +30,18 @@ export function PageHeader({
           </p>
         ) : null}
 
-        <h1 className="max-w-4xl text-3xl font-semibold tracking-[-0.035em] text-foreground sm:text-4xl">
+        <h1 className="max-w-4xl text-3xl font-bold tracking-tight text-foreground">
           {title}
         </h1>
 
         {description ? (
-          <p className="mt-3 max-w-2xl text-[0.95rem] leading-7 text-muted-foreground sm:text-base">
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             {description}
           </p>
         ) : null}
 
         {secondaryDescription ? (
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground/80">
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground/80">
             {secondaryDescription}
           </p>
         ) : null}
