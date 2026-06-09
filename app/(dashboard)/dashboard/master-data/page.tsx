@@ -97,26 +97,26 @@ function formatStatusLabel(value: ReviewStatus) {
 
 function getStatusBadgeClass(status: ReviewStatus) {
   if (status === 'approved') {
-    return 'border-emerald-200/70 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200';
+    return 'border-emerald-200/70 bg-emerald-50 text-emerald-700 dark:border-emerald-400/25 dark:bg-emerald-400/14 dark:text-emerald-100';
   }
 
   if (status === 'rejected') {
-    return 'border-rose-200/70 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200';
+    return 'border-rose-200/70 bg-rose-50 text-rose-700 dark:border-rose-400/25 dark:bg-rose-400/14 dark:text-rose-100';
   }
 
-  return 'border-amber-200/70 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200';
+  return 'border-amber-200/70 bg-amber-50 text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/14 dark:text-amber-100';
 }
 
 function getTypeBadgeClass(type: ReviewType) {
   if (type === 'agency') {
-    return 'border-sky-200/70 bg-sky-50 text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200';
+    return 'border-sky-200/70 bg-sky-50 text-sky-700 dark:border-sky-400/25 dark:bg-sky-400/14 dark:text-sky-100';
   }
 
   if (type === 'brand') {
-    return 'border-violet-200/70 bg-violet-50 text-violet-700 dark:border-violet-400/20 dark:bg-violet-400/10 dark:text-violet-200';
+    return 'border-violet-200/70 bg-violet-50 text-violet-700 dark:border-violet-400/25 dark:bg-violet-400/14 dark:text-violet-100';
   }
 
-  return 'border-teal-200/70 bg-teal-50 text-teal-700 dark:border-teal-400/20 dark:bg-teal-400/10 dark:text-teal-200';
+  return 'border-teal-200/70 bg-teal-50 text-teal-700 dark:border-teal-400/25 dark:bg-teal-400/14 dark:text-teal-100';
 }
 
 function getTypeIcon(type: ReviewType) {
@@ -368,12 +368,11 @@ export default function MasterDataPage() {
 
   return (
     <>
-      <div className="grid gap-6">
+      <div className="grid gap-4">
       <PageHeader
-        eyebrow="Master Data"
-        className="gap-4 pb-4"
+        className="gap-3 border-b-0 pb-1"
         title="Master Data Review"
-        description="Review new dropdown values from invoice intake and promote clean entries into reusable master source tables."
+        description="Review new dropdown values from invoice intake and promote clean entries into master source tables."
         actions={(
           <button
             type="button"
@@ -387,17 +386,17 @@ export default function MasterDataPage() {
         )}
       />
 
-        <div className="grid gap-4 md:grid-cols-3">
-          <KpiCard title="Pending Review" value={String(summary.pending)} hint="Awaiting finance/admin review" variant="warning" />
-          <KpiCard title="Approved Values" value={String(summary.approved)} hint="Promoted into master data source" variant="teal" />
-          <KpiCard title="Ignored Requests" value={String(summary.rejected)} hint="Skipped during review" variant="danger" />
+        <div className="grid gap-3 md:grid-cols-3">
+          <KpiCard title="Pending Review" value={String(summary.pending)} hint="Awaiting finance/admin review" variant="warning" compact />
+          <KpiCard title="Approved Values" value={String(summary.approved)} hint="Promoted into master data source" variant="teal" compact />
+          <KpiCard title="Ignored Requests" value={String(summary.rejected)} hint="Skipped during review" variant="danger" compact />
         </div>
 
         <SectionCard
           title="Review Queue"
           description="Filter pending, approved, and ignored values across agency, brand, and creator requests."
           actions={(
-            <span className="rounded-full border border-border bg-muted/30 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+            <span className="rounded-full border border-sky-300/55 bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/18 dark:text-sky-100">
               {filteredItems.length} visible
             </span>
           )}
@@ -413,17 +412,19 @@ export default function MasterDataPage() {
                     type="button"
                     onClick={() => setStatusFilter(filter.value)}
                     className={[
-                      'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-all duration-150',
+                      'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors duration-150',
                       active
-                        ? 'border-transparent bg-[linear-gradient(135deg,var(--primary-strong),var(--accent))] text-primary-foreground shadow-sm hover:brightness-105'
-                        : 'border-border bg-card text-muted-foreground hover:border-primary/20 hover:bg-muted/40 hover:text-foreground',
+                        ? 'border-sky-300/70 bg-sky-100/95 text-sky-950 shadow-[0_4px_12px_rgba(56,189,248,0.12)] dark:border-sky-300/30 dark:bg-sky-400/16 dark:text-sky-50'
+                        : 'border-sky-200/60 bg-sky-50/65 text-sky-800 hover:border-sky-300/45 hover:bg-sky-100/85 hover:text-sky-900 dark:border-sky-400/18 dark:bg-sky-400/8 dark:text-sky-100 dark:hover:bg-sky-400/14',
                     ].join(' ')}
                   >
                     {filter.label}
                     <span
                       className={[
-                        'rounded-full px-1.5 py-0.5 text-[11px] font-semibold',
-                        active ? 'bg-primary-foreground/15 text-primary-foreground' : 'bg-muted text-muted-foreground',
+                        'inline-flex min-w-5 items-center justify-center rounded-full border px-1.5 py-0.5 text-[11px] font-semibold',
+                        active
+                          ? 'border-blue-900/10 bg-[color:var(--primary-strong)] text-primary-foreground dark:border-sky-200/10 dark:bg-sky-200/85 dark:text-slate-950'
+                          : 'border-sky-200/70 bg-sky-100 text-sky-700 dark:border-sky-400/22 dark:bg-sky-400/14 dark:text-sky-100',
                       ].join(' ')}
                     >
                       {getStatusFilterCount(filter.value, summary)}
@@ -442,10 +443,10 @@ export default function MasterDataPage() {
                     type="button"
                     onClick={() => setTypeFilter(filter.value)}
                     className={[
-                      'inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-medium transition-all duration-150',
+                      'inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-medium transition-colors duration-150',
                       active
-                        ? 'border-transparent bg-[linear-gradient(135deg,var(--primary-strong),var(--accent))] text-primary-foreground shadow-sm hover:brightness-105'
-                        : 'border-primary/15 bg-card text-muted-foreground hover:-translate-y-[1px] hover:border-primary/25 hover:bg-muted/30 hover:text-foreground hover:shadow-sm',
+                        ? 'border-sky-300/70 bg-sky-100/95 text-sky-950 shadow-[0_4px_12px_rgba(56,189,248,0.12)] dark:border-sky-300/30 dark:bg-sky-400/16 dark:text-sky-50'
+                        : 'border-sky-200/60 bg-sky-50/65 text-sky-800 hover:border-sky-300/45 hover:bg-sky-100/85 hover:text-sky-900 dark:border-sky-400/18 dark:bg-sky-400/8 dark:text-sky-100 dark:hover:bg-sky-400/14',
                     ].join(' ')}
                   >
                     {filter.label}
@@ -467,15 +468,15 @@ export default function MasterDataPage() {
             ) : filteredItems.length === 0 ? (
               <StatePanel variant="empty" title="No matching reviews" description="Adjust the filters or wait for new invoice submissions to create dropdown review requests." icon={<CircleOff className="h-5 w-5" />} />
             ) : (
-              <div className="overflow-x-auto">
+              <div className="max-h-[620px] overflow-x-auto overflow-y-auto rounded-xl border border-border/50">
                 <table className="min-w-full table-fixed border-collapse text-left">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-card">
                     <tr className="border-b border-border/60 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                       <th className="px-3 py-2">Type</th>
                       <th className="px-3 py-2">Submitted Value</th>
                       <th className="px-3 py-2">Trade Name</th>
                       <th className="px-3 py-2">Requested By</th>
-                      <th className="px-3 py-2">Source Submission / PI</th>
+                      <th className="px-3 py-2"><span className="inline-block leading-4">Source PI /<br />Submission</span></th>
                       <th className="px-3 py-2">Created At</th>
                       <th className="px-3 py-2">Status</th>
                       <th className="px-3 py-2">Actions</th>
@@ -526,7 +527,7 @@ export default function MasterDataPage() {
                           <td className="px-3 py-3 text-xs text-muted-foreground">{formatDateTime(item.created_at)}</td>
                           <td className="px-3 py-3">
                             {isApproved ? (
-                              <div className="grid gap-1">
+                              <div className="grid gap-0.5">
                                 <span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium ${getStatusBadgeClass(item.status)}`}>
                                   <CheckCircle2 className="h-3.5 w-3.5" />
                                   Approved
@@ -672,11 +673,11 @@ export default function MasterDataPage() {
                 <h2 className="text-lg font-semibold text-foreground">Master Data Review Details</h2>
                 <p className="mt-1 text-sm text-muted-foreground">Audit timeline for this master data record.</p>
               </div>
-              <button type="button" onClick={() => setViewItemId(null)} className="rounded-lg border border-border bg-card p-2 text-muted-foreground hover:bg-muted/40 hover:text-foreground">
+              <button type="button" onClick={() => setViewItemId(null)} className="rounded-lg border border-destructive/20 p-2 text-destructive transition-colors hover:bg-destructive/5 hover:text-destructive/80">
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="grid gap-4 px-5 py-5 text-sm text-foreground">
+            <div className="grid gap-3 px-5 py-4 text-sm text-foreground">
               <div className="flex flex-wrap gap-2">
                 <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusBadgeClass(viewItem.status)}`}>
                   {viewItem.status === 'approved' ? 'Approved' : formatStatusLabel(viewItem.status)}
@@ -686,60 +687,55 @@ export default function MasterDataPage() {
                   {formatTypeLabel(viewItem.type)}
                 </span>
                 {viewItem.last_edited_at ? (
-                  <span className="inline-flex rounded-full border border-border bg-muted/30 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                  <span className="inline-flex rounded-full border border-sky-200/70 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200">
                     Edited Once
                   </span>
                 ) : null}
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-xl border border-border/70 bg-card p-4">
+              <div className="grid gap-2.5 md:grid-cols-2">
+                <div className="rounded-xl border border-border/70 bg-card p-3">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Current Value</div>
-                  <div className="mt-2 text-sm font-semibold text-foreground">{viewItem.submitted_value}</div>
+                  <div className="mt-1.5 text-sm font-semibold text-foreground">{viewItem.submitted_value}</div>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-card p-4">
+                <div className="rounded-xl border border-border/70 bg-card p-3">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Current Trade Name</div>
                   <div className="mt-2 text-sm font-semibold text-foreground">{viewItem.submitted_trade_name || '—'}</div>
                 </div>
               </div>
 
-              <div className="grid gap-4 rounded-2xl border border-border/70 bg-card p-4">
+              <div className="grid gap-2 rounded-xl border border-border/70 bg-card p-2.5">
                 {viewItem.status === 'approved' ? (
-                  <div className="relative pl-9">
-                    <span className="absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200">
-                      <CheckCircle2 className="h-4 w-4" />
+                  <div className="relative pl-7">
+                    <span className="absolute left-0 top-0 flex h-5 w-5 items-center justify-center rounded-full border border-emerald-200/70 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
                     </span>
                     <div className="text-sm font-semibold text-foreground">Approved</div>
-                    <div className="mt-1 text-sm text-foreground">{getReviewerLabel(viewItem)}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">{formatDateTime(viewItem.reviewed_at)}</div>
+                    <div className="mt-0.5 text-sm text-foreground">{getReviewerLabel(viewItem)}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">{formatDateTime(viewItem.reviewed_at)}</div>
                   </div>
                 ) : null}
 
                 {viewItem.last_edited_at ? (
-                  <div className="relative pl-9">
-                    <span className="absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-primary">
-                      <PencilLine className="h-4 w-4" />
+                  <div className="relative pl-7">
+                    <span className="absolute left-0 top-0 flex h-5 w-5 items-center justify-center rounded-full border border-sky-200/70 bg-sky-50 text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200">
+                      <PencilLine className="h-3.5 w-3.5" />
                     </span>
-                    <div className="text-sm font-semibold text-foreground">Edited</div>
-                    <div className="mt-1 text-sm text-foreground">{getEditorLabel(viewItem)}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">{formatDateTime(viewItem.last_edited_at)}</div>
-                    <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Reason</div>
-                    <div className="mt-1 text-sm text-foreground">{viewItem.edit_reason || '—'}</div>
+                    <div className="text-sm font-semibold text-foreground">Last Edited</div>
+                    <div className="mt-0.5 text-sm text-foreground">{getEditorLabel(viewItem)}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">{formatDateTime(viewItem.last_edited_at)}</div>
+                    <div className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Reason</div>
+                    <div className="mt-0.5 text-sm text-foreground">{viewItem.edit_reason || '—'}</div>
                   </div>
                 ) : null}
               </div>
 
               {viewItem.status === 'rejected' ? (
-                <div className="rounded-xl border border-border/70 bg-card p-4">
+                <div className="rounded-xl border border-rose-200/70 bg-rose-50/60 p-3 dark:border-rose-400/20 dark:bg-rose-400/10">
                   <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Ignore Reason</div>
                   <div className="mt-1 text-sm text-foreground">{viewItem.rejection_reason || 'Ignored by finance'}</div>
                 </div>
               ) : null}
-            </div>
-            <div className="flex justify-end border-t border-border px-5 py-4">
-              <button type="button" onClick={() => setViewItemId(null)} className={compactButtonClass(false)}>
-                Close
-              </button>
             </div>
           </div>
         </div>
@@ -757,12 +753,14 @@ export default function MasterDataPage() {
                   <span className="mt-0.5 text-destructive">
                     <TriangleAlert className="h-4.5 w-4.5" />
                   </span>
-                  <div className="grid gap-1">
-                    <div className="text-sm font-semibold text-foreground">Editing Approved Master Data</div>
-                    <p className="text-sm text-muted-foreground">This value is already available in employee dropdowns.</p>
-                    <p className="text-sm text-muted-foreground">Changes affect future selections.</p>
-                    <p className="text-sm text-muted-foreground">Existing submissions will NOT be modified.</p>
-                    <p className="text-sm text-muted-foreground">Reason is required before editing.</p>
+                  <div className="grid gap-2">
+                    <div className="text-sm font-semibold text-foreground">Editing approved master data:</div>
+                    <ul className="grid gap-1 text-sm text-muted-foreground">
+                      <li className="flex items-start gap-2"><span className="mt-1 h-1.5 w-1.5 rounded-full bg-destructive" />Already available in employee dropdowns</li>
+                      <li className="flex items-start gap-2"><span className="mt-1 h-1.5 w-1.5 rounded-full bg-destructive" />Changes affect future selections</li>
+                      <li className="flex items-start gap-2"><span className="mt-1 h-1.5 w-1.5 rounded-full bg-destructive" />Existing submissions will not be modified</li>
+                      <li className="flex items-start gap-2"><span className="mt-1 h-1.5 w-1.5 rounded-full bg-destructive" />Edit reason is required</li>
+                    </ul>
                   </div>
                 </div>
               </div>
@@ -772,12 +770,9 @@ export default function MasterDataPage() {
                   value={editForm.edit_reason}
                   onChange={(event) => setEditForm((current) => ({ ...current, edit_reason: event.target.value }))}
                   className="min-h-24 rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                  placeholder="Fixed spelling"
+                  placeholder="Example: Fixed spelling, removed test value, standardized naming..."
                 />
               </label>
-              <p className="text-xs text-muted-foreground">
-                Examples: Fixed spelling, Removed test value, Standardized naming.
-              </p>
             </div>
             <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
               <button type="button" onClick={() => setConfirmEditId(null)} className={compactButtonClass(false)}>
@@ -792,36 +787,36 @@ export default function MasterDataPage() {
       ) : null}
 
       {editItem ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/30 p-4">
-          <div className="flex h-full w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl max-h-[calc(100vh-2rem)]">
             <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
               <div>
                 <h2 className="text-lg font-semibold text-foreground">Edit Approved Master Data</h2>
                 <p className="mt-1 text-sm text-muted-foreground">Update the approved source value safely. Historical submissions will remain unchanged.</p>
               </div>
-              <button type="button" onClick={() => setEditItemId(null)} className="rounded-lg border border-border bg-card p-2 text-muted-foreground hover:bg-muted/40 hover:text-foreground">
+              <button type="button" onClick={() => setEditItemId(null)} className="rounded-lg border border-destructive/20 bg-card p-2 text-destructive transition-colors hover:bg-destructive/5 hover:text-destructive/80">
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="grid flex-1 gap-5 overflow-y-auto px-5 py-5">
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-xl border border-border/70 bg-card p-4 text-sm">
+            <div className="grid auto-rows-max content-start flex-1 gap-4 overflow-y-auto px-5 py-5">
+              <div className="grid items-start gap-2 md:grid-cols-3">
+                <div className="self-start rounded-lg border border-sky-200/70 bg-sky-50/70 p-2.5 text-sm dark:border-sky-400/20 dark:bg-sky-400/10 min-h-[72px]">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Type</div>
-                  <div className="mt-2 font-semibold text-foreground">{formatTypeLabel(editItem.type)}</div>
+                  <div className="mt-1 text-[15px] font-semibold leading-5 text-sky-900 dark:text-sky-100">{formatTypeLabel(editItem.type)}</div>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-card p-4 text-sm">
+                <div className="self-start rounded-lg border border-emerald-200/70 bg-emerald-50/60 p-2.5 text-sm dark:border-emerald-400/20 dark:bg-emerald-400/10 min-h-[72px]">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Current Value</div>
-                  <div className="mt-2 font-semibold text-foreground">{editItem.submitted_value}</div>
+                  <div className="mt-1 text-[15px] font-semibold leading-5 text-emerald-900 dark:text-emerald-100">{editItem.submitted_value}</div>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-card p-4 text-sm">
+                <div className="self-start rounded-lg border border-violet-200/70 bg-violet-50/60 p-2.5 text-sm dark:border-violet-400/20 dark:bg-violet-400/10 min-h-[72px]">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Current Trade Name</div>
-                  <div className="mt-2 font-semibold text-foreground">{editItem.submitted_trade_name || '—'}</div>
+                  <div className="mt-1 text-[15px] font-semibold leading-5 text-violet-900 dark:text-violet-100">{editItem.submitted_trade_name || '—'}</div>
                 </div>
               </div>
 
               <div className="grid gap-4">
                 <label className="grid gap-2 text-sm font-medium text-foreground">
-                  New Value
+                  Type New Value
                   <input
                     value={editForm.submitted_value}
                     onChange={(event) => setEditForm((current) => ({ ...current, submitted_value: event.target.value }))}
@@ -847,8 +842,8 @@ export default function MasterDataPage() {
                   <textarea
                     value={editForm.edit_reason}
                     onChange={(event) => setEditForm((current) => ({ ...current, edit_reason: event.target.value }))}
-                    className="min-h-28 rounded-xl border border-primary/15 bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                    placeholder="Fixed spelling"
+                    className="min-h-20 rounded-xl border border-primary/15 bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                    placeholder="Example: Fixed spelling, removed test value, standardized naming..."
                   />
                 </label>
               </div>
@@ -873,3 +868,7 @@ export default function MasterDataPage() {
     </>
   );
 }
+
+
+
+

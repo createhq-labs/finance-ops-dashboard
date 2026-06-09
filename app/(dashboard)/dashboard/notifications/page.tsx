@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, ChevronRight } from 'lucide-react';
+import { Check, ChevronRight, Inbox } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
@@ -246,147 +246,154 @@ export default function NotificationsPage() {
         </div>
       </header>
 
-      <div className="grid gap-4 overflow-x-hidden lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="surface h-fit rounded-2xl border border-border bg-card p-4 lg:sticky lg:top-5 lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto [scrollbar-color:rgba(255,255,255,0.9)_transparent] [scrollbar-width:thin]">
-          <div className="mb-3 rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-sm font-semibold text-foreground">Inbox</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">{counts.unread} unread notifications</p>
-          </div>
-
-          <div className="grid gap-[14px]">
-            <div>
-              <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/70">
-                Category
-              </p>
-
-              <div className="grid gap-0.5">
-                {categoryFilters.map((filter) => {
-                  const active = categoryFilter === filter;
-                  const count = filter === 'all' ? counts.all : counts[filter];
-
-                  return (
-                    <button
-                      key={filter}
-                      type="button"
-                      onClick={() => setCategoryFilter(filter)}
-                      className={[
-                        'flex h-8 items-center justify-between rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition-colors',
-                        active
-                          ? 'border-transparent bg-[var(--secondary)] font-semibold text-foreground'
-                          : 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/30 hover:text-foreground',
-                      ].join(' ')}
-                    >
-                      <span>{categoryLabel(filter)}</span>
-                      <span
-                        className={[
-                          'inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-1.5 text-[11px]',
-                          active
-                            ? 'border border-[var(--primary-strong)] bg-[var(--primary-strong)] text-white'
-                            : 'bg-sky-100 text-sky-700 dark:bg-sky-400/15 dark:text-sky-200',
-                        ].join(' ')}
-                      >
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })}
+        <div className="grid gap-4 overflow-x-hidden lg:grid-cols-[220px_minmax(0,1fr)]">
+          <aside className="surface flex h-fit flex-col overflow-hidden rounded-2xl border border-border bg-card p-4 lg:sticky lg:top-5 lg:max-h-[calc(100vh-120px)]">
+            <div className="shrink-0 rounded-xl border border-border bg-card px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary/8 text-primary">
+                  <Inbox className="h-4 w-4" />
+                </span>
+                <p className="text-sm font-semibold text-foreground">Inbox</p>
               </div>
+              <p className="mt-0.5 text-xs text-muted-foreground">{counts.unread} unread notifications</p>
             </div>
 
-            <div className="border-t border-border/70 pt-3">
-              <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/70">
-                Status
-              </p>
+            <div className="my-3 min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="grid gap-[14px]">
+                <div>
+                  <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/70">
+                    Category
+                  </p>
 
-              <div className="grid gap-0.5">
-                {[
-                  { key: 'all', label: 'All', count: counts.all },
-                  { key: 'unread', label: 'Unread', count: counts.unread },
-                  { key: 'read', label: 'Read', count: counts.read },
-                ].map((item) => {
-                  const active = readFilter === item.key;
+                  <div className="grid gap-0.5">
+                    {categoryFilters.map((filter) => {
+                      const active = categoryFilter === filter;
+                      const count = filter === 'all' ? counts.all : counts[filter];
 
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => setReadFilter(item.key as ReadFilter)}
-                      className={[
-                        'flex h-8 items-center justify-between rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition-colors',
-                        active
-                          ? 'border-transparent bg-[var(--secondary)] font-semibold text-foreground'
-                          : 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/30 hover:text-foreground',
-                      ].join(' ')}
-                    >
-                      <span>{item.label}</span>
-                      <span
-                        className={[
-                          'inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-1.5 text-[11px]',
-                          active
-                            ? 'border border-[var(--primary-strong)] bg-[var(--primary-strong)] text-white'
-                            : 'bg-sky-100 text-sky-700 dark:bg-sky-400/15 dark:text-sky-200',
-                        ].join(' ')}
-                      >
-                        {item.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+                      return (
+                        <button
+                          key={filter}
+                          type="button"
+                          onClick={() => setCategoryFilter(filter)}
+                          className={[
+                            'flex h-8 items-center justify-between rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition-colors',
+                            active
+                              ? 'border-transparent bg-[var(--secondary)] font-semibold text-foreground'
+                              : 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/30 hover:text-foreground',
+                          ].join(' ')}
+                        >
+                          <span>{categoryLabel(filter)}</span>
+                          <span
+                            className={[
+                              'inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-1.5 text-[11px]',
+                              active
+                                ? 'border border-[var(--primary-strong)] bg-[var(--primary-strong)] text-white'
+                                : 'bg-sky-100 text-sky-700 dark:bg-sky-400/15 dark:text-sky-200',
+                            ].join(' ')}
+                          >
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
-            <div className="border-t border-border/70 pt-3">
-              <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/70">
-                Time
-              </p>
+                <div className="border-t border-border/70 pt-3">
+                  <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/70">
+                    Status
+                  </p>
 
-              <div className="grid gap-0.5">
-                {[
-                  { key: 'all', label: 'Any time', count: counts.all },
-                  { key: 'today', label: 'Today', count: counts.today },
-                  { key: 'week', label: 'This week', count: counts.week },
-                  { key: 'older', label: 'Older', count: counts.older },
-                ].map((item) => {
-                  const active = timeFilter === item.key;
+                  <div className="grid gap-0.5">
+                    {[
+                      { key: 'all', label: 'All', count: counts.all },
+                      { key: 'unread', label: 'Unread', count: counts.unread },
+                      { key: 'read', label: 'Read', count: counts.read },
+                    ].map((item) => {
+                      const active = readFilter === item.key;
 
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => setTimeFilter(item.key as TimeFilter)}
-                      className={[
-                        'flex h-8 items-center justify-between rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition-colors',
-                        active
-                          ? 'border-transparent bg-[var(--secondary)] font-semibold text-foreground'
-                          : 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/30 hover:text-foreground',
-                      ].join(' ')}
-                    >
-                      <span>{item.label}</span>
-                      <span
-                        className={[
-                          'inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-1.5 text-[11px]',
-                          active
-                            ? 'border border-[var(--primary-strong)] bg-[var(--primary-strong)] text-white'
-                            : 'bg-sky-100 text-sky-700 dark:bg-sky-400/15 dark:text-sky-200',
-                        ].join(' ')}
-                      >
-                        {item.count}
-                      </span>
-                    </button>
-                  );
-                })}
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => setReadFilter(item.key as ReadFilter)}
+                          className={[
+                            'flex h-8 items-center justify-between rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition-colors',
+                            active
+                              ? 'border-transparent bg-[var(--secondary)] font-semibold text-foreground'
+                              : 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/30 hover:text-foreground',
+                          ].join(' ')}
+                        >
+                          <span>{item.label}</span>
+                          <span
+                            className={[
+                              'inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-1.5 text-[11px]',
+                              active
+                                ? 'border border-[var(--primary-strong)] bg-[var(--primary-strong)] text-white'
+                                : 'bg-sky-100 text-sky-700 dark:bg-sky-400/15 dark:text-sky-200',
+                            ].join(' ')}
+                          >
+                            {item.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="border-t border-border/70 pt-3">
+                  <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/70">
+                    Time
+                  </p>
+
+                  <div className="grid gap-0.5">
+                    {[
+                      { key: 'all', label: 'Any time', count: counts.all },
+                      { key: 'today', label: 'Today', count: counts.today },
+                      { key: 'week', label: 'This week', count: counts.week },
+                      { key: 'older', label: 'Older', count: counts.older },
+                    ].map((item) => {
+                      const active = timeFilter === item.key;
+
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => setTimeFilter(item.key as TimeFilter)}
+                          className={[
+                            'flex h-8 items-center justify-between rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition-colors',
+                            active
+                              ? 'border-transparent bg-[var(--secondary)] font-semibold text-foreground'
+                              : 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/30 hover:text-foreground',
+                          ].join(' ')}
+                        >
+                          <span>{item.label}</span>
+                          <span
+                            className={[
+                              'inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-1.5 text-[11px]',
+                              active
+                                ? 'border border-[var(--primary-strong)] bg-[var(--primary-strong)] text-white'
+                                : 'bg-sky-100 text-sky-700 dark:bg-sky-400/15 dark:text-sky-200',
+                            ].join(' ')}
+                          >
+                            {item.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
 
             <button
               type="button"
               onClick={resetFilters}
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/30"
+              className="shrink-0 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/30"
             >
               Clear filters
             </button>
-          </div>
-        </aside>
+          </aside>
 
         <main className="surface min-w-0 overflow-hidden rounded-2xl border border-border bg-card lg:max-h-[calc(100vh-120px)]">
           <div className="sticky top-0 z-20 flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-card px-4 py-3">
