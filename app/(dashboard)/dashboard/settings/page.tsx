@@ -183,30 +183,6 @@ export default function SettingsPage() {
                 </label>
               ))}
 
-              <div style={{ borderTop: '1px solid var(--surface-border)', paddingTop: 20, marginTop: 8, display: 'grid', gap: 12 }}>
-                <h3 className="settings-section-title">Session</h3>
-                <p className="text-muted" style={{ margin: 0, fontSize: 13 }}>
-                  Sign out from the dashboard from here instead of the sidebar.
-                </p>
-                <form action="/api/auth/logout" method="post">
-                  <button
-                    type="submit"
-                    className="settings-action-button"
-                    style={{
-                      padding: '10px 16px',
-                      border: '1px solid rgba(239, 68, 68, 0.35)',
-                      background: 'rgba(239, 68, 68, 0.08)',
-                      color: 'var(--danger)',
-                      borderRadius: 10,
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Logout
-                  </button>
-                </form>
-              </div>
             </div>
           )}
 
