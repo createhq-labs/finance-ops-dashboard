@@ -213,6 +213,7 @@ export function BillingEntitySection({
             value={values.agencyBrandName}
             options={entityNameOptions}
             allowCustom
+            panelMaxHeight={160}
             onChange={(next) => {
               onChange("agencyBrandName", next);
               if (!tradeNameOverridden) {
@@ -235,6 +236,7 @@ export function BillingEntitySection({
             value={values.agencyBrandTradeName}
             options={tradeNameOptions}
             allowCustom
+            panelMaxHeight={160}
             onChange={(next) => {
               setTradeNameOverridden(true);
               onChange("agencyBrandTradeName", next);
@@ -255,6 +257,7 @@ export function BillingEntitySection({
               value={values.billingBrandName}
               options={brandOptions}
               allowCustom
+              panelMaxHeight={160}
               onChange={(next) => onChange("billingBrandName", next)}
               placeholder="Select brand name"
               data-field="billingBrandName"

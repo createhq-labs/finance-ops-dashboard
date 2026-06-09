@@ -904,6 +904,10 @@ export function InvoiceIntakeForm({
 
     return {
       previous_submission_id: previousSubmissionId || null,
+      business_line: values.businessLine,
+      entry_type: values.businessLine === "TM" ? values.entryType : null,
+      entity_type: values.entityType,
+      client_type: values.clientType,
       agency_brand_name: values.agencyBrandName,
       agency_brand_trade_name: values.agencyBrandTradeName,
       email_address: values.submitterEmail,
@@ -925,24 +929,6 @@ export function InvoiceIntakeForm({
       campaign_name: values.businessLine === "IM" ? values.campaignName : "",
       campaign_brand: values.businessLine === "IM" ? values.campaignBrand : "",
       campaign_notes: values.businessLine === "IM" ? values.campaignNotes : "",
-      integration_metadata: {
-        submitterName: values.submitterName,
-        businessLine: values.businessLine,
-        entryType: values.businessLine === "TM" ? values.entryType : null,
-        entityType: values.entityType,
-        clientType: values.clientType,
-        billingBrandName: values.entityType === "Agency" ? values.billingBrandName : values.agencyBrandName,
-        city: values.city,
-        state: values.state,
-        country: values.country,
-        pincode: values.pincode,
-        campaignCode: values.campaignCode,
-        campaignName: values.campaignName,
-        campaignBrand: values.campaignBrand,
-        campaignDeliverable: deliverables,
-        campaignNotes: values.campaignNotes,
-        brandNamesText: uniqueBrandNames.join(", "),
-      },
     };
   }
 

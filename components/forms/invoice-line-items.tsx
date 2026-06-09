@@ -88,6 +88,7 @@ export function SingleCreatorRows({
                     value={scCreator}
                     options={creatorOptions}
                     allowCustom
+                    panelMaxHeight={160}
                     onChange={onCreatorChange}
                     placeholder="Select creator"
                     disabled={idx > 0}
@@ -102,6 +103,7 @@ export function SingleCreatorRows({
                     value={scBrand}
                     options={brandOptions}
                     allowCustom
+                    panelMaxHeight={160}
                     onChange={onBrandChange}
                     placeholder="Select brand"
                     disabled={idx > 0}
@@ -215,6 +217,7 @@ export function MultiCreatorRows({
                     value={row.creator}
                     options={creatorOptions}
                     allowCustom
+                    panelMaxHeight={160}
                     onChange={(next) => onCreatorChange(idx, next)}
                     placeholder="Select creator"
                     data-field={`mcRows.${idx}.creator`}
@@ -229,6 +232,7 @@ export function MultiCreatorRows({
                     value={row.brand}
                     options={brandOptions}
                     allowCustom
+                    panelMaxHeight={160}
                     onChange={(next) => onRowChange(idx, { brand: next })}
                     placeholder="Select brand"
                     disabled={idx > 0}
