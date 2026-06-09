@@ -9,6 +9,7 @@ import { StatePanel } from '../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../components/dashboard/submission-drawer';
 import { type SubmissionRow } from '../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../components/layout/dashboard-session';
+import { getPiDisplayMeta } from '../../../lib/client/pi-display';
 import { canResubmitSubmission, canSubmitInvoice, getDrawerViewerRole, getInvoiceIntakePath, getOverviewTitle, isEmployeeRole, isTeamLeadRole } from '../../../lib/client/dashboard-access';
 
 type MySubmissionApiRow = {
@@ -33,6 +34,22 @@ type MySubmissionApiRow = {
   payment_received_status?: string | null;
   payment_made_status?: string | null;
   closure_status?: string | null;
+  business_line?: 'TM' | 'IM' | null;
+  entry_type?: 'SC' | 'MC' | null;
+  entity_type?: 'Agency' | 'Brand' | null;
+  client_type?: 'Indian' | 'Foreign' | null;
+  agency_name?: string | null;
+  agency_trade_name?: string | null;
+  brand_trade_name?: string | null;
+  campaign_code?: string | null;
+  campaign_name?: string | null;
+  campaign_brand?: string | null;
+  campaign_notes?: string | null;
+  previous_submission_id?: string | null;
+  intake_line_items?: SubmissionRow['intake_line_items'];
+  submitted_by_name?: string | null;
+  submitted_by_email?: string | null;
+  sync_status?: SubmissionRow['sync_status'];
   intake_status: SubmissionRow['intake_status'];
   invoice_status: string | null;
   submitted_at: string | null;
@@ -76,6 +93,15 @@ function normalizeBusinessLine(value: string | null | undefined) {
   if (normalized === 'tm' || normalized === 'talent_management') return 'TM';
   if (normalized === 'im' || normalized === 'influencer_marketing') return 'IM';
   return 'Other';
+}
+
+function getOverviewPiMeta(row: SubmissionRow) {
+  return getPiDisplayMeta({
+    pi: row.pi,
+    submittedAt: row.submitted_at,
+    invoiceType: row.invoice_type,
+    lineItems: row.intake_line_items,
+  });
 }
 
 function CompactMetricCard({ title, value, hint }: { title: string; value: string; hint: string }) {
@@ -444,47 +470,46 @@ function BusinessLineSummary({
   );
 }
 
-function PaymentSummary({
-  totalValue,
-  paidValue,
-  pendingValue,
-  invoiceValue,
-  reviewValue,
-}: {
-  totalValue: number;
-  paidValue: number;
-  pendingValue: number;
-  invoiceValue: number;
-  reviewValue: number;
-}) {
-  const segments = [
-    { label: 'Paid', value: paidValue, color: '#4ade80' },
-    { label: 'Pending Payment', value: pendingValue, color: '#fbbf24' },
-    { label: 'Invoice Created', value: invoiceValue, color: '#22d3ee' },
-    { label: 'Awaiting Review', value: reviewValue, color: '#60a5fa' },
-  ];
-
-  return (
-    <PremiumOverviewCard title="Payment Summary" description="Where your submitted value currently sits.">
-      <AnimatedDonutChart segments={segments} centerValue={formatMoneyCompact(totalValue)} centerLabel="Total" />
-    </PremiumOverviewCard>
-  );
-}
-
 function SubmissionJourney({ steps }: { steps: Array<{ label: string; count: number; description?: string; tooltipLines?: string[] }> }) {
   const max = Math.max(1, ...steps.map((step) => step.count));
   return (
     <PremiumOverviewCard title="Submission Journey" description="A compact view of where your submissions are.">
-      <div style={{ position: 'relative', paddingTop: 26, paddingBottom: 26 }}>
-        <div style={{ position: 'absolute', left: 24, right: 24, top: '50%', height: 3, transform: 'translateY(-50%)', borderRadius: 999, background: 'linear-gradient(90deg, rgba(34,211,238,0.18), rgba(59,130,246,0.16), rgba(34,211,238,0.18))' }} />
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))`, gap: 10, alignItems: 'center' }}>
+      <div style={{ position: 'relative', height: 440, overflowY: 'auto', paddingTop: 12, paddingBottom: 12, paddingRight: 6 }}>
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: 42,
+            bottom: 54,
+            width: 3,
+            borderRadius: 999,
+            transform: 'translateX(-50%)',
+            background: 'linear-gradient(180deg, rgba(34,211,238,0.18), rgba(59,130,246,0.16), rgba(34,211,238,0.18))',
+          }}
+        />
+        <div style={{ display: 'grid', gap: 34 }}>
           {steps.map((step, index) => (
-            <div key={step.label} className="group/step relative" style={{ display: 'grid', justifyItems: 'center', gap: 8, minWidth: 0 }}>
-              {index % 2 === 0 ? <div style={{ minHeight: 28 }} /> : <div style={{ fontSize: 12, fontWeight: 800, lineHeight: 1.2, textAlign: 'center' }}>{step.label}</div>}
+            <div
+              key={step.label}
+              className="group/step relative"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 44px 1fr',
+                alignItems: 'center',
+                gap: 12,
+                minWidth: 0,
+                minHeight: 72,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                {index % 2 === 1 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, lineHeight: 1.2, textAlign: 'right' }}>{step.label}</div>
+                ) : null}
+              </div>
               <div
                 style={{
-                  width: 32,
-                  height: 32,
+                  width: 36,
+                  height: 36,
                   borderRadius: 999,
                   display: 'grid',
                   placeItems: 'center',
@@ -495,18 +520,23 @@ function SubmissionJourney({ steps }: { steps: Array<{ label: string; count: num
                   boxShadow: '0 12px 24px -16px rgba(14, 165, 233, 0.75)',
                   transform: `scale(${0.92 + Math.min(0.12, step.count / max / 8)})`,
                   transition: 'transform 180ms ease, box-shadow 180ms ease',
+                  justifySelf: 'center',
                 }}
               >
                 {step.count}
               </div>
-              {index % 2 === 1 ? <div style={{ minHeight: 28 }} /> : <div style={{ fontSize: 12, fontWeight: 800, lineHeight: 1.2, textAlign: 'center' }}>{step.label}</div>}
+              <div style={{ minWidth: 0 }}>
+                {index % 2 === 0 ? (
+                  <div style={{ fontSize: 12, fontWeight: 800, lineHeight: 1.2 }}>{step.label}</div>
+                ) : null}
+              </div>
               <div
-                className="pointer-events-none absolute z-20 w-56 rounded-2xl border border-cyan-100 bg-white px-3.5 py-2.5 text-xs opacity-0 shadow-[0_18px_50px_-30px_rgba(15,104,168,0.36)] transition duration-150 group-hover/step:opacity-100 dark:border-cyan-400/24 dark:bg-[#07111d]"
+                className="pointer-events-none absolute z-20 w-44 rounded-2xl border border-cyan-100 bg-white px-3.5 py-2.5 text-xs opacity-0 shadow-[0_18px_50px_-30px_rgba(15,104,168,0.36)] transition duration-150 group-hover/step:opacity-100 dark:border-cyan-400/24 dark:bg-[#07111d]"
                 style={{
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  bottom: index % 2 === 0 ? 'calc(100% + 8px)' : 'auto',
-                  top: index % 2 === 1 ? 'calc(100% + 8px)' : 'auto',
+                  left: index % 2 === 0 ? 'calc(50% + 34px)' : 'auto',
+                  right: index % 2 === 1 ? 'calc(50% + 34px)' : 'auto',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
                 }}
               >
                 <div style={{ fontWeight: 800, color: 'var(--foreground)' }}>{step.label}</div>
@@ -545,7 +575,7 @@ type FinanceOverviewApiRow = MySubmissionApiRow & {
   agency_name?: string | null;
   agency_trade_name?: string | null;
   brand_trade_name?: string | null;
-  integration_metadata?: SubmissionRow['integration_metadata'];
+  entry_type?: SubmissionRow['entry_type'];
   intake_line_items?: SubmissionRow['intake_line_items'];
   sync_status?: SubmissionRow['sync_status'];
   submitted_by_name?: string | null;
@@ -575,7 +605,7 @@ export default function DashboardHomePage() {
         }
         const mapped = ((json.submissions ?? []) as FinanceOverviewApiRow[]).map((item): SubmissionRow => ({
           id: String(item.id),
-          pi: item.proforma_invoice || '-',
+          pi: item.proforma_invoice ?? '',
           entity: item.agency_brand_name || '-',
           amount: Number(item.commercials ?? 0),
           owner_name: item.submitted_by_name || user.full_name || undefined,
@@ -613,7 +643,7 @@ export default function DashboardHomePage() {
           agency_name: item.agency_name || null,
           agency_trade_name: item.agency_trade_name || null,
           brand_trade_name: item.brand_trade_name || null,
-          integration_metadata: item.integration_metadata || null,
+          entry_type: item.entry_type || null,
           intake_line_items: item.intake_line_items || [],
         }));
         if (active) setRows(mapped);
@@ -631,7 +661,6 @@ export default function DashboardHomePage() {
   }, [user]);
 
   const visibleRows = useMemo(() => [...rows].sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()), [rows]);
-  const employeeRecentRows = useMemo(() => visibleRows.slice(0, 5), [visibleRows]);
   const financeRecentRows = useMemo(() => visibleRows.slice(0, 6), [visibleRows]);
 
   const row = useMemo(() => visibleRows.find((entry) => entry.id === openId) || null, [openId, visibleRows]);
@@ -653,36 +682,14 @@ export default function DashboardHomePage() {
       const paymentReceived = normalizeOverviewStatus(entry.payment_received);
       return paymentMade === 'paid' || paymentMade === 'full' || paymentReceived === 'full' || paymentReceived === 'received';
     }).length;
-    const employeeActionRows = visibleRows.filter((entry) => entry.intake_status === 'rejected');
-    const totalSubmittedValue = visibleRows.reduce((sum, entry) => sum + entry.amount, 0);
-    const isPaidEntry = (entry: SubmissionRow) => {
+    const paidValue = visibleRows.reduce((sum, entry) => {
       const paymentMade = normalizeOverviewStatus(entry.payment_made);
       const paymentReceived = normalizeOverviewStatus(entry.payment_received);
-      return paymentMade === 'paid' || paymentMade === 'full' || paymentReceived === 'full' || paymentReceived === 'received';
-    };
-    const isInvoiceStageEntry = (entry: SubmissionRow) => {
-      const invoiceStatus = normalizeOverviewStatus(entry.invoice_status);
-      return (
-        invoiceStatus === 'invoice_created'
-        || invoiceStatus === 'po_created_estimate'
-        || invoiceStatus === 'debit_note'
-        || invoiceStatus === 'invoice_plus_debit_note'
-      );
-    };
-    const paidValue = visibleRows.reduce((sum, entry) => {
-      return isPaidEntry(entry) ? sum + entry.amount : sum;
-    }, 0);
-    const awaitingReviewValue = visibleRows.reduce((sum, entry) => (entry.intake_status === 'submitted' ? sum + entry.amount : sum), 0);
-    const invoiceCreatedValue = visibleRows.reduce((sum, entry) => {
-      return entry.intake_status === 'accepted' && !isPaidEntry(entry) && isInvoiceStageEntry(entry)
+      return paymentMade === 'paid' || paymentMade === 'full' || paymentReceived === 'full' || paymentReceived === 'received'
         ? sum + entry.amount
         : sum;
     }, 0);
-    const pendingValue = visibleRows.reduce((sum, entry) => {
-      return entry.intake_status === 'accepted' && !isPaidEntry(entry) && !isInvoiceStageEntry(entry)
-        ? sum + entry.amount
-        : sum;
-    }, 0);
+    const employeeActionRows = visibleRows.filter((entry) => entry.intake_status === 'rejected');
     const invoiceCreatedCount = visibleRows.filter((entry) => normalizeOverviewStatus(entry.invoice_status) === 'invoice_created').length;
     const latestSubmitted = visibleRows.find((entry) => entry.intake_status === 'submitted');
     const totalSubmissionCount = visibleRows.length;
@@ -692,8 +699,8 @@ export default function DashboardHomePage() {
       <div style={{ display: 'grid', gap: 12 }}>
         <PageHeader
           title={getOverviewTitle(user.role)}
-          description="Only your submissions, statuses, rejection notes, and next actions appear here."
-          className="gap-4 pb-4"
+          description="Track your submissions, statuses, rejection notes, and next actions in one place."
+          className="gap-4 border-b-0 pb-4"
           actions={canSubmitInvoice(user.role) ? (
             <Link href={getInvoiceIntakePath()} className="btn btn-primary" style={{ textDecoration: 'none' }}>
               Submit Invoice
@@ -725,7 +732,7 @@ export default function DashboardHomePage() {
                 {(showAllEmployeeActions ? employeeActionRows : employeeActionRows.slice(0, 1)).map((entry) => (
                   <OverviewListRow
                     key={`employee-action-${entry.id}`}
-                    title={entry.pi}
+                    title={getOverviewPiMeta(entry).label}
                     primaryChip={<StatusChip label="Resubmission" tone="orange" />}
                     note={entry.rejection_note || 'Finance requested corrections.'}
                     action={
@@ -740,14 +747,53 @@ export default function DashboardHomePage() {
           )}
         </PremiumOverviewCard>
 
-        <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
-          <PaymentSummary
-            totalValue={totalSubmittedValue}
-            paidValue={paidValue}
-            pendingValue={pendingValue}
-            invoiceValue={invoiceCreatedValue}
-            reviewValue={awaitingReviewValue}
-          />
+        <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 3fr) minmax(320px, 2fr)' }}>
+          <PremiumOverviewCard title="Recent Updates" description="Latest submission changes and recent submissions.">
+            {visibleRows.length === 0 ? (
+              <div style={{ height: 440 }} className="text-sm text-muted-foreground">No recent updates yet.</div>
+            ) : (
+              <div className="overflow-y-auto pr-1" style={{ height: 440 }}>
+                {visibleRows.map((entry) => (
+                  <OverviewListRow
+                    key={`recent-${entry.id}`}
+                    title={getOverviewPiMeta(entry).label}
+                    primaryChip={
+                      <StatusChip
+                        label={entry.intake_status === 'rejected' ? 'Resubmission' : titleCaseStatus(entry.intake_status)}
+                        tone={overviewTone(entry.intake_status)}
+                      />
+                    }
+                    meta={
+                      <>
+                        {formatDateTime(entry.submitted_at)}
+                        {entry.invoice_status ? ` · ${titleCaseStatus(entry.invoice_status)}` : ''}
+                      </>
+                    }
+                    note={entry.intake_status === 'rejected' && entry.rejection_note ? entry.rejection_note : undefined}
+                    action={
+                      canResubmitSubmission(user.role, entry) ? (
+                        <Link
+                          href={`${getInvoiceIntakePath()}?resubmit_id=${entry.id}`}
+                          className="btn"
+                          style={{
+                            textDecoration: 'none',
+                            borderColor: 'rgb(251 113 133 / 0.75)',
+                            color: 'rgb(190 24 93)',
+                          }}
+                        >
+                          Resubmit
+                        </Link>
+                      ) : (
+                        <button className="btn" type="button" onClick={() => setOpenId(entry.id)}>
+                          View
+                        </button>
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </PremiumOverviewCard>
           <SubmissionJourney
             steps={[
               {
@@ -756,8 +802,7 @@ export default function DashboardHomePage() {
                 description: 'created',
                 tooltipLines: [
                   `${submittedCount} submissions created`,
-                  totalSubmittedValue > 0 ? `${formatMoneyCompact(totalSubmittedValue)} total submitted value` : '',
-                  latestSubmitted ? `Latest: ${latestSubmitted.pi} on ${formatDateTime(latestSubmitted.submitted_at)}` : '',
+                  latestSubmitted ? `Latest: ${getOverviewPiMeta(latestSubmitted).label} on ${formatDateTime(latestSubmitted.submitted_at)}` : '',
                 ].filter(Boolean),
               },
               {
@@ -792,34 +837,6 @@ export default function DashboardHomePage() {
           />
         </section>
 
-        <PremiumOverviewCard title="Recent Updates" description="Latest submission changes and recent submissions.">
-          {visibleRows.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No recent updates yet.</div>
-          ) : (
-            <div className="max-h-80 overflow-y-auto pr-1">
-              {employeeRecentRows.map((entry) => (
-                <OverviewListRow
-                  key={`recent-${entry.id}`}
-                  title={entry.pi}
-                  primaryChip={<StatusChip label={titleCaseStatus(entry.intake_status)} tone={overviewTone(entry.intake_status)} />}
-                  meta={
-                    <>
-                      {formatDateTime(entry.submitted_at)}
-                      {entry.invoice_status ? ` · ${titleCaseStatus(entry.invoice_status)}` : ''}
-                    </>
-                  }
-                  note={entry.intake_status === 'rejected' && entry.rejection_note ? entry.rejection_note : undefined}
-                  action={
-                    <button className="btn" type="button" onClick={() => setOpenId(entry.id)}>
-                      {canResubmitSubmission(user.role, entry) ? 'Resubmit' : 'View'}
-                    </button>
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </PremiumOverviewCard>
-
         <SubmissionDrawer open={Boolean(row)} onClose={() => setOpenId(null)} row={row} viewer={getDrawerViewerRole(user.role)} />
       </div>
     );
@@ -834,8 +851,8 @@ export default function DashboardHomePage() {
       <div style={{ display: 'grid', gap: 12 }}>
         <PageHeader
           title={getOverviewTitle(user.role)}
-          description="Team leads see their own work plus their team pipeline, not company-wide finance metrics."
-          secondaryDescription="Finance-wide role data is still under development; full overview metrics will appear after that wiring is complete."
+          description="Monitor your work and your team's submission pipeline in one place."
+          secondaryDescription="Company-wide finance metrics will appear here once the full finance overview is wired."
           className="gap-4 pb-4"
           actions={canSubmitInvoice(user.role) ? (
             <Link href={getInvoiceIntakePath()} className="btn btn-primary" style={{ textDecoration: 'none' }}>
@@ -862,7 +879,7 @@ export default function DashboardHomePage() {
                   style={{ padding: 12, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}
                 >
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600 }}>{entry.pi}</div>
+                    <div style={{ fontWeight: 600 }} title={getOverviewPiMeta(entry).title}>{getOverviewPiMeta(entry).label}</div>
                     <div className="text-muted" style={{ fontSize: 13 }}>
                       {entry.owner_name || 'Unknown owner'} · {titleCaseStatus(entry.intake_status)}
                     </div>
@@ -886,8 +903,8 @@ export default function DashboardHomePage() {
       <div style={{ display: 'grid', gap: 12 }}>
         <PageHeader
           title={getOverviewTitle(user.role)}
-          description="Developer access is limited to technical visibility, sync health, and debugging context."
-          secondaryDescription="Finance-role overview data is not fully developed yet and will be shown after implementation is completed."
+          description="Monitor technical visibility, sync health, and debugging context from one view."
+          secondaryDescription="Finance-role overview metrics will appear here after implementation is completed."
           className="gap-4 pb-4"
         />
 
@@ -936,16 +953,16 @@ export default function DashboardHomePage() {
     const paymentReceived = normalizeOverviewStatus(entry.payment_received);
     return paymentMade === 'paid' || paymentMade === 'full' || paymentReceived === 'full' || paymentReceived === 'received';
   }).length;
-  const tmCount = visibleRows.filter((entry) => normalizeBusinessLine(entry.business_line || entry.integration_metadata?.businessLine) === 'TM').length;
-  const imCount = visibleRows.filter((entry) => normalizeBusinessLine(entry.business_line || entry.integration_metadata?.businessLine) === 'IM').length;
+  const tmCount = visibleRows.filter((entry) => normalizeBusinessLine(entry.business_line) === 'TM').length;
+  const imCount = visibleRows.filter((entry) => normalizeBusinessLine(entry.business_line) === 'IM').length;
 
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ display: 'grid', gap: 8 }}>
       <PageHeader
         title={getOverviewTitle(user.role)}
-        description={undefined}
+        description="Monitor intake volume, payment progress, and the finance review pipeline from one view."
         secondaryDescription={undefined}
-        className="gap-4 pb-4"
+        className="gap-3 border-b-0 pb-1"
         actions={canSubmitInvoice(user.role) ? (
           <Link href={getInvoiceIntakePath()} className="btn btn-primary" style={{ textDecoration: 'none' }}>
             Submit Invoice
@@ -983,7 +1000,7 @@ export default function DashboardHomePage() {
               {financeRecentRows.map((entry) => (
                 <OverviewListRow
                   key={`activity-${entry.id}`}
-                  title={entry.pi}
+                  title={getOverviewPiMeta(entry).label}
                   primaryChip={<StatusChip label={titleCaseStatus(entry.intake_status)} tone={overviewTone(entry.intake_status)} />}
                   meta={
                     <>
@@ -1010,7 +1027,7 @@ export default function DashboardHomePage() {
               {topActionRows.map((entry) => (
                 <OverviewListRow
                   key={`action-${entry.id}`}
-                  title={entry.pi}
+                  title={getOverviewPiMeta(entry).label}
                   primaryChip={<StatusChip label={titleCaseStatus(entry.intake_status)} tone={overviewTone(entry.intake_status)} />}
                   secondaryChip={
                     entry.intake_status === 'submitted' ? (
@@ -1036,5 +1053,3 @@ export default function DashboardHomePage() {
     </div>
   );
 }
-
-

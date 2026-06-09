@@ -36,7 +36,7 @@ export function canViewMasterData(role: AppRole) {
 }
 
 export function canManageUsers(role: AppRole) {
-  return isAdminRole(role);
+  return role === 'finance' || isAdminRole(role) || role === 'developer';
 }
 
 export function canViewSystemPage(role: AppRole) {
@@ -116,4 +116,3 @@ export function getDrawerViewerRole(role: AppRole): AppRole {
   if (isAdminRole(role)) return 'admin';
   return 'employee';
 }
-
