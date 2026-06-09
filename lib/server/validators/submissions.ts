@@ -27,15 +27,14 @@ function mustText(v: unknown, field: string): string {
 export function sanitizeSubmissionInput(input: CreateSubmissionInput): SanitizedSubmissionPayload {
   const submittedAt = input.submitted_at ? new Date(input.submitted_at) : new Date();
   if (Number.isNaN(submittedAt.getTime())) throw new Error('Invalid submitted_at');
-  const metadata = input.integration_metadata ?? {};
-  const businessLine = toNullableText(metadata.businessLine);
-  const entityType = toNullableText(metadata.entityType);
-  const clientType = toNullableText(metadata.clientType);
-  const billingBrandName = toNullableText(metadata.billingBrandName);
-  const campaignCode = toNullableText(input.campaign_code) ?? toNullableText(metadata.campaignCode);
-  const campaignName = toNullableText(input.campaign_name) ?? toNullableText(metadata.campaignName);
-  const campaignBrand = toNullableText(input.campaign_brand) ?? toNullableText(metadata.campaignBrand);
-  const campaignNotes = toNullableText(input.campaign_notes) ?? toNullableText(metadata.campaignNotes);
+  const businessLine = toNullableText(input.business_line);
+  const entryType = toNullableText(input.entry_type);
+  const entityType = toNullableText(input.entity_type);
+  const clientType = toNullableText(input.client_type);
+  const campaignCode = toNullableText(input.campaign_code);
+  const campaignName = toNullableText(input.campaign_name);
+  const campaignBrand = toNullableText(input.campaign_brand);
+  const campaignNotes = toNullableText(input.campaign_notes);
   const agencyBrandName = mustText(input.agency_brand_name, 'agency_brand_name');
   const agencyBrandTradeName = toNullableText(input.agency_brand_trade_name);
 
@@ -61,6 +60,7 @@ export function sanitizeSubmissionInput(input: CreateSubmissionInput): Sanitized
     reimbursement_amount: toMoney(input.reimbursement_amount, 0),
     reimbursement_receipts: toNullableText(input.reimbursement_receipts),
     business_line: businessLine,
+    entry_type: businessLine === 'TM' && (entryType === 'SC' || entryType === 'MC') ? entryType : null,
     entity_type: entityType,
     client_type: clientType,
     agency_name: entityType === 'Agency' ? agencyBrandName : null,
@@ -69,10 +69,10 @@ export function sanitizeSubmissionInput(input: CreateSubmissionInput): Sanitized
     brand_name:
       entityType === 'Brand'
         ? agencyBrandName
-        : toNullableText(input.brand_name) ?? billingBrandName,
+        : toNullableText(input.brand_name),
     intake_status: 'submitted',
     sync_status: 'pending_sheet_sync',
-    invoice_status: 'Invoice Pending',
+    invoice_status: 'Po Created/Estimate',
     invoice_number: null,
     debit_note_number: null,
     payment_received: null,

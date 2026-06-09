@@ -6,6 +6,7 @@ import {
   formatPaymentMadeStatus,
   formatPaymentReceivedStatus,
 } from '../../lib/client/finance-status';
+import { getPiDisplayMeta } from '../../lib/client/pi-display';
 import { canResubmitSubmission, canViewFinanceFields, canViewInvoiceStatus, canViewSystemFields } from '../../lib/client/dashboard-access';
 
 function money(value: number | null | undefined) {
@@ -16,23 +17,39 @@ function isBlank(value: React.ReactNode) {
   return value === undefined || value === null || value === '' || value === false;
 }
 
-function cleanFullAddress(address: string | null | undefined, metadata: SubmissionRow['integration_metadata']) {
+function cleanFullAddress(address: string | null | undefined) {
   if (!address) return '';
   const normalizedAddress = address.trim().replace(/^"+|"+$/g, '');
-  const tokensToRemove = [metadata?.pincode, metadata?.country, metadata?.state, metadata?.city]
-    .filter(Boolean)
-    .map((value) => String(value).trim().replace(/^"+|"+$/g, '').toLowerCase());
-
   const parts = normalizedAddress
     .split(',')
     .map((part) => part.trim().replace(/^"+|"+$/g, ''))
     .filter(Boolean);
 
-  while (parts.length && tokensToRemove.includes(parts[parts.length - 1].toLowerCase())) {
-    parts.pop();
-  }
-
   return parts.join(', ') || normalizedAddress;
+}
+
+function getAddressSegments(address: string | null | undefined) {
+  return String(address || '')
+    .split(/[\n,]+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function getAddressPart(address: string | null | undefined, part: 'city' | 'state' | 'country' | 'pincode') {
+  const segments = getAddressSegments(address);
+  if (!segments.length) return '';
+
+  const pincodeMatch = String(address || '').match(/\b\d{4,8}\b/);
+  const pincode = pincodeMatch?.[0] || '';
+  const withoutPincode = segments
+    .map((segment) => segment.replace(/\b\d{4,8}\b/g, '').trim())
+    .filter(Boolean);
+
+  if (part === 'pincode') return pincode;
+  if (part === 'country') return withoutPincode[withoutPincode.length - 1] || '';
+  if (part === 'state') return withoutPincode[withoutPincode.length - 2] || '';
+  if (part === 'city') return withoutPincode[withoutPincode.length - 3] || '';
+  return '';
 }
 
 function uniqueCommaSeparated(values: Array<string | null | undefined>) {
@@ -108,17 +125,16 @@ export function SubmissionDrawer({
   const canSeeInvoice = canViewInvoiceStatus(viewer) || viewer === 'employee';
   const shouldShowFinanceStatus = viewer === 'employee' || (canSeeFinanceFields && !financePanel);
   const canResubmit = viewer === 'employee' || canResubmitSubmission(viewer, row);
-  const metadata = row.integration_metadata;
   const lineItems = [...(row.intake_line_items || [])].sort((a, b) => (a.line_order ?? 0) - (b.line_order ?? 0));
-  const businessLine = row.business_line || metadata?.businessLine || null;
-  const entityType = row.entity_type || metadata?.entityType || null;
-  const clientType = row.client_type || metadata?.clientType || null;
-  const entryType = metadata?.entryType || null;
+  const businessLine = row.business_line || null;
+  const entityType = row.entity_type || null;
+  const clientType = row.client_type || null;
+  const entryType = row.entry_type || null;
   const isIM = businessLine === 'IM';
   const businessLineLabel = businessLine === 'IM' ? 'Influencer Marketing' : businessLine === 'TM' ? 'Talent Management' : '';
   const entryTypeLabel = entryType === 'SC' ? 'Single Creator' : entryType === 'MC' ? 'Multiple Creators' : isIM ? 'IM Campaign' : '';
   const isIndianClient = clientType === 'Indian' || (!clientType && Boolean(row.gst_number));
-  const cleanAddress = cleanFullAddress(row.address, metadata);
+  const cleanAddress = cleanFullAddress(row.address);
   const versionLabel =
     row.version_status === 'resubmitted'
       ? 'Resubmitted version'
@@ -129,18 +145,23 @@ export function SubmissionDrawer({
   const agencyTradeName = entityType === 'Agency' ? row.agency_trade_name || row.trade_name : '';
   const billingBrandName =
     entityType === 'Agency'
-      ? row.brand_name || metadata?.billingBrandName || ''
+      ? row.brand_name || ''
       : row.brand_name || row.entity;
   const billingBrandTradeName = entityType === 'Brand' ? row.brand_trade_name || row.trade_name : '';
   const scPrimaryLine = lineItems[0];
   const singleCreatorName = row.creator_creators_name || scPrimaryLine?.creator_name || '';
-  const singleCreatorBrand = row.brand_name || scPrimaryLine?.brand_name || metadata?.brandNamesText || '';
+  const singleCreatorBrand = row.brand_name || scPrimaryLine?.brand_name || '';
   const imDeliverableNames = uniqueCommaSeparated([
     row.deliverables,
-    row.campaign_code ? undefined : metadata?.campaignDeliverable,
     ...lineItems.map((item) => item.deliverable_name),
   ]);
-  const imCampaignBrand = row.campaign_brand || metadata?.campaignBrand || row.brand_name || lineItems.find((item) => item.brand_name)?.brand_name || '';
+  const imCampaignBrand = row.campaign_brand || row.brand_name || lineItems.find((item) => item.brand_name)?.brand_name || '';
+  const piDisplay = getPiDisplayMeta({
+    pi: row.pi,
+    submittedAt: row.submitted_at,
+    invoiceType: row.invoice_type,
+    lineItems,
+  });
 
   return (
     <div className="drawer-overlay" onClick={onClose}>
@@ -154,11 +175,24 @@ export function SubmissionDrawer({
           <DetailSection title="Submission Info">
             <DetailItem label="Version Status" value={versionLabel} alwaysShow />
             {row.previous_submission_pi ? <DetailItem label="Previous Submission" value={row.previous_submission_pi} /> : null}
-            <DetailItem label="Proforma Invoice" value={row.pi} alwaysShow />
+            <DetailItem
+              label="Proforma Invoice"
+              value={
+                piDisplay.description ? (
+                  <div style={{ display: 'grid', gap: 2 }}>
+                    <span>{piDisplay.label}</span>
+                    <span className="text-muted" style={{ fontSize: 12 }}>{piDisplay.description}</span>
+                  </div>
+                ) : (
+                  piDisplay.label
+                )
+              }
+              alwaysShow
+            />
             <DetailItem label="Intake Status" value={row.intake_status} alwaysShow />
             {canSeeInvoice ? <DetailItem label="Invoice Status" value={formatInvoiceStatus(row.invoice_status)} alwaysShow /> : null}
             <DetailItem label="Submitted At" value={new Date(row.submitted_at).toLocaleString()} alwaysShow />
-            <DetailItem label="Submitter Name" value={metadata?.submitterName || row.owner_name} />
+            <DetailItem label="Submitter Name" value={row.owner_name} />
             <DetailItem label="Submitter Email" value={row.submitter_email} />
           </DetailSection>
 
@@ -176,10 +210,10 @@ export function SubmissionDrawer({
             {entityType === 'Brand' ? <DetailItem label="Brand Trade / Legal Name" value={billingBrandTradeName} /> : null}
             {isIndianClient ? <DetailItem label="GST Number" value={row.gst_number} /> : null}
             <DetailItem label="Full Address" value={cleanAddress} />
-            <DetailItem label="City" value={metadata?.city} />
-            <DetailItem label="State" value={metadata?.state} />
-            <DetailItem label="Country" value={metadata?.country} />
-            <DetailItem label="Pincode" value={metadata?.pincode} />
+            <DetailItem label="City" value={getAddressPart(row.address, 'city')} />
+            <DetailItem label="State" value={getAddressPart(row.address, 'state')} />
+            <DetailItem label="Country" value={getAddressPart(row.address, 'country')} />
+            <DetailItem label="Pincode" value={getAddressPart(row.address, 'pincode')} />
           </DetailSection>
 
           <DetailSection title="Invoice">
@@ -189,11 +223,11 @@ export function SubmissionDrawer({
 
           {isIM ? (
             <DetailSection title="Campaign Details">
-              <DetailItem label="Campaign Code" value={row.campaign_code || metadata?.campaignCode} />
-              <DetailItem label="Campaign Name" value={row.campaign_name || metadata?.campaignName} />
+              <DetailItem label="Campaign Code" value={row.campaign_code} />
+              <DetailItem label="Campaign Name" value={row.campaign_name} />
               <DetailItem label="Campaign Brand" value={imCampaignBrand} />
               <DetailItem label="Deliverables" value={imDeliverableNames.join(', ')} />
-              {row.campaign_notes || metadata?.campaignNotes ? <DetailItem label="Campaign Notes" value={row.campaign_notes || metadata?.campaignNotes} /> : null}
+              {row.campaign_notes ? <DetailItem label="Campaign Notes" value={row.campaign_notes} /> : null}
             </DetailSection>
           ) : (
             <DetailSection title="Creator / Deliverables">

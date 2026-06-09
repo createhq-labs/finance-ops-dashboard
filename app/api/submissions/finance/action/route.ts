@@ -79,14 +79,19 @@ function toLegacyClosed(status: FinanceActionRequest['closure_status']) {
   return 'Open';
 }
 
+function submissionPiLabel(piNumber: string | null | undefined) {
+  const value = String(piNumber || '').trim();
+  return value || 'No PI Required';
+}
+
 function invoiceStatusLabel(status: FinanceActionRequest['invoice_status'] | string | null | undefined) {
   const normalized = toDbInvoiceStatus(status);
   if (normalized === 'Invoice created') return 'Invoice Created';
-  if (normalized === 'Po Created/Estimate') return 'PO Created / Estimate';
+  if (normalized === 'Po Created/Estimate' || normalized === 'Invoice Pending') return 'PI Created / Estimate';
   if (normalized === 'Invoice Cancelled') return 'Cancelled';
   if (normalized === 'Debit Note') return 'Debit Note';
   if (normalized === 'Invoice + Debit Note') return 'Invoice + Debit Note';
-  return 'Pending';
+  return 'PI Created / Estimate';
 }
 
 export async function POST(req: NextRequest) {
@@ -122,6 +127,7 @@ export async function POST(req: NextRequest) {
       throw new Error(submissionError?.message ?? 'Submission not found');
     }
     const currentSubmission = submission;
+    const submissionLabel = submissionPiLabel(currentSubmission.proforma_invoice);
 
     const patch: Record<string, unknown> = {};
     const now = new Date().toISOString();
@@ -163,7 +169,7 @@ export async function POST(req: NextRequest) {
       activityAction = 'submission_approved';
       notificationType = 'invoice_updated';
       notificationTitle = 'Submission approved';
-      notificationMessage = `${submission.proforma_invoice} has been approved by finance.`;
+      notificationMessage = `${submissionLabel} has been approved by finance.`;
       changed = true;
     }
 
@@ -180,7 +186,7 @@ export async function POST(req: NextRequest) {
       activityAction = 'submission_rejected';
       notificationType = 'submission_rejected';
       notificationTitle = 'Submission rejected';
-      notificationMessage = `${submission.proforma_invoice} was rejected: ${note}`;
+      notificationMessage = `${submissionLabel} was rejected: ${note}`;
       changed = true;
     }
 
@@ -197,7 +203,7 @@ export async function POST(req: NextRequest) {
       activityAction = 'resubmission_requested';
       notificationType = 'resubmission_requested';
       notificationTitle = 'Resubmission requested';
-      notificationMessage = `${submission.proforma_invoice} needs changes before finance can continue: ${note}`;
+      notificationMessage = `${submissionLabel} needs changes before finance can continue: ${note}`;
       changed = true;
     }
 
@@ -221,8 +227,8 @@ export async function POST(req: NextRequest) {
       notificationType = 'invoice_updated';
       notificationTitle = 'Invoice status updated';
       notificationMessage = body.invoice_status
-        ? `${currentSubmission.proforma_invoice} is now marked as ${invoiceStatusLabel(nextInvoiceStatus)}.`
-        : `${currentSubmission.proforma_invoice} invoice details were updated by finance.`;
+        ? `${submissionLabel} is now marked as ${invoiceStatusLabel(nextInvoiceStatus)}.`
+        : `${submissionLabel} invoice details were updated by finance.`;
       changed = true;
     }
 
@@ -246,7 +252,7 @@ export async function POST(req: NextRequest) {
       activityAction = 'debit_note_added';
       notificationType = 'invoice_updated';
       notificationTitle = 'Debit note added';
-      notificationMessage = `${currentSubmission.proforma_invoice} invoice status is now ${invoiceStatusLabel(nextInvoiceStatus)}.`;
+      notificationMessage = `${submissionLabel} invoice status is now ${invoiceStatusLabel(nextInvoiceStatus)}.`;
       changed = true;
     }
 
@@ -286,7 +292,7 @@ export async function POST(req: NextRequest) {
       activityAction = 'payment_status_updated';
       notificationType = 'invoice_updated';
       notificationTitle = 'Payment status updated';
-      notificationMessage = `${currentSubmission.proforma_invoice} finance tracking was updated by finance.`;
+      notificationMessage = `${submissionLabel} finance tracking was updated by finance.`;
       changed = true;
     }
 
@@ -302,7 +308,7 @@ export async function POST(req: NextRequest) {
       activityAction = 'submission_closed';
       notificationType = 'invoice_updated';
       notificationTitle = closureStatus === 'cancelled' ? 'Submission cancelled' : 'Submission closed';
-      notificationMessage = `${currentSubmission.proforma_invoice} is now ${closureStatus}.`;
+      notificationMessage = `${submissionLabel} is now ${closureStatus}.`;
       changed = true;
     }
 

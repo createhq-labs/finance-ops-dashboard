@@ -4,13 +4,32 @@ import type { AppUser, SanitizedLineItemPayload, SanitizedSubmissionPayload } fr
 type CreateSubmissionResult =
   | {
       success: true;
-      submission: { id: string; proforma_invoice: string; sync_status: string | null };
+      submission: { id: string; proforma_invoice: string | null; sync_status: string | null };
     }
   | {
       success: false;
       stage: 'insert_submission' | 'insert_line_items';
       error: string;
     };
+
+function normalizeComparison(value: string | null | undefined) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function shouldSkipPiGeneration(submissionPayload: SanitizedSubmissionPayload, lineItemsPayload: SanitizedLineItemPayload[]) {
+  // Audited against the current schema/payload: invoice_type is a structured submission field,
+  // and Product Reimbursement arrives through intake_line_items.deliverable_name.
+  if (normalizeComparison(submissionPayload.invoice_type) !== normalizeComparison('Reimbursement Invoice (Without GST)')) {
+    return false;
+  }
+
+  if (lineItemsPayload.length !== 1) return false;
+
+  return normalizeComparison(lineItemsPayload[0]?.deliverable_name) === normalizeComparison('Product Reimbursement');
+}
 
 export async function createSubmissionWithLineItems(params: {
   userClient: SupabaseClient;
@@ -21,9 +40,17 @@ export async function createSubmissionWithLineItems(params: {
 }): Promise<CreateSubmissionResult> {
   const { userClient, adminClient, appUser, submissionPayload, lineItemsPayload } = params;
 
+  const shouldSkipPi = shouldSkipPiGeneration(submissionPayload, lineItemsPayload);
+
+  const insertPayload = {
+    ...submissionPayload,
+    submitted_by: appUser.id,
+    ...(shouldSkipPi ? { proforma_invoice: null } : {}),
+  };
+
   const { data: submission, error: submissionError } = await userClient
     .from('intake_submissions')
-    .insert({ ...submissionPayload, submitted_by: appUser.id })
+    .insert(insertPayload)
     .select('id, proforma_invoice, sync_status')
     .single();
 
