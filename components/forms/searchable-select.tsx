@@ -12,6 +12,7 @@ type SearchableSelectProps = {
   dataField?: string;
   required?: boolean;
   className?: string;
+  panelMaxHeight?: number;
 };
 
 export function SearchableSelect({
@@ -24,6 +25,7 @@ export function SearchableSelect({
   dataField,
   required = false,
   className,
+  panelMaxHeight = 160,
 }: SearchableSelectProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -198,10 +200,11 @@ export function SearchableSelect({
             background: "var(--intake-option-bg)",
             border: "1px solid var(--intake-input-border)",
             borderRadius: 10,
-            maxHeight: 220,
+            maxHeight: panelMaxHeight,
             overflowY: "auto",
             boxShadow: "0 12px 30px rgba(2, 6, 23, 0.25)",
             opacity: 1,
+            scrollbarWidth: "thin",
           }}
         >
           {filteredOptions.length === 0 ? (
@@ -215,11 +218,12 @@ export function SearchableSelect({
                   width: "100%",
                   textAlign: "left",
                   border: 0,
-                  background: "rgba(56, 189, 248, 0.16)",
+                  background: "rgba(56, 189, 248, 0.18)",
                   color: "var(--intake-option-fg)",
                   padding: "8px 10px",
                   cursor: "pointer",
                   fontSize: 13,
+                  transition: "none",
                 }}
               >
                 Use &quot;{query.trim()}&quot;
@@ -235,15 +239,17 @@ export function SearchableSelect({
                 type="button"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => selectOption(option)}
+                onMouseEnter={() => setHighlightedIndex(index)}
                 style={{
                   width: "100%",
                   textAlign: "left",
                   border: 0,
-                  background: index === highlightedIndex ? "rgba(56, 189, 248, 0.16)" : "var(--intake-option-bg)",
+                  background: index === highlightedIndex ? "rgba(56, 189, 248, 0.18)" : "var(--intake-option-bg)",
                   color: "var(--intake-option-fg)",
                   padding: "8px 10px",
                   cursor: "pointer",
                   fontSize: 13,
+                  transition: "none",
                 }}
               >
                 {option}

@@ -9,6 +9,7 @@ import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
+import { PAYMENT_RECEIVED_STATUS_OPTIONS } from '../../../../lib/client/finance-status';
 import { canSubmitInvoice, getDrawerViewerRole, getSubmissionsLabel } from '../../../../lib/client/dashboard-access';
 
 type MySubmissionApiRow = {
@@ -41,12 +42,12 @@ type MySubmissionApiRow = {
   payment_made?: string | null;
   payment_made_status?: string | null;
   business_line?: 'TM' | 'IM' | null;
+  entry_type?: 'SC' | 'MC' | null;
   entity_type?: 'Agency' | 'Brand' | null;
   client_type?: 'Indian' | 'Foreign' | null;
   agency_name?: string | null;
   agency_trade_name?: string | null;
   brand_trade_name?: string | null;
-  integration_metadata: SubmissionRow['integration_metadata'];
   intake_line_items: SubmissionRow['intake_line_items'];
   intake_status: SubmissionRow['intake_status'];
   invoice_status: string | null;
@@ -54,7 +55,7 @@ type MySubmissionApiRow = {
   rejection_note: string | null;
 };
 
-type EmployeePaymentFilter = 'all' | 'pending' | 'partial' | 'paid' | 'received' | 'not_paid' | 'not_received';
+type EmployeePaymentFilter = 'all' | (typeof PAYMENT_RECEIVED_STATUS_OPTIONS)[number]['value'];
 
 function normalizeStatusValue(value: string | null | undefined) {
   const normalized = String(value || '')
@@ -74,17 +75,8 @@ function normalizeStatusValue(value: string | null | undefined) {
 
 function matchesEmployeePaymentFilter(row: SubmissionRow, filter: EmployeePaymentFilter) {
   if (filter === 'all') return true;
-
-  const paymentMade = normalizeStatusValue(row.payment_made);
   const paymentReceived = normalizeStatusValue(row.payment_received);
-
-  if (filter === 'paid') return paymentMade === 'paid' || paymentMade === 'full';
-  if (filter === 'received') return paymentReceived === 'received' || paymentReceived === 'full';
-  if (filter === 'pending') return paymentMade === 'pending' || paymentReceived === 'pending';
-  if (filter === 'partial') return paymentMade === 'partial' || paymentReceived === 'partial';
-  if (filter === 'not_paid') return paymentMade === 'not_paid';
-  if (filter === 'not_received') return paymentReceived === 'not_received';
-  return false;
+  return paymentReceived === filter;
 }
 
 export default function EmployeeSubmissionsPage() {
@@ -116,7 +108,7 @@ export default function EmployeeSubmissionsPage() {
         }
         const mapped = ((json.submissions ?? []) as MySubmissionApiRow[]).map((item): SubmissionRow => ({
           id: String(item.id),
-          pi: item.proforma_invoice || '-',
+          pi: item.proforma_invoice ?? '',
           entity: item.agency_brand_name || '-',
           amount: Number(item.commercials ?? 0),
           owner_name: user.full_name || undefined,
@@ -148,12 +140,12 @@ export default function EmployeeSubmissionsPage() {
           payment_received: normalizeStatusValue(item.payment_received_status || item.payment_received) || undefined,
           payment_made: normalizeStatusValue(item.payment_made_status || item.payment_made) || undefined,
           business_line: item.business_line || null,
+          entry_type: item.entry_type || null,
           entity_type: item.entity_type || null,
           client_type: item.client_type || null,
           agency_name: item.agency_name || null,
           agency_trade_name: item.agency_trade_name || null,
           brand_trade_name: item.brand_trade_name || null,
-          integration_metadata: item.integration_metadata || null,
           intake_line_items: item.intake_line_items || [],
         }));
         const piById = new Map(mapped.map((entry) => [entry.id, entry.pi]));
@@ -197,8 +189,6 @@ export default function EmployeeSubmissionsPage() {
         row.brand_name,
         row.creator_creators_name,
         row.campaign_brand,
-        row.integration_metadata?.billingBrandName,
-        row.integration_metadata?.brandNamesText,
       ]
         .filter(Boolean)
         .join(' ')
@@ -229,7 +219,8 @@ export default function EmployeeSubmissionsPage() {
     <div style={{ display: 'grid', gap: 16 }}>
       <PageHeader
         title={getSubmissionsLabel(user.role)}
-        description="This page is limited to your own intake records, status updates, rejection notes, and resubmission actions."
+        description="Review your intake records, status updates, rejection notes, and resubmission actions."
+        className="border-b-0 pb-4"
         actions={canSubmitInvoice(user.role) ? (
           <Link className="btn btn-primary" href="/dashboard/submissions/new">
             New Submission
@@ -285,12 +276,9 @@ export default function EmployeeSubmissionsPage() {
                   <span className="text-xs font-medium text-muted-foreground">Payment Status</span>
                   <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value as EmployeePaymentFilter)}>
                     <option value="all">All</option>
-                    <option value="pending">Pending</option>
-                    <option value="partial">Partial</option>
-                    <option value="paid">Paid</option>
-                    <option value="received">Received</option>
-                    <option value="not_paid">Not Paid</option>
-                    <option value="not_received">Not Received</option>
+                    {PAYMENT_RECEIVED_STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
                   </select>
                 </label>
               </div>
@@ -307,10 +295,16 @@ export default function EmployeeSubmissionsPage() {
       {!rowsLoading && !rowsError ? (
         <SubmissionTable
           rows={filteredRows}
-          onOpen={setOpenId}
+          onOpen={(id, selectedRow) => {
+            if (selectedRow?.intake_status === 'rejected') {
+              router.push(`/dashboard/submissions/new?resubmit_id=${id}`);
+              return;
+            }
+            setOpenId(id);
+          }}
           columns={['pi', 'entity', 'amount', 'intake_status', 'invoice_status', 'submitted_at', 'rejection_note', 'actions']}
           emptyLabel="No submissions found yet."
-          getActionLabel={() => 'View'}
+          getActionLabel={(row) => row.intake_status === 'rejected' ? 'Resubmit' : 'View'}
           viewer="employee"
         />
       ) : null}

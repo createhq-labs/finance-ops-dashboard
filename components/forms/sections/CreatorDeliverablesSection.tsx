@@ -146,7 +146,7 @@ export function CreatorDeliverablesSection({
 
           <label className="intake-field">
             <span className="intake-label">Campaign Brand *</span>
-            <SearchableSelect value={values.campaignBrand} options={brandOptions} allowCustom onChange={(next) => onChange("campaignBrand", next)} placeholder="Select brand" data-field="campaignBrand" />
+            <SearchableSelect value={values.campaignBrand} options={brandOptions} allowCustom panelMaxHeight={160} onChange={(next) => onChange("campaignBrand", next)} placeholder="Select brand" data-field="campaignBrand" />
             <div style={{ minHeight: 16 }}>
               {errors.campaignBrand ? <p className="text-danger intake-inline-error">{errors.campaignBrand}</p> : null}
             </div>

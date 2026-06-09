@@ -47,13 +47,13 @@ type FinanceApiRow = {
   additional_information: string | null;
   previous_submission_id: string | null;
   business_line?: 'TM' | 'IM' | null;
+  entry_type?: 'SC' | 'MC' | null;
   entity_type?: 'Agency' | 'Brand' | null;
   client_type?: 'Indian' | 'Foreign' | null;
   agency_name?: string | null;
   agency_trade_name?: string | null;
   brand_trade_name?: string | null;
   finance_comment?: string | null;
-  integration_metadata: SubmissionRow['integration_metadata'];
   intake_line_items: SubmissionRow['intake_line_items'];
   intake_status: SubmissionRow['intake_status'];
   invoice_status: string | null;
@@ -93,7 +93,9 @@ type FinanceEditableField =
   | 'payment_received'
   | 'payment_made'
   | 'closed_status'
-  | 'finance_comment';
+  | 'finance_comment'
+  | 'invoice_number'
+  | 'debit_note_number';
 
 const PAYMENT_RECEIVED_VALUES = PAYMENT_RECEIVED_STATUS_OPTIONS.map((option) => option.value);
 const PAYMENT_MADE_VALUES = PAYMENT_MADE_STATUS_OPTIONS.map((option) => option.value);
@@ -372,7 +374,7 @@ export default function FinanceReviewPage() {
 
     const mapped = ((json.submissions ?? []) as FinanceApiRow[]).map((item): SubmissionRow => ({
       id: String(item.id),
-      pi: item.proforma_invoice || '-',
+      pi: item.proforma_invoice ?? '',
       entity: item.agency_brand_name || '-',
       amount: Number(item.commercials ?? 0),
       owner_name: item.submitted_by_name || undefined,
@@ -401,7 +403,8 @@ export default function FinanceReviewPage() {
       reimbursement_receipts: item.reimbursement_receipts || null,
       additional_information: item.additional_information || null,
       previous_submission_id: item.previous_submission_id || null,
-      business_line: normalizeBusinessLine(item.business_line || item.integration_metadata?.businessLine),
+      business_line: normalizeBusinessLine(item.business_line),
+      entry_type: item.entry_type || null,
       entity_type: item.entity_type || null,
       client_type: item.client_type || null,
       agency_name: item.agency_name || null,
@@ -410,7 +413,6 @@ export default function FinanceReviewPage() {
       finance_comment: item.finance_comment || undefined,
       reviewed_at: item.reviewed_at || null,
       reviewed_by_name: item.reviewed_by_name || null,
-      integration_metadata: item.integration_metadata || null,
       intake_line_items: item.intake_line_items || [],
       creator_invoice_received: normalizeCreatorInvoice(item.creator_invoice_status || item.invoice_via_creators_received),
       payment_received: normalizePaymentReceived(item.payment_received_status || item.payment_received),
@@ -495,7 +497,7 @@ export default function FinanceReviewPage() {
 
   const filteredRows = useMemo(() => {
     return rows.filter((entry) => {
-      const effectiveBusinessLine = normalizeBusinessLine(entry.business_line || entry.integration_metadata?.businessLine || null);
+      const effectiveBusinessLine = normalizeBusinessLine(entry.business_line || null);
       if (businessLineFilter !== 'all' && effectiveBusinessLine !== businessLineFilter) return false;
       if (intakeStatusFilter !== 'all' && entry.intake_status !== intakeStatusFilter) return false;
       if (employeeFilter !== 'all' && entry.owner_name !== employeeFilter && entry.submitter_email !== employeeFilter) return false;
@@ -521,8 +523,6 @@ export default function FinanceReviewPage() {
         entry.campaign_code,
         entry.campaign_name,
         entry.campaign_brand,
-        entry.integration_metadata?.billingBrandName,
-        entry.integration_metadata?.brandNamesText,
         ...(entry.intake_line_items ?? []).flatMap((item) => [item.creator_name, item.brand_name, item.deliverable_name]),
       ]
         .filter(Boolean)
@@ -631,6 +631,12 @@ export default function FinanceReviewPage() {
     } else if (field === 'invoice_status') {
       action = 'mark_invoice_created';
       payload = { invoice_status: value };
+    } else if (field === 'invoice_number') {
+      action = 'mark_invoice_created';
+      payload = { invoice_number: value };
+    } else if (field === 'debit_note_number') {
+      action = 'mark_invoice_created';
+      payload = { debit_note_number: value };
     } else if (field === 'creator_invoice_received') {
       action = 'update_payment_status';
       payload = { creator_invoice_status: value };
@@ -955,18 +961,19 @@ export default function FinanceReviewPage() {
 
   if (loading || !user || !canViewFinanceDashboard(user.role)) return null;
 
-  return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <PageHeader
-        title={getFinanceDashboardTitle(user.role)}
-        description="Finance and admin roles can review all submissions, filter by workflow, update invoice/payment lifecycle fields, and request corrected resubmissions safely."
-      />
+    return (
+      <div style={{ display: 'grid', gap: 12 }}>
+        <PageHeader
+          title={getFinanceDashboardTitle(user.role)}
+          description="Review submissions, update invoice and payment stages, and request corrected resubmissions."
+          className="gap-3 border-b-0 pb-0"
+        />
 
-      <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-        <KpiCard title="Pending Review" value={String(pendingCount)} hint="Requires finance action" />
-        <KpiCard title="Accepted" value={String(acceptedCount)} hint="Approved by finance" />
-        <KpiCard title="Rejected" value={String(rejectedCount)} hint="Returned with notes" />
-      </section>
+        <section style={{ display: 'grid', gap: 12, marginTop: -4, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+          <KpiCard title="Pending Review" value={String(pendingCount)} hint="Requires finance action" compact />
+          <KpiCard title="Accepted" value={String(acceptedCount)} hint="Approved by finance" compact />
+          <KpiCard title="Rejected" value={String(rejectedCount)} hint="Returned with notes" compact />
+        </section>
 
       <SectionCard padding={16}>
         <div className="grid gap-3">

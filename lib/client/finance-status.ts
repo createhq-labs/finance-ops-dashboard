@@ -1,7 +1,7 @@
 export const INVOICE_STATUS_LABELS = {
-  invoice_pending: 'Pending',
+  invoice_pending: 'PI Created / Estimate',
   invoice_created: 'Invoice Created',
-  po_created_estimate: 'PO Created / Estimate',
+  po_created_estimate: 'PI Created / Estimate',
   invoice_cancelled: 'Cancelled',
   debit_note: 'Debit Note',
   invoice_plus_debit_note: 'Invoice + Debit Note',
@@ -55,7 +55,9 @@ export const CLOSURE_STATUS_LABELS = {
   gst_left: 'GST Left',
 } as const;
 
-export const INVOICE_STATUS_OPTIONS = Object.entries(INVOICE_STATUS_LABELS).map(([value, label]) => ({ value, label }));
+export const INVOICE_STATUS_OPTIONS = Object.entries(INVOICE_STATUS_LABELS)
+  .filter(([value]) => value !== 'invoice_pending')
+  .map(([value, label]) => ({ value, label }));
 export const PAYMENT_RECEIVED_STATUS_OPTIONS = Object.entries(PAYMENT_RECEIVED_STATUS_LABELS).map(([value, label]) => ({ value, label }));
 export const CREATOR_INVOICE_STATUS_OPTIONS = Object.entries(CREATOR_INVOICE_STATUS_LABELS).map(([value, label]) => ({ value, label }));
 export const PAYMENT_MADE_STATUS_OPTIONS = Object.entries(PAYMENT_MADE_STATUS_LABELS).map(([value, label]) => ({ value, label }));
