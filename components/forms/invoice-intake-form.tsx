@@ -904,6 +904,10 @@ export function InvoiceIntakeForm({
 
     return {
       previous_submission_id: previousSubmissionId || null,
+      business_line: values.businessLine,
+      entry_type: values.businessLine === "TM" ? values.entryType : null,
+      entity_type: values.entityType,
+      client_type: values.clientType,
       agency_brand_name: values.agencyBrandName,
       agency_brand_trade_name: values.agencyBrandTradeName,
       email_address: values.submitterEmail,
@@ -925,24 +929,6 @@ export function InvoiceIntakeForm({
       campaign_name: values.businessLine === "IM" ? values.campaignName : "",
       campaign_brand: values.businessLine === "IM" ? values.campaignBrand : "",
       campaign_notes: values.businessLine === "IM" ? values.campaignNotes : "",
-      integration_metadata: {
-        submitterName: values.submitterName,
-        businessLine: values.businessLine,
-        entryType: values.businessLine === "TM" ? values.entryType : null,
-        entityType: values.entityType,
-        clientType: values.clientType,
-        billingBrandName: values.entityType === "Agency" ? values.billingBrandName : values.agencyBrandName,
-        city: values.city,
-        state: values.state,
-        country: values.country,
-        pincode: values.pincode,
-        campaignCode: values.campaignCode,
-        campaignName: values.campaignName,
-        campaignBrand: values.campaignBrand,
-        campaignDeliverable: deliverables,
-        campaignNotes: values.campaignNotes,
-        brandNamesText: uniqueBrandNames.join(", "),
-      },
     };
   }
 
@@ -1001,14 +987,13 @@ export function InvoiceIntakeForm({
             <p className="text-muted intake-section-copy">Provide submitter details exactly as shared with finance.</p>
           </div>
         </div>
-
-        <div className="intake-section-body intake-form-grid">
-          <label className="intake-field">
+        <div className="intake-section-body intake-form-grid" style={{ alignItems: "start" }}>
+          <label className="intake-field" style={{ minWidth: 0 }}>
             <span className="intake-label">Name *</span>
             <input className="intake-input" value={values.submitterName} onChange={(e) => update("submitterName", e.target.value)} data-field="submitterName" autoComplete="off" required />
             {fieldErrors.submitterName ? <p className="text-danger intake-inline-error">{fieldErrors.submitterName}</p> : null}
           </label>
-          <label className="intake-field">
+          <label className="intake-field" style={{ minWidth: 0 }}>
             <span className="intake-label">Email *</span>
             <input className="intake-input" type="email" value={values.submitterEmail} readOnly data-field="submitterEmail" required />
             {fieldErrors.submitterEmail ? <p className="text-danger intake-inline-error">{fieldErrors.submitterEmail}</p> : null}
@@ -1023,10 +1008,16 @@ export function InvoiceIntakeForm({
             <p className="text-muted intake-section-copy">Select the business line first, then choose the correct TM flow when applicable.</p>
           </div>
         </div>
-
-        <div className="intake-section-body" style={{ display: "grid", gap: 16 }}>
-          <div>
-            <label className="intake-label" style={{ marginBottom: 8, display: "block" }}>Business Line *</label>
+        <div className="intake-section-body" style={{ display: "grid", gap: 12 }}>
+          <div
+            style={{
+              display: "grid",
+              gap: 8,
+              gridTemplateColumns: "minmax(130px, auto) minmax(0, 1fr)",
+              alignItems: "center",
+            }}
+          >
+            <label className="intake-label" style={{ margin: 0, display: "block" }}>Business Line *</label>
             <div className="intake-toggle-group">
               {BUSINESS_LINES.map((line) => (
                 <button
@@ -1042,8 +1033,15 @@ export function InvoiceIntakeForm({
           </div>
 
           {values.businessLine === "TM" ? (
-            <div>
-              <label className="intake-label" style={{ marginBottom: 8, display: "block" }}>Entry Type *</label>
+            <div
+              style={{
+                display: "grid",
+                gap: 8,
+                gridTemplateColumns: "minmax(130px, auto) minmax(0, 1fr)",
+                alignItems: "center",
+              }}
+            >
+              <label className="intake-label" style={{ margin: 0, display: "block" }}>Entry Type *</label>
               <div className="intake-toggle-group">
                 {ENTRY_TYPES.map((entry) => (
                   <button

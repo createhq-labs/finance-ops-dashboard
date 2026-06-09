@@ -85,6 +85,10 @@ export type InvoiceIntakeIntegrationMetadata = {
 
 export type InvoiceIntakeSubmissionPayload = {
   previous_submission_id?: string | null;
+  business_line: BusinessLine;
+  entry_type: EntryType | null;
+  entity_type: EntityType;
+  client_type: "Indian" | "Foreign";
   agency_brand_name: string;
   agency_brand_trade_name: string;
   email_address: string;
@@ -112,5 +116,4 @@ export type InvoiceIntakeSubmissionPayload = {
     amount: number;
     line_order: number;
   }>;
-  integration_metadata: InvoiceIntakeIntegrationMetadata;
 };

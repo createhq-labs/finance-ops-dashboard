@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
       adminClient,
       appUser,
       submissionId: result.submission.id,
-      piNumber: result.submission.proforma_invoice,
+      piNumber: result.submission.proforma_invoice ?? 'No PI Required',
       entityName: submissionPayload.agency_brand_name,
       isResubmission: Boolean(submissionPayload.previous_submission_id),
     });

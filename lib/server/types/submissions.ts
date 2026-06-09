@@ -14,6 +14,10 @@ export type CreateLineItemInput = {
 export type CreateSubmissionInput = {
   previous_submission_id?: string | null;
   submitted_at?: string | null;
+  business_line?: 'TM' | 'IM' | string | null;
+  entry_type?: 'SC' | 'MC' | null;
+  entity_type?: 'Agency' | 'Brand' | string | null;
+  client_type?: 'Indian' | 'Foreign' | string | null;
   agency_brand_name?: string;
   agency_brand_trade_name?: string | null;
   email_address?: string;
@@ -33,16 +37,6 @@ export type CreateSubmissionInput = {
   additional_agency_commission?: number | string | null;
   reimbursement_amount?: number | string | null;
   reimbursement_receipts?: string | null;
-  integration_metadata?: {
-    businessLine?: 'TM' | 'IM' | string | null;
-    entityType?: 'Agency' | 'Brand' | string | null;
-    clientType?: 'Indian' | 'Foreign' | string | null;
-    billingBrandName?: string | null;
-    campaignCode?: string | null;
-    campaignName?: string | null;
-    campaignBrand?: string | null;
-    campaignNotes?: string | null;
-  } | null;
   line_items?: CreateLineItemInput[];
 };
 
@@ -77,6 +71,7 @@ export type SanitizedSubmissionPayload = {
   reimbursement_amount: number;
   reimbursement_receipts: string | null;
   business_line: string | null;
+  entry_type: 'SC' | 'MC' | null;
   entity_type: string | null;
   client_type: string | null;
   agency_name: string | null;
@@ -97,6 +92,7 @@ export type SanitizedSubmissionPayload = {
   reviewed_by: null;
   reviewed_at: null;
   rejection_note: null;
+  proforma_invoice?: string | null;
 };
 
 export type SanitizedLineItemPayload = {

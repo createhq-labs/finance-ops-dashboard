@@ -144,11 +144,39 @@ export function BillingEntitySection({
       <div className="intake-section-header">
         <div>
           <h3 className="intake-section-title">Billing Entity and Address</h3>
-          <p className="text-muted intake-section-copy">Capture the billed entity details exactly as they should appear in the finance workflow.</p>
+          <p className="text-muted intake-section-copy">Entity details for finance workflows.</p>
         </div>
       </div>
 
-      <div className="intake-section-body intake-form-grid">
+      <div
+        className="intake-section-body"
+        style={{
+          display: "grid",
+          gap: 10,
+          gridTemplateColumns: "repeat(1, minmax(0, 1fr))",
+          alignItems: "start",
+          padding: "10px 12px 12px",
+        }}
+      >
+        <style>{`
+          @media (min-width: 640px) {
+            .billing-entity-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+          @media (min-width: 1024px) {
+            .billing-entity-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .billing-entity-wide {
+              grid-column: span 2 / span 2;
+            }
+            .billing-location-grid {
+              grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+          }
+        `}</style>
+        <div className="billing-entity-grid" style={{ display: "grid", gap: 12, alignItems: "start" }}>
         <label className="intake-field">
           <span className="intake-label">Entity Type *</span>
           <SearchableSelect
@@ -159,7 +187,9 @@ export function BillingEntitySection({
             placeholder="Select entity type"
             required
           />
-          {errors.entityType ? <p className="text-danger intake-inline-error">{errors.entityType}</p> : null}
+          <div style={{ minHeight: 16 }}>
+            {errors.entityType ? <p className="text-danger intake-inline-error">{errors.entityType}</p> : null}
+          </div>
         </label>
 
         <label className="intake-field">
@@ -172,7 +202,9 @@ export function BillingEntitySection({
             placeholder="Select client type"
             required
           />
-          {errors.clientType ? <p className="text-danger intake-inline-error">{errors.clientType}</p> : null}
+          <div style={{ minHeight: 16 }}>
+            {errors.clientType ? <p className="text-danger intake-inline-error">{errors.clientType}</p> : null}
+          </div>
         </label>
 
         <label className="intake-field">
@@ -181,6 +213,7 @@ export function BillingEntitySection({
             value={values.agencyBrandName}
             options={entityNameOptions}
             allowCustom
+            panelMaxHeight={160}
             onChange={(next) => {
               onChange("agencyBrandName", next);
               if (!tradeNameOverridden) {
@@ -192,7 +225,9 @@ export function BillingEntitySection({
             data-field="agencyBrandName"
             required
           />
-          {errors.agencyBrandName ? <p className="text-danger intake-inline-error">{errors.agencyBrandName}</p> : null}
+          <div style={{ minHeight: 16 }}>
+            {errors.agencyBrandName ? <p className="text-danger intake-inline-error">{errors.agencyBrandName}</p> : null}
+          </div>
         </label>
 
         <label className="intake-field">
@@ -201,6 +236,7 @@ export function BillingEntitySection({
             value={values.agencyBrandTradeName}
             options={tradeNameOptions}
             allowCustom
+            panelMaxHeight={160}
             onChange={(next) => {
               setTradeNameOverridden(true);
               onChange("agencyBrandTradeName", next);
@@ -209,7 +245,9 @@ export function BillingEntitySection({
             data-field="agencyBrandTradeName"
             required
           />
-          {errors.agencyBrandTradeName ? <p className="text-danger intake-inline-error">{errors.agencyBrandTradeName}</p> : null}
+          <div style={{ minHeight: 16 }}>
+            {errors.agencyBrandTradeName ? <p className="text-danger intake-inline-error">{errors.agencyBrandTradeName}</p> : null}
+          </div>
         </label>
 
         {values.entityType === "Agency" ? (
@@ -219,11 +257,14 @@ export function BillingEntitySection({
               value={values.billingBrandName}
               options={brandOptions}
               allowCustom
+              panelMaxHeight={160}
               onChange={(next) => onChange("billingBrandName", next)}
               placeholder="Select brand name"
               data-field="billingBrandName"
             />
-            {errors.billingBrandName ? <p className="text-danger intake-inline-error">{errors.billingBrandName}</p> : null}
+            <div style={{ minHeight: 16 }}>
+              {errors.billingBrandName ? <p className="text-danger intake-inline-error">{errors.billingBrandName}</p> : null}
+            </div>
           </label>
         ) : null}
 
@@ -245,18 +286,18 @@ export function BillingEntitySection({
             disabled={!isIndianClient}
             style={!isIndianClient ? { color: "#dc2626" } : undefined}
           />
-          {errors.gstNumber ? <p className="text-danger intake-inline-error">{errors.gstNumber}</p> : null}
-          {isIndianClient ? (
-            <>
-              <p className="text-muted intake-section-copy" style={{ margin: "6px 0 0" }}>Format: 2-digit state + PAN + entity + Z + checksum.</p>
-              {gstTouched && !gstValid ? (
-                <p className="text-danger" style={{ margin: "4px 0 0", fontSize: 12 }}>Enter a valid 15-character GST number. Example: 07AAIFI5054J1Z7</p>
-              ) : null}
-            </>
-          ) : null}
+          <div style={{ display: "grid", gap: 2, minHeight: isIndianClient ? 30 : 16 }}>
+            {isIndianClient ? (
+              <p className="text-muted intake-inline-note">(Format: state code + PAN + entity + Z + checksum)</p>
+            ) : null}
+            {errors.gstNumber ? <p className="text-danger intake-inline-error">{errors.gstNumber}</p> : null}
+            {gstTouched && !gstValid && isIndianClient && !errors.gstNumber ? (
+              <p className="text-danger intake-inline-error">Enter a valid 15-character GST number. Example: 07AAIFI5054J1Z7</p>
+            ) : null}
+          </div>
         </label>
 
-        <label className="intake-field intake-field-wide">
+        <label className="intake-field billing-entity-wide">
           <span className="intake-label">Address *</span>
           <input
             className="intake-input"
@@ -267,38 +308,48 @@ export function BillingEntitySection({
             autoComplete="off"
             required
           />
-          {errors.addressLine ? <p className="text-danger intake-inline-error">{errors.addressLine}</p> : null}
+          <div style={{ minHeight: 16 }}>
+            {errors.addressLine ? <p className="text-danger intake-inline-error">{errors.addressLine}</p> : null}
+          </div>
         </label>
+        <div className="billing-location-grid" style={{ display: "grid", gap: 12, alignItems: "start", gridColumn: "1 / -1" }}>
+          <label className="intake-field">
+            <span className="intake-label">City *</span>
+            <input className="intake-input" value={values.city} onBlur={() => setCityTouched(true)} onChange={(e) => onChange("city", e.target.value)} placeholder="Enter city" data-field="city" autoComplete="off" />
+            <div style={{ display: "grid", gap: 2, minHeight: 30 }}>
+              {errors.city ? <p className="text-danger intake-inline-error">{errors.city}</p> : null}
+              {cityTouched && locationMismatch ? <p className="text-danger intake-inline-error">Pincode does not match selected city/state.</p> : null}
+            </div>
+          </label>
 
-        <label className="intake-field">
-          <span className="intake-label">City *</span>
-          <input className="intake-input" value={values.city} onBlur={() => setCityTouched(true)} onChange={(e) => onChange("city", e.target.value)} placeholder="Enter city" data-field="city" autoComplete="off" />
-          {errors.city ? <p className="text-danger intake-inline-error">{errors.city}</p> : null}
-          {cityTouched && locationMismatch ? <p className="text-danger" style={{ margin: "4px 0 0", fontSize: 12 }}>Pincode does not match selected city/state.</p> : null}
-        </label>
+          <label className="intake-field">
+            <span className="intake-label">State *</span>
+            <input className="intake-input" value={values.state} onBlur={() => setStateTouched(true)} onChange={(e) => onChange("state", e.target.value)} placeholder="Enter state" data-field="state" autoComplete="off" required />
+            <div style={{ display: "grid", gap: 2, minHeight: 30 }}>
+              {errors.state ? <p className="text-danger intake-inline-error">{errors.state}</p> : null}
+              {stateTouched && locationMismatch ? <p className="text-danger intake-inline-error">Pincode does not match selected city/state.</p> : null}
+            </div>
+          </label>
 
-        <label className="intake-field">
-          <span className="intake-label">State *</span>
-          <input className="intake-input" value={values.state} onBlur={() => setStateTouched(true)} onChange={(e) => onChange("state", e.target.value)} placeholder="Enter state" data-field="state" autoComplete="off" required />
-          {errors.state ? <p className="text-danger intake-inline-error">{errors.state}</p> : null}
-          {stateTouched && locationMismatch ? <p className="text-danger" style={{ margin: "4px 0 0", fontSize: 12 }}>Pincode does not match selected city/state.</p> : null}
-        </label>
+          <label className="intake-field">
+            <span className="intake-label">Country *</span>
+            <input className="intake-input" value={values.country} onChange={(e) => onChange("country", e.target.value)} placeholder="Enter country" data-field="country" autoComplete="off" required />
+            <div style={{ minHeight: 16 }}>
+              {errors.country ? <p className="text-danger intake-inline-error">{errors.country}</p> : null}
+            </div>
+          </label>
 
-        <label className="intake-field">
-          <span className="intake-label">Country *</span>
-          <input className="intake-input" value={values.country} onChange={(e) => onChange("country", e.target.value)} placeholder="Enter country" data-field="country" autoComplete="off" required />
-          {errors.country ? <p className="text-danger intake-inline-error">{errors.country}</p> : null}
-        </label>
-
-        <label className="intake-field">
-          <span className="intake-label">Pincode{isIndianClient ? " *" : ""}</span>
-          <input className="intake-input" value={values.pincode} onBlur={() => setPincodeTouched(true)} onChange={(e) => onChange("pincode", e.target.value)} placeholder="Enter pincode / postal code" data-field="pincode" autoComplete="off" required={isIndianClient} />
-          {errors.pincode ? <p className="text-danger intake-inline-error">{errors.pincode}</p> : null}
-          {pincodeTouched && !pincodeValid ? <p className="text-danger" style={{ margin: "4px 0 0", fontSize: 12 }}>Enter a valid 6-digit Indian pincode.</p> : null}
-          {pincodeTouched && locationMismatch ? (
-            <p className="text-danger" style={{ margin: "4px 0 0", fontSize: 12 }}>Pincode does not match selected city/state.</p>
-          ) : null}
-        </label>
+          <label className="intake-field">
+            <span className="intake-label">Pincode{isIndianClient ? " *" : ""}</span>
+            <input className="intake-input" value={values.pincode} onBlur={() => setPincodeTouched(true)} onChange={(e) => onChange("pincode", e.target.value)} placeholder="Enter pincode / postal code" data-field="pincode" autoComplete="off" required={isIndianClient} />
+            <div style={{ display: "grid", gap: 2, minHeight: 30 }}>
+              {errors.pincode ? <p className="text-danger intake-inline-error">{errors.pincode}</p> : null}
+              {pincodeTouched && !pincodeValid ? <p className="text-danger intake-inline-error">Enter a valid 6-digit Indian pincode.</p> : null}
+              {pincodeTouched && locationMismatch ? <p className="text-danger intake-inline-error">Pincode does not match selected city/state.</p> : null}
+            </div>
+          </label>
+        </div>
+        </div>
       </div>
     </section>
   );

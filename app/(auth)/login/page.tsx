@@ -41,14 +41,29 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="bg-app" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 20 }}>
-      <section className="intake-section" style={{ width: '100%', maxWidth: 460 }}>
-        <div className="intake-section-header">
-          <h1 style={{ margin: 0 }}>CREATE Finance Ops</h1>
-          <p className="text-muted" style={{ marginTop: 6 }}>Sign in with your provisioned <strong>@create.wtf</strong> account.</p>
+    <main style={{
+      minHeight: '100vh',
+      display: 'grid',
+      placeItems: 'center',
+      padding: 20,
+      background: 'radial-gradient(ellipse at 30% 20%, rgba(99,102,241,0.15), transparent 50%), radial-gradient(ellipse at 80% 80%, rgba(139,92,246,0.12), transparent 50%), var(--bg)'
+    }}>
+      <section className="surface" style={{ width: '100%', maxWidth: 420, padding: '36px 32px' }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
+          <div className="sidebar-logo-mark" style={{ width: 40, height: 40, fontSize: 18 }}>C</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>Finance Ops</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>CREATE · Internal</div>
+          </div>
         </div>
 
-        <form onSubmit={onSubmit} className="intake-section-body" style={{ display: 'grid', gap: 12 }}>
+        <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700 }}>Sign in</h1>
+        <p className="text-muted" style={{ marginTop: 0, marginBottom: 24, fontSize: 14 }}>
+          Use your provisioned <strong>@create.wtf</strong> account.
+        </p>
+
+        <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12 }}>
           <input
             placeholder="Email"
             type="email"
@@ -65,13 +80,15 @@ export default function LoginPage() {
             required
             className="intake-input"
           />
-          <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading ? 'Logging in...' : 'Login'}
+          <button className="btn btn-primary" type="submit" disabled={loading} style={{ marginTop: 4, padding: '12px 0', fontSize: 15 }}>
+            {loading ? 'Signing in...' : 'Sign in'}
           </button>
-
-          {error ? <p style={{ marginTop: 6, color: 'var(--danger)' }}>{error}</p> : null}
-          <p className="text-muted" style={{ marginTop: 6 }}>No public signup. Ask admin/finance to provision your account.</p>
+          {error ? <p style={{ margin: 0, color: 'var(--danger)', fontSize: 14 }}>{error}</p> : null}
         </form>
+
+        <p className="text-muted" style={{ marginTop: 20, fontSize: 12, textAlign: 'center' }}>
+          No public signup. Contact admin to provision access.
+        </p>
       </section>
     </main>
   );

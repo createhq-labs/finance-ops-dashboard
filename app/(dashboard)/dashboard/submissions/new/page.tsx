@@ -2,16 +2,19 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { PageHeader } from '../../../../../components/dashboard/page-header';
+import { StatePanel } from '../../../../../components/dashboard/state-panel';
 import { InvoiceIntakeForm } from '../../../../../components/forms/invoice-intake-form';
 import { useDashboardSession } from '../../../../../components/layout/dashboard-session';
 import type { InvoiceIntakeFormValues, InvoiceIntakeSubmissionPayload } from '../../../../../components/forms/types';
+import { getPiDisplayMeta } from '../../../../../lib/client/pi-display';
 import { canSubmitInvoice, getDefaultDashboardPath } from '../../../../../lib/client/dashboard-access';
 
 function cleanPrefillAddress(address: string, parts: Array<string | null | undefined>) {
   const normalizedAddress = String(address || '').trim().replace(/^"+|"+$/g, '');
   if (!normalizedAddress) return '';
 
-  const tokensToRemove = parts
+  const trailingTokens = parts
     .filter(Boolean)
     .map((value) => String(value).trim().replace(/^"+|"+$/g, '').toLowerCase());
 
@@ -20,11 +23,20 @@ function cleanPrefillAddress(address: string, parts: Array<string | null | undef
     .map((part) => part.trim().replace(/^"+|"+$/g, ''))
     .filter(Boolean);
 
-  while (addressParts.length && tokensToRemove.includes(addressParts[addressParts.length - 1].toLowerCase())) {
-    addressParts.pop();
+  let addressIndex = addressParts.length - 1;
+  let tokenIndex = trailingTokens.length - 1;
+
+  while (
+    addressIndex >= 0 &&
+    tokenIndex >= 0 &&
+    addressParts[addressIndex].toLowerCase() === trailingTokens[tokenIndex]
+  ) {
+    addressIndex -= 1;
+    tokenIndex -= 1;
   }
 
-  return addressParts.join(', ') || normalizedAddress;
+  const cleaned = addressParts.slice(0, addressIndex + 1).join(', ');
+  return cleaned || normalizedAddress;
 }
 
 export default function NewSubmissionPage() {
@@ -33,7 +45,7 @@ export default function NewSubmissionPage() {
   const resubmitId = searchParams.get('resubmit_id');
   const { user, loading } = useDashboardSession();
   const [submitMessage, setSubmitMessage] = useState('');
-  const [submitPi, setSubmitPi] = useState('');
+  const [submitPi, setSubmitPi] = useState({ label: '', description: '' });
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [prefillValues, setPrefillValues] = useState<Partial<InvoiceIntakeFormValues> | null>(null);
   const [prefillLoading, setPrefillLoading] = useState(false);
@@ -58,6 +70,7 @@ export default function NewSubmissionPage() {
         | ({
             id: string;
             business_line?: 'TM' | 'IM' | null;
+            entry_type?: 'SC' | 'MC' | null;
             entity_type?: 'Agency' | 'Brand' | null;
             client_type?: 'Indian' | 'Foreign' | null;
             agency_brand_name?: string | null;
@@ -78,7 +91,6 @@ export default function NewSubmissionPage() {
             campaign_name?: string | null;
             campaign_brand?: string | null;
             campaign_notes?: string | null;
-            integration_metadata?: Record<string, string>;
             intake_line_items?: Array<{
               creator_name?: string | null;
               brand_name?: string | null;
@@ -89,12 +101,15 @@ export default function NewSubmissionPage() {
         | undefined;
       if (!found) throw new Error('Submission not found for resubmit.');
 
-      const meta = (found.integration_metadata ?? {}) as Record<string, string>;
       const lineItems = Array.isArray(found.intake_line_items) ? found.intake_line_items : [];
-      const inferredCity = String(meta.city ?? '').trim();
-      const inferredState = String(meta.state ?? '').trim();
-      const inferredCountry = String(meta.country ?? '').trim();
-      const inferredPincode = String(meta.pincode ?? '').trim();
+      const addressParts = String(found.address ?? '')
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean);
+      const inferredPincode = addressParts[addressParts.length - 1]?.match(/\b\d{4,8}\b/)?.[0] ?? '';
+      const inferredCountry = inferredPincode ? (addressParts[addressParts.length - 2] ?? '') : (addressParts[addressParts.length - 1] ?? '');
+      const inferredState = inferredPincode ? (addressParts[addressParts.length - 3] ?? '') : (addressParts[addressParts.length - 2] ?? '');
+      const inferredCity = inferredPincode ? (addressParts[addressParts.length - 4] ?? '') : (addressParts[addressParts.length - 3] ?? '');
       const inferredAddressLine = cleanPrefillAddress(String(found.address ?? ''), [
         inferredPincode,
         inferredCountry,
@@ -102,12 +117,12 @@ export default function NewSubmissionPage() {
         inferredCity,
       ]);
 
-      const businessLine = ((found.business_line || meta.businessLine) === 'IM' ? 'IM' : 'TM') as InvoiceIntakeFormValues['businessLine'];
+      const businessLine = (found.business_line === 'IM' ? 'IM' : 'TM') as InvoiceIntakeFormValues['businessLine'];
       const entryType = (
         businessLine === 'TM'
-          ? meta.entryType === 'MC'
+          ? found.entry_type === 'MC'
             ? 'MC'
-            : meta.entryType === 'SC'
+            : found.entry_type === 'SC'
               ? 'SC'
               : lineItems.length > 1 && lineItems.some((item: { creator_name?: string | null }) => item.creator_name)
                 ? 'MC'
@@ -141,11 +156,11 @@ export default function NewSubmissionPage() {
       const nextPrefill: Partial<InvoiceIntakeFormValues> = {
         businessLine,
         entryType,
-        entityType: (found.entity_type || meta.entityType) === 'Brand' ? 'Brand' : 'Agency',
-        clientType: (found.client_type || meta.clientType) === 'Foreign' ? 'Foreign' : 'Indian',
+        entityType: found.entity_type === 'Brand' ? 'Brand' : 'Agency',
+        clientType: found.client_type === 'Foreign' ? 'Foreign' : 'Indian',
         agencyBrandName: found.agency_brand_name ?? '',
         agencyBrandTradeName: found.agency_brand_trade_name ?? '',
-        billingBrandName: found.brand_name || meta.billingBrandName || '',
+        billingBrandName: found.brand_name || '',
         gstNumber: String(found.gst_number ?? ''),
         addressLine: inferredAddressLine,
         city: inferredCity,
@@ -161,12 +176,12 @@ export default function NewSubmissionPage() {
         additionalInformation: found.additional_information ?? '',
         scCreator: found.creator_creators_name ?? mcRows[0]?.creator ?? '',
         scBrand: found.brand_name ?? mcRows[0]?.brand ?? '',
-        campaignCode: found.campaign_code ?? meta.campaignCode ?? '',
-        campaignName: found.campaign_name ?? meta.campaignName ?? '',
-        campaignBrand: found.campaign_brand ?? meta.campaignBrand ?? found.brand_name ?? '',
+        campaignCode: found.campaign_code ?? '',
+        campaignName: found.campaign_name ?? '',
+        campaignBrand: found.campaign_brand ?? found.brand_name ?? '',
         campaignDeliverable: imDeliverables[0] ?? '',
         campaignExtraDeliverables: imDeliverables.slice(1),
-        campaignNotes: found.campaign_notes ?? meta.campaignNotes ?? '',
+        campaignNotes: found.campaign_notes ?? '',
         imCommercials: commercialsValue > 0 ? String(Math.max(commercialsValue - commissionValue, 0)) : '',
       };
 
@@ -205,7 +220,14 @@ export default function NewSubmissionPage() {
       throw new Error(`${detail}${stage}`);
     }
 
-    setSubmitPi(body?.pi_number || '');
+    setSubmitPi(
+      getPiDisplayMeta({
+        pi: body?.pi_number ?? '',
+        submittedAt: new Date().toISOString(),
+        invoiceType: payload.invoice_type,
+        lineItems: payload.line_items,
+      })
+    );
     setSubmitMessage('Your intake has been recorded and sent into the finance review workflow.');
     setSubmitSuccess(true);
     setTimeout(() => router.push('/dashboard/submissions'), 1800);
@@ -216,25 +238,30 @@ export default function NewSubmissionPage() {
 
   return (
     <main className="intake-shell">
-      <header className="intake-page-header">
-        <div>
-          <p className="intake-eyebrow">CREATE Ledger Intake</p>
-          <h1 className="intake-page-title">New Submission</h1>
-          <p className="text-muted intake-page-copy">
-            Prepare a billing intake for finance review using the CREATE ledger flow adapted for this dashboard.
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        title={
+          <span
+            className="intake-page-title"
+            style={resubmitId ? { color: 'rgb(225 29 72)' } : undefined}
+          >
+            {resubmitId ? 'Resubmission' : 'New Submission'}
+          </span>
+        }
+        description={<span className="intake-page-copy">Prepare a billing intake for finance review using the CREATE ledger workflow.</span>}
+        className="intake-page-header-compact border-b-0"
+      />
 
-      <section className="intake-banner">
-        <p className="text-muted" style={{ margin: 0 }}>
+      <section className="intake-callout">
+        <p className="intake-callout-title">Before You Submit</p>
+        <p className="intake-callout-copy">
           Review all fields carefully before final submit. Once submitted, finance will process this intake in the workflow.
         </p>
       </section>
 
       {resubmitId ? (
-        <section className="intake-banner">
-          <p style={{ margin: 0, fontWeight: 600 }}>
+        <section className="intake-callout">
+          <p className="intake-callout-title">Resubmission Mode</p>
+          <p className="intake-callout-copy" style={{ fontWeight: 600 }}>
             You are editing a previous submission. Submitting will create a new version.
           </p>
         </section>
@@ -252,7 +279,10 @@ export default function NewSubmissionPage() {
             </div>
             <div className="surface" style={{ padding: 16 }}>
               <div className="text-muted" style={{ fontSize: 12 }}>PI / Proforma Invoice Number</div>
-              <div style={{ fontSize: 22, fontWeight: 700 }}>{submitPi || 'Generated'}</div>
+              <div style={{ fontSize: 22, fontWeight: 700 }}>{submitPi.label || 'Generated'}</div>
+              {submitPi.description ? (
+                <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>{submitPi.description}</div>
+              ) : null}
             </div>
             <button className="btn btn-primary" type="button" disabled>
               Redirecting to Submissions...
@@ -269,8 +299,8 @@ export default function NewSubmissionPage() {
           onSubmit={handleCreateSubmit}
         />
       )}
-      {prefillLoading ? <p className="text-muted">Loading previous submission...</p> : null}
-      {prefillError ? <p className="text-danger">{prefillError}</p> : null}
+      {prefillLoading ? <StatePanel>Loading previous submission...</StatePanel> : null}
+      {prefillError ? <StatePanel tone="danger">{prefillError}</StatePanel> : null}
       <style jsx>{`
         .intake-submit-success {
           animation: intakeSuccessPulse 900ms ease;

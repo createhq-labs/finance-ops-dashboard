@@ -19,13 +19,24 @@ export function CommercialsSection({ values, totalAmount, onChange, errors = {} 
           <h3 className="intake-section-title">Commercials</h3>
           <p className="text-muted intake-section-copy">
             {isInfluencerMarketing
-              ? "Enter the IM base amount. The final submitted commercials automatically include any additional agency commission."
-              : "The total is derived from TM line items and automatically includes any additional agency commission."}
+              ? "Enter total amount and commission."
+              : "Total auto-calculated from line items + commission."}
           </p>
         </div>
       </div>
 
-      <div className="intake-section-body intake-form-grid">
+      <div
+        className="intake-section-body"
+        style={{ display: "grid", gap: 12, alignItems: "start", gridTemplateColumns: "repeat(1, minmax(0, 1fr))" }}
+      >
+        <style>{`
+          @media (min-width: 768px) {
+            .commercials-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+        `}</style>
+        <div className="commercials-grid" style={{ display: "grid", gap: 12, alignItems: "start" }}>
         <label className="intake-field">
           <span className="intake-label">{isInfluencerMarketing ? "Commercials / Total Amount (INR) *" : "Total Amount (INR)"}</span>
           <input
@@ -44,12 +55,14 @@ export function CommercialsSection({ values, totalAmount, onChange, errors = {} 
             data-field="imCommercials"
             autoComplete="off"
           />
-          {errors.imCommercials ? <p className="text-danger intake-inline-error">{errors.imCommercials}</p> : null}
-          {isInfluencerMarketing && commissionValue > 0 ? (
-            <p className="text-muted intake-section-copy" style={{ margin: "6px 0 0" }}>
-              Base IM amount: {imBaseAmount}
-            </p>
-          ) : null}
+          <div style={{ display: "grid", gap: 2, minHeight: isInfluencerMarketing && commissionValue > 0 ? 28 : 16 }}>
+            {errors.imCommercials ? <p className="text-danger intake-inline-error">{errors.imCommercials}</p> : null}
+            {isInfluencerMarketing && commissionValue > 0 ? (
+              <p className="text-muted intake-inline-note" style={{ marginTop: 0 }}>
+                Base IM amount: {imBaseAmount}
+              </p>
+            ) : null}
+          </div>
         </label>
 
         <label className="intake-field">
@@ -64,7 +77,9 @@ export function CommercialsSection({ values, totalAmount, onChange, errors = {} 
             data-field="commission"
             autoComplete="off"
           />
+          <div style={{ minHeight: 16 }} />
         </label>
+        </div>
       </div>
     </section>
   );

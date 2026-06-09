@@ -22,7 +22,7 @@ function ProductReimbursementField({
         onChange={(e) => onChange(fieldKey, e.target.files?.[0] ?? null)}
       />
       <p className="text-muted intake-section-copy" style={{ margin: 0 }}>
-        PDF, image, document, or spreadsheet. Ideal size: 5 MB. Hard max: 10 MB.
+        PDF, image, document, or spreadsheet. Max 10 MB.
       </p>
       {error ? <p className="text-danger intake-inline-error">{error}</p> : null}
       {file ? (
@@ -74,9 +74,7 @@ export function SingleCreatorRows({
       <div className="intake-section-header">
         <div>
           <h3 className="intake-section-title">Single Creator</h3>
-          <p className="text-muted intake-section-copy">
-            Select one creator, choose the working brand, and add the deliverable rows that should roll into the invoice total.
-          </p>
+          <p className="text-muted intake-section-copy">Select creator, brand, deliverable, and amount.</p>
         </div>
       </div>
 
@@ -90,24 +88,30 @@ export function SingleCreatorRows({
                     value={scCreator}
                     options={creatorOptions}
                     allowCustom
+                    panelMaxHeight={160}
                     onChange={onCreatorChange}
                     placeholder="Select creator"
                     disabled={idx > 0}
                     data-field="scCreator"
                   />
-                  {idx === 0 && errors.scCreator ? <p className="text-danger intake-inline-error">{errors.scCreator}</p> : null}
+                  <div style={{ minHeight: 16 }}>
+                    {idx === 0 && errors.scCreator ? <p className="text-danger intake-inline-error">{errors.scCreator}</p> : null}
+                  </div>
                 </div>
                 <div className="grid gap-1">
                   <SearchableSelect
                     value={scBrand}
                     options={brandOptions}
                     allowCustom
+                    panelMaxHeight={160}
                     onChange={onBrandChange}
                     placeholder="Select brand"
                     disabled={idx > 0}
                     data-field="scBrand"
                   />
-                  {idx === 0 && errors.scBrand ? <p className="text-danger intake-inline-error">{errors.scBrand}</p> : null}
+                  <div style={{ minHeight: 16 }}>
+                    {idx === 0 && errors.scBrand ? <p className="text-danger intake-inline-error">{errors.scBrand}</p> : null}
+                  </div>
                 </div>
                 <div className="grid gap-1">
                   <SearchableSelect
@@ -117,7 +121,9 @@ export function SingleCreatorRows({
                     data-field={`scDeliverables.${idx}.deliverable`}
                     placeholder="Select deliverable"
                   />
-                  {errors[`scDeliverables.${idx}.deliverable`] ? <p className="text-danger intake-inline-error">{errors[`scDeliverables.${idx}.deliverable`]}</p> : null}
+                  <div style={{ minHeight: 16 }}>
+                    {errors[`scDeliverables.${idx}.deliverable`] ? <p className="text-danger intake-inline-error">{errors[`scDeliverables.${idx}.deliverable`]}</p> : null}
+                  </div>
                 </div>
                 <div className="grid gap-1">
                   <input
@@ -131,7 +137,9 @@ export function SingleCreatorRows({
                     data-field={`scDeliverables.${idx}.amount`}
                     autoComplete="off"
                   />
-                  {errors[`scDeliverables.${idx}.amount`] ? <p className="text-danger intake-inline-error">{errors[`scDeliverables.${idx}.amount`]}</p> : null}
+                  <div style={{ minHeight: 16 }}>
+                    {errors[`scDeliverables.${idx}.amount`] ? <p className="text-danger intake-inline-error">{errors[`scDeliverables.${idx}.amount`]}</p> : null}
+                  </div>
                 </div>
                 <button className="btn intake-row-action" type="button" onClick={() => onRemoveRow(idx)} disabled={rows.length === 1}>
                   Remove
@@ -150,7 +158,9 @@ export function SingleCreatorRows({
           ))}
         </div>
 
-        {errors.creatorDeliverables ? <p className="text-danger intake-inline-error">{errors.creatorDeliverables}</p> : null}
+        <div style={{ minHeight: 16 }}>
+          {errors.creatorDeliverables ? <p className="text-danger intake-inline-error">{errors.creatorDeliverables}</p> : null}
+        </div>
         <button className="btn" type="button" onClick={onAddRow}>
           + Add Deliverable
         </button>
@@ -193,7 +203,7 @@ export function MultiCreatorRows({
       <div className="intake-section-header">
         <div>
           <h3 className="intake-section-title">Multiple Creators</h3>
-          <p className="text-muted intake-section-copy">Capture each creator, their brand, deliverable, and invoice amount in a separate row.</p>
+          <p className="text-muted intake-section-copy">Capture each creator, deliverable, and amount.</p>
         </div>
       </div>
 
@@ -207,11 +217,14 @@ export function MultiCreatorRows({
                     value={row.creator}
                     options={creatorOptions}
                     allowCustom
+                    panelMaxHeight={160}
                     onChange={(next) => onCreatorChange(idx, next)}
                     placeholder="Select creator"
                     data-field={`mcRows.${idx}.creator`}
                   />
-                  {errors[`mcRows.${idx}.creator`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.creator`]}</p> : null}
+                  <div style={{ minHeight: 16 }}>
+                    {errors[`mcRows.${idx}.creator`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.creator`]}</p> : null}
+                  </div>
                 </div>
 
                 <div className="grid gap-1">
@@ -219,12 +232,15 @@ export function MultiCreatorRows({
                     value={row.brand}
                     options={brandOptions}
                     allowCustom
+                    panelMaxHeight={160}
                     onChange={(next) => onRowChange(idx, { brand: next })}
                     placeholder="Select brand"
                     disabled={idx > 0}
                     data-field={`mcRows.${idx}.brand`}
                   />
-                  {errors[`mcRows.${idx}.brand`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.brand`]}</p> : null}
+                  <div style={{ minHeight: 16 }}>
+                    {errors[`mcRows.${idx}.brand`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.brand`]}</p> : null}
+                  </div>
                 </div>
 
                 <div className="grid gap-1">
@@ -235,7 +251,9 @@ export function MultiCreatorRows({
                     data-field={`mcRows.${idx}.deliverable`}
                     placeholder="Select deliverable"
                   />
-                  {errors[`mcRows.${idx}.deliverable`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.deliverable`]}</p> : null}
+                  <div style={{ minHeight: 16 }}>
+                    {errors[`mcRows.${idx}.deliverable`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.deliverable`]}</p> : null}
+                  </div>
                 </div>
 
                 <div className="grid gap-1">
@@ -250,7 +268,9 @@ export function MultiCreatorRows({
                     data-field={`mcRows.${idx}.amount`}
                     autoComplete="off"
                   />
-                  {errors[`mcRows.${idx}.amount`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.amount`]}</p> : null}
+                  <div style={{ minHeight: 16 }}>
+                    {errors[`mcRows.${idx}.amount`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.amount`]}</p> : null}
+                  </div>
                 </div>
 
                 <button className="btn intake-row-action" type="button" onClick={() => onRemoveRow(idx)} disabled={rows.length === 1}>
@@ -270,7 +290,9 @@ export function MultiCreatorRows({
           ))}
         </div>
 
-        {errors.creatorDeliverables ? <p className="text-danger intake-inline-error">{errors.creatorDeliverables}</p> : null}
+        <div style={{ minHeight: 16 }}>
+          {errors.creatorDeliverables ? <p className="text-danger intake-inline-error">{errors.creatorDeliverables}</p> : null}
+        </div>
         <button className="btn" type="button" onClick={onAddRow}>
           + Add Creator Row
         </button>

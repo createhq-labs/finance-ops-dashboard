@@ -1,7 +1,7 @@
-import type { SessionUser } from './session';
+﻿import type { SessionUser } from './session';
 
 export type AppRole = SessionUser['role'];
-export type DashboardPath = '/dashboard' | '/dashboard/submit' | '/dashboard/submissions' | '/dashboard/submissions/new' | '/dashboard/finance' | '/dashboard/notifications' | '/dashboard/guide' | '/dashboard/users' | '/dashboard/system';
+export type DashboardPath = '/dashboard' | '/dashboard/submit' | '/dashboard/submissions' | '/dashboard/submissions/new' | '/dashboard/finance' | '/dashboard/master-data' | '/dashboard/notifications' | '/dashboard/guide' | '/dashboard/settings' | '/dashboard/users' | '/dashboard/system';
 
 export function getInvoiceIntakePath(): DashboardPath {
   return '/dashboard/submissions/new';
@@ -31,8 +31,12 @@ export function canViewFinanceDashboard(role: AppRole) {
   return role === 'finance' || isAdminRole(role);
 }
 
+export function canViewMasterData(role: AppRole) {
+  return role === 'finance' || isAdminRole(role) || role === 'developer';
+}
+
 export function canManageUsers(role: AppRole) {
-  return isAdminRole(role);
+  return role === 'finance' || isAdminRole(role) || role === 'developer';
 }
 
 export function canViewSystemPage(role: AppRole) {
@@ -79,8 +83,10 @@ export function canAccessDashboardPath(role: AppRole, pathname: string) {
   if (pathname === '/dashboard/submissions/new') return canSubmitInvoice(role);
   if (pathname === '/dashboard/submissions') return canViewSubmissionsPage(role);
   if (pathname === '/dashboard/finance') return canViewFinanceDashboard(role);
+  if (pathname === '/dashboard/master-data') return canViewMasterData(role);
   if (pathname === '/dashboard/notifications') return canViewNotifications(role);
   if (pathname === '/dashboard/guide') return true;
+  if (pathname === '/dashboard/settings') return true;
   if (pathname === '/dashboard/users') return canManageUsers(role);
   if (pathname === '/dashboard/system') return canViewSystemPage(role);
   return false;
