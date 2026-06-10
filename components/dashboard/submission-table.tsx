@@ -44,6 +44,7 @@ export type SubmissionRow = {
   payment_received?: 'received' | 'pending' | 'partial' | 'full' | 'not_received' | string;
   payment_made?: 'paid' | 'pending' | 'partial' | 'full' | 'not_paid' | string;
   closed_status?: 'open' | 'closed' | 'cancelled' | string;
+  finance_notes?: string | null;
   finance_comment?: string | null;
   invoice_number?: string | null;
   debit_note_number?: string | null;
@@ -106,11 +107,13 @@ type FinanceEditableField =
   | 'payment_received'
   | 'payment_made'
   | 'closed_status'
+  | 'rejection_note'
+  | 'finance_notes'
   | 'finance_comment'
   | 'invoice_number'
   | 'debit_note_number';
 
-type StatusEditableField = Exclude<FinanceEditableField, 'finance_comment' | 'invoice_number' | 'debit_note_number'>;
+type StatusEditableField = Exclude<FinanceEditableField, 'rejection_note' | 'finance_notes' | 'finance_comment' | 'invoice_number' | 'debit_note_number'>;
 
 type FinanceUpdateResult = {
   success: boolean;
@@ -159,7 +162,8 @@ type SheetColumnId =
   | 'invoice_number'
   | 'debit_note_number'
   | 'creator_invoice_received'
-  | 'finance_comment'
+  | 'rejection_note'
+  | 'finance_notes'
   | 'actions';
 
 type FlashState = {
@@ -208,7 +212,8 @@ const COLUMN_TITLES: Record<SheetColumnId, string> = {
   invoice_number: 'Invoice Number',
   debit_note_number: 'Debit Note Number',
   creator_invoice_received: 'Creator Invoice',
-  finance_comment: 'Finance Comment',
+  rejection_note: 'Resubmission Note',
+  finance_notes: 'Finance Notes',
   actions: 'View',
 };
 
@@ -252,7 +257,8 @@ const COLUMN_WIDTHS: Record<SheetColumnId, number> = {
   invoice_number: 104,
   debit_note_number: 104,
   creator_invoice_received: 146,
-  finance_comment: 156,
+  rejection_note: 160,
+  finance_notes: 156,
   actions: 92,
 };
 
@@ -575,6 +581,14 @@ function isClosedRow(row: SubmissionRow) {
   return normalizeText(row.closed_status) === 'closed';
 }
 
+function getEmployeeFeedback(row: SubmissionRow) {
+  return row.finance_comment || row.rejection_note || '';
+}
+
+function getFinanceNotes(row: SubmissionRow) {
+  return row.finance_notes || '';
+}
+
 function getColumns(viewer: ViewerRole) {
   const sharedEmployeeFields: SheetColumnId[] = [
     'email_address',
@@ -613,6 +627,7 @@ function getColumns(viewer: ViewerRole) {
       'pi',
       'intake_status',
       'submitted_at',
+      'rejection_note',
       'invoice_status',
       'payment_received',
       'creator_invoice_received',
@@ -636,7 +651,8 @@ function getColumns(viewer: ViewerRole) {
       'creator_invoice_received',
       'payment_made',
       'closed_status',
-      'finance_comment',
+      'rejection_note',
+      'finance_notes',
       'actions',
     ] satisfies SheetColumnId[];
   }
@@ -809,7 +825,7 @@ function AuditPopover({
   const isReopenAudit =
     field === 'closed_status' &&
     normalizeText(row.closed_status) === 'open' &&
-    Boolean((row.finance_comment || '').trim());
+    Boolean(getFinanceNotes(row).trim());
 
   const top = rect.bottom + 10;
   const left = Math.max(12, rect.left - 70);
@@ -845,7 +861,7 @@ function AuditPopover({
         {isReopenAudit ? (
           <div>
             <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-rose-600 dark:text-rose-300">Reason</div>
-            <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-50">{row.finance_comment}</div>
+            <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-50">{getFinanceNotes(row)}</div>
           </div>
         ) : null}
       </div>
@@ -854,75 +870,119 @@ function AuditPopover({
   );
 }
 
-function FinanceCommentCell({
+function EditableNoteCell({
   row,
+  field,
+  label,
+  value,
   onSave,
   saving,
   copied,
   onCopy,
+  editable,
+  active,
+  onActivate,
+  onClose,
 }: {
   row: SubmissionRow;
+  field: FinanceEditableField;
+  label: string;
+  value: string;
   onSave?: (row: SubmissionRow, field: FinanceEditableField, value: string) => Promise<FinanceUpdateResult>;
   saving: boolean;
   copied: boolean;
   onCopy: () => void;
+  editable: boolean;
+  active: boolean;
+  onActivate: () => void;
+  onClose: () => void;
 }) {
-  const [draft, setDraft] = useState(row.finance_comment || '');
-  const [expanded, setExpanded] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
+  const displayValue = value === '-' ? '' : value;
+  const [draft, setDraft] = useState(displayValue);
 
   useEffect(() => {
-    setDraft(row.finance_comment || '');
-  }, [row.finance_comment, row.id]);
-
-  useEffect(() => {
-    if (!expanded) return undefined;
-    function handleOutside(event: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
-        setExpanded(false);
-      }
-    }
-    document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
-  }, [expanded]);
+    setDraft(displayValue);
+  }, [displayValue, row.id]);
 
   async function commit() {
     const next = draft.trim();
-    if (!onSave || next === (row.finance_comment || '').trim()) return;
-    await onSave(row, 'finance_comment', next);
+    if (!onSave || next === displayValue.trim()) return;
+    await onSave(row, field, next);
+  }
+
+  if (active && editable) {
+    return (
+      <div
+        className="flex items-center gap-1"
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              void commit().finally(onClose);
+            } else if (event.key === 'Escape') {
+              event.preventDefault();
+              setDraft(displayValue);
+              onClose();
+            }
+          }}
+          onBlur={() => {
+            void commit().finally(onClose);
+          }}
+          disabled={saving}
+          placeholder={label}
+          className="h-7 min-w-0 flex-1 rounded-md border border-border/70 bg-card px-2 text-[11px] text-foreground outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/25"
+        />
+        <button
+          type="button"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={() => void commit().finally(onClose)}
+          disabled={saving}
+          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-emerald-700 transition-none hover:bg-emerald-500/10 disabled:opacity-60 dark:text-emerald-300"
+          aria-label={`Save ${label.toLowerCase()}`}
+        >
+          <Check size={14} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={() => {
+            setDraft(displayValue);
+            onClose();
+          }}
+          disabled={saving}
+          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-rose-700 transition-none hover:bg-rose-500/10 disabled:opacity-60 dark:text-rose-300"
+          aria-label={`Cancel ${label.toLowerCase()} edit`}
+        >
+          <X size={14} />
+        </button>
+      </div>
+    );
   }
 
   return (
-    <div ref={rootRef} className="relative" onDoubleClick={onCopy}>
-      <CopyNotice active={copied} />
-      <textarea
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            event.currentTarget.blur();
-          }
-        }}
-        disabled={saving}
-        placeholder="Add comment"
-        rows={expanded ? 4 : 1}
-        className={[
-          'w-full resize-none rounded-md border border-border/70 bg-popover px-2 py-1.5 pr-8 text-xs leading-5 text-popover-foreground outline-none transition-[border-color,box-shadow] duration-75 placeholder:text-muted-foreground focus:border-primary/40 focus:ring-1 focus:ring-primary/30 disabled:cursor-wait disabled:opacity-70',
-          expanded ? '' : 'h-[26px] overflow-hidden whitespace-nowrap',
-        ].join(' ')}
-        title={draft}
-      />
-      <button
-        type="button"
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={() => setExpanded((current) => !current)}
-        className="absolute bottom-0 right-0 inline-flex h-6 w-6 items-center justify-center rounded-md text-[0.68rem] font-semibold text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground"
-        aria-label={expanded ? 'Collapse finance comment' : 'Expand finance comment'}
-      >
-        {expanded ? '^' : 'v'}
-      </button>
+    <div className="flex items-start gap-1.5" title={value || label}>
+      <div className="min-w-0 flex-1">
+        <ExpandableText value={value || '—'} copied={copied} onCopy={onCopy} />
+      </div>
+      {editable ? (
+        <button
+          type="button"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onActivate();
+          }}
+          className="inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground"
+          aria-label={`Edit ${label.toLowerCase()}`}
+        >
+          <Pencil size={12} />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -1184,7 +1244,7 @@ function BadgeSelectCell({
           onClick={onOpenAudit}
           className={[
             'inline-flex h-5 w-5 items-center justify-center rounded-md transition-none hover:bg-muted/40',
-            field === 'closed_status' && normalizeText(row.closed_status) === 'open' && (row.finance_comment || '').trim()
+            field === 'closed_status' && normalizeText(row.closed_status) === 'open' && getFinanceNotes(row).trim()
               ? 'text-rose-600 dark:text-rose-300'
               : 'text-foreground',
           ].join(' ')}
@@ -1454,12 +1514,14 @@ export function SubmissionTable({
         return row.additional_agency_commission ? money(row.additional_agency_commission) : '-';
       case 'additional_information':
         return fieldValue(row.additional_information);
+      case 'rejection_note':
+        return fieldValue(getEmployeeFeedback(row));
       case 'invoice_number':
         return fieldValue(row.invoice_number);
       case 'debit_note_number':
         return fieldValue(row.debit_note_number);
-      case 'finance_comment':
-        return fieldValue(row.finance_comment);
+      case 'finance_notes':
+        return fieldValue(getFinanceNotes(row));
       case 'actions':
         return getActionLabel ? getActionLabel(row) : 'View';
       default:
@@ -1511,7 +1573,7 @@ export function SubmissionTable({
     setReopenSubmitting(true);
     setReopenError('');
 
-    const noteResult = await onFinanceUpdate(reopenDialog.row, 'finance_comment', note);
+    const noteResult = await onFinanceUpdate(reopenDialog.row, 'finance_notes', note);
     if (!noteResult.success) {
       setReopenSubmitting(false);
       setReopenError(noteResult.message || 'Failed to save reopen reason.');
@@ -1520,7 +1582,7 @@ export function SubmissionTable({
 
     const rowForReopen = {
       ...reopenDialog.row,
-      finance_comment: note,
+      finance_notes: note,
     };
     const reopenResult = await onFinanceUpdate(rowForReopen, 'closed_status', 'open');
     if (!reopenResult.success) {
@@ -1621,6 +1683,8 @@ export function SubmissionTable({
         column === 'payment_received' ||
         column === 'payment_made' ||
         column === 'closed_status' ||
+        column === 'rejection_note' ||
+        column === 'finance_notes' ||
         column === 'invoice_number' ||
         column === 'debit_note_number'
       );
@@ -1832,6 +1896,25 @@ export function SubmissionTable({
         return commonText(row.additional_agency_commission ? money(row.additional_agency_commission) : '-');
       case 'additional_information':
         return commonText(fieldValue(row.additional_information));
+      case 'rejection_note': {
+        const feedback = fieldValue(getEmployeeFeedback(row));
+        return isFinanceViewer && onFinanceUpdate ? (
+          <EditableNoteCell
+            row={row}
+            field="rejection_note"
+            label="Resubmission Note"
+            value={feedback}
+            onSave={onFinanceUpdate}
+            saving={isSaving}
+            copied={isCopied}
+            editable
+            onCopy={() => void copyCell(cellKey, feedback)}
+            active={activeEditor?.rowIndex === rowIndex && activeEditor?.columnIndex === columnIndex}
+            onActivate={() => requestEditorOpen(row, rowIndex, columnIndex)}
+            onClose={() => setActiveEditor(null)}
+          />
+        ) : commonText(feedback);
+      }
       case 'invoice_number':
       case 'debit_note_number': {
         const field = column as 'invoice_number' | 'debit_note_number';
@@ -1855,16 +1938,23 @@ export function SubmissionTable({
           />
         );
       }
-      case 'finance_comment':
-        return isFinanceViewer && !isClosedRow(row) ? (
-          <FinanceCommentCell
+      case 'finance_notes':
+        return isFinanceViewer && onFinanceUpdate && !isClosedRow(row) ? (
+          <EditableNoteCell
             row={row}
+            field="finance_notes"
+            label="Finance Notes"
+            value={fieldValue(getFinanceNotes(row))}
             onSave={onFinanceUpdate}
             saving={isSaving}
             copied={isCopied}
-            onCopy={() => void copyCell(cellKey, row.finance_comment || '')}
+            editable
+            onCopy={() => void copyCell(cellKey, getFinanceNotes(row))}
+            active={activeEditor?.rowIndex === rowIndex && activeEditor?.columnIndex === columnIndex}
+            onActivate={() => requestEditorOpen(row, rowIndex, columnIndex)}
+            onClose={() => setActiveEditor(null)}
           />
-        ) : commonText(fieldValue(row.finance_comment));
+        ) : commonText(fieldValue(getFinanceNotes(row)));
       case 'actions':
         return (
             <button
@@ -1943,6 +2033,10 @@ export function SubmissionTable({
                         <>Payment<br />Received</>
                       ) : column === 'payment_made' ? (
                         <>Payment<br />Made</>
+                      ) : column === 'rejection_note' ? (
+                        <>Resubmission<br />Note</>
+                      ) : column === 'finance_notes' ? (
+                        <>Finance<br />Notes</>
                       ) : (
                         COLUMN_TITLES[column]
                       )}

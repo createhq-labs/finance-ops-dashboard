@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const appUser = await getCurrentAppUser(userClient, token);
 
     const baseSelect =
-      'id, proforma_invoice, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
+      'id, proforma_invoice, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, finance_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
     const legacySelect =
       'id, proforma_invoice, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
 
@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
         agency_name: null,
         agency_trade_name: null,
         brand_trade_name: null,
+        finance_notes: null,
         finance_comment: null,
         creator_invoice_status: null,
         campaign_code: null,

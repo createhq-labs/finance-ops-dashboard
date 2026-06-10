@@ -23,6 +23,7 @@ type FinanceActionRequest = {
   payment_received_status?: 'pending' | 'full' | 'advance_received' | 'gst_left' | 'past_due' | 'advance_past_due' | 'not_received' | 'partial_left' | 'credit_note_issued';
   payment_made_status?: 'pending' | 'full' | 'paid' | 'part_payment_against_advance' | 'not_paid' | 'multiple_creators' | 'gst_left';
   closure_status?: 'open' | 'closed' | 'issues' | 'cancelled' | 'gst_left';
+  finance_notes?: string;
   finance_comment?: string;
 };
 
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
 
     const { data: submission, error: submissionError } = await userClient
       .from('intake_submissions')
-      .select('id, submitted_by, proforma_invoice, agency_brand_name, intake_status, invoice_status, invoice_number, debit_note_number, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, rejection_note')
+      .select('id, submitted_by, proforma_invoice, agency_brand_name, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, rejection_note')
       .eq('id', body.submission_id)
       .single();
 
@@ -166,6 +167,7 @@ export async function POST(req: NextRequest) {
       patch.reviewed_by = appUser.id;
       patch.reviewed_at = now;
       patch.rejection_note = null;
+      patch.finance_comment = null;
       activityAction = 'submission_approved';
       notificationType = 'invoice_updated';
       notificationTitle = 'Submission approved';
@@ -176,13 +178,15 @@ export async function POST(req: NextRequest) {
     if (body.action === 'reject') {
       const note = body.rejection_note?.trim();
       if (!note) throw new Error('rejection_note is required');
-      if (currentSubmission.intake_status === 'rejected' && (currentSubmission.rejection_note ?? '').trim() === note) {
+      const existingEmployeeNote = (currentSubmission.finance_comment ?? currentSubmission.rejection_note ?? '').trim();
+      if (currentSubmission.intake_status === 'rejected' && existingEmployeeNote === note) {
         return noChange('Submission is already rejected with the same note.');
       }
       patch.intake_status = 'rejected';
       patch.reviewed_by = appUser.id;
       patch.reviewed_at = now;
       patch.rejection_note = note;
+      patch.finance_comment = note;
       activityAction = 'submission_rejected';
       notificationType = 'submission_rejected';
       notificationTitle = 'Submission rejected';
@@ -193,17 +197,19 @@ export async function POST(req: NextRequest) {
     if (body.action === 'request_resubmission') {
       const note = body.rejection_note?.trim();
       if (!note) throw new Error('rejection_note is required');
-      if (currentSubmission.intake_status === 'rejected' && (currentSubmission.rejection_note ?? '').trim() === note) {
+      const existingEmployeeNote = (currentSubmission.finance_comment ?? currentSubmission.rejection_note ?? '').trim();
+      if (currentSubmission.intake_status === 'rejected' && existingEmployeeNote === note) {
         return noChange('Resubmission has already been requested with the same note.');
       }
       patch.intake_status = 'rejected';
       patch.reviewed_by = appUser.id;
       patch.reviewed_at = now;
       patch.rejection_note = note;
+      patch.finance_comment = note;
       activityAction = 'resubmission_requested';
       notificationType = 'resubmission_requested';
       notificationTitle = 'Resubmission requested';
-      notificationMessage = `${submissionLabel} needs changes before finance can continue: ${note}`;
+      notificationMessage = `Resubmission requested for ${submissionLabel}: ${note}`;
       changed = true;
     }
 
@@ -257,18 +263,18 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.action === 'update_payment_status') {
-      if (!body.creator_invoice_status && !body.payment_received_status && !body.payment_made_status && body.finance_comment === undefined) {
+      if (!body.creator_invoice_status && !body.payment_received_status && !body.payment_made_status && body.finance_notes === undefined) {
         throw new Error('At least one finance status is required');
       }
       const nextCreatorInvoice = body.creator_invoice_status ?? currentSubmission.creator_invoice_status ?? 'pending';
       const nextReceived = body.payment_received_status ?? currentSubmission.payment_received_status ?? 'pending';
       const nextMade = body.payment_made_status ?? currentSubmission.payment_made_status ?? 'pending';
-      const nextFinanceComment = body.finance_comment !== undefined ? body.finance_comment.trim() || null : currentSubmission.finance_comment ?? null;
+      const nextFinanceNotes = body.finance_notes !== undefined ? body.finance_notes.trim() || null : currentSubmission.finance_notes ?? null;
       if (
         (currentSubmission.creator_invoice_status ?? 'pending') === nextCreatorInvoice &&
         (currentSubmission.payment_received_status ?? 'pending') === nextReceived &&
         (currentSubmission.payment_made_status ?? 'pending') === nextMade &&
-        (currentSubmission.finance_comment ?? null) === nextFinanceComment
+        (currentSubmission.finance_notes ?? null) === nextFinanceNotes
       ) {
         return noChange('Finance statuses are already up to date.');
       }
@@ -284,8 +290,8 @@ export async function POST(req: NextRequest) {
         patch.payment_made_status = body.payment_made_status;
         patch.payment_made = toLegacyPaymentMade(body.payment_made_status);
       }
-      if (body.finance_comment !== undefined) {
-        patch.finance_comment = nextFinanceComment;
+      if (body.finance_notes !== undefined) {
+        patch.finance_notes = nextFinanceNotes;
       }
       patch.reviewed_by = appUser.id;
       patch.reviewed_at = now;
@@ -320,7 +326,7 @@ export async function POST(req: NextRequest) {
       .from('intake_submissions')
       .update(patch)
       .eq('id', body.submission_id)
-      .select('id, intake_status, invoice_status, invoice_number, debit_note_number, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, rejection_note, reviewed_at')
+      .select('id, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, rejection_note, reviewed_at')
       .single();
 
     if (updateError || !updated) {

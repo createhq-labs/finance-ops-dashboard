@@ -53,6 +53,7 @@ type FinanceApiRow = {
   agency_name?: string | null;
   agency_trade_name?: string | null;
   brand_trade_name?: string | null;
+  finance_notes?: string | null;
   finance_comment?: string | null;
   intake_line_items: SubmissionRow['intake_line_items'];
   intake_status: SubmissionRow['intake_status'];
@@ -93,6 +94,8 @@ type FinanceEditableField =
   | 'payment_received'
   | 'payment_made'
   | 'closed_status'
+  | 'rejection_note'
+  | 'finance_notes'
   | 'finance_comment'
   | 'invoice_number'
   | 'debit_note_number';
@@ -410,6 +413,7 @@ export default function FinanceReviewPage() {
       agency_name: item.agency_name || null,
       agency_trade_name: item.agency_trade_name || null,
       brand_trade_name: item.brand_trade_name || null,
+      finance_notes: item.finance_notes || null,
       finance_comment: item.finance_comment || undefined,
       reviewed_at: item.reviewed_at || null,
       reviewed_by_name: item.reviewed_by_name || null,
@@ -649,9 +653,12 @@ export default function FinanceReviewPage() {
     } else if (field === 'closed_status') {
       action = 'close_submission';
       payload = { closure_status: value };
+    } else if (field === 'rejection_note') {
+      action = 'request_resubmission';
+      payload = { rejection_note: value };
     } else {
       action = 'update_payment_status';
-      payload = { finance_comment: value };
+      payload = { finance_notes: value };
     }
 
     const { response, body } = await executeFinanceAction(targetRow, action, payload);
@@ -669,6 +676,7 @@ export default function FinanceReviewPage() {
               invoice_status: updated.invoice_status ?? entry.invoice_status,
               invoice_number: updated.invoice_number ?? entry.invoice_number,
               debit_note_number: updated.debit_note_number ?? entry.debit_note_number,
+              finance_notes: updated.finance_notes ?? entry.finance_notes,
               finance_comment: updated.finance_comment ?? entry.finance_comment,
               creator_invoice_received: updated.creator_invoice_status ?? entry.creator_invoice_received,
               payment_received: updated.payment_received_status ?? entry.payment_received,
@@ -689,6 +697,7 @@ export default function FinanceReviewPage() {
         invoice_status: updated.invoice_status,
         invoice_number: updated.invoice_number,
         debit_note_number: updated.debit_note_number,
+        finance_notes: updated.finance_notes ?? targetRow.finance_notes,
         finance_comment: updated.finance_comment,
         creator_invoice_received: updated.creator_invoice_status,
         payment_received: updated.payment_received_status,
@@ -952,8 +961,8 @@ export default function FinanceReviewPage() {
         </TrackingRow>
 
         <div className="surface" style={{ padding: 12 }}>
-          <div className="text-muted" style={{ fontSize: 12 }}>Comments</div>
-          <div style={{ fontWeight: 600 }}>{row.finance_comment || 'No finance comments yet.'}</div>
+          <div className="text-muted" style={{ fontSize: 12 }}>Finance Notes</div>
+          <div style={{ fontWeight: 600 }}>{row.finance_notes || 'No finance notes yet.'}</div>
         </div>
       </div>
     </div>
