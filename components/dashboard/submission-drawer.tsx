@@ -156,6 +156,8 @@ export function SubmissionDrawer({
     ...lineItems.map((item) => item.deliverable_name),
   ]);
   const imCampaignBrand = row.campaign_brand || row.brand_name || lineItems.find((item) => item.brand_name)?.brand_name || '';
+  const resubmissionNote = row.finance_comment || row.rejection_note || '';
+  const internalFinanceNotes = row.finance_notes || '';
   const piDisplay = getPiDisplayMeta({
     pi: row.pi,
     submittedAt: row.submitted_at,
@@ -277,9 +279,9 @@ export function SubmissionDrawer({
             <DetailItem label="Reimbursement/Product Reimbursement File Info" value={row.reimbursement_receipts} />
           </DetailSection>
 
-          {row.rejection_note ? (
-            <DetailSection title="Review">
-              <DetailItem label="Rejection Note" value={row.rejection_note} />
+          {resubmissionNote ? (
+            <DetailSection title="Resubmission Note">
+              <DetailItem label="Finance Feedback / Reason" value={resubmissionNote} />
             </DetailSection>
           ) : null}
           {shouldShowFinanceStatus ? (
@@ -289,7 +291,7 @@ export function SubmissionDrawer({
               <DetailItem label="Payment Received" value={formatPaymentReceivedStatus(row.payment_received || 'pending')} />
               <DetailItem label="Payment Made" value={formatPaymentMadeStatus(row.payment_made || 'pending')} />
               <DetailItem label="Closure Status" value={formatClosureStatus(row.closed_status || 'open')} />
-              {row.finance_comment ? <DetailItem label="Finance Comments" value={row.finance_comment} /> : null}
+              {canSeeFinanceFields && internalFinanceNotes ? <DetailItem label="Finance Notes" value={internalFinanceNotes} /> : null}
             </DetailSection>
           ) : null}
           {canSeeSystemFields ? (

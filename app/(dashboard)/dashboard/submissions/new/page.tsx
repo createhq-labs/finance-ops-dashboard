@@ -50,6 +50,8 @@ export default function NewSubmissionPage() {
   const [prefillValues, setPrefillValues] = useState<Partial<InvoiceIntakeFormValues> | null>(null);
   const [prefillLoading, setPrefillLoading] = useState(false);
   const [prefillError, setPrefillError] = useState('');
+  const [resubmissionNote, setResubmissionNote] = useState('');
+  const [showResubmissionNote, setShowResubmissionNote] = useState(false);
 
   useEffect(() => {
     if (loading || !user) return;
@@ -61,6 +63,7 @@ export default function NewSubmissionPage() {
   async function loadResubmitDraft(id: string) {
     setPrefillLoading(true);
     setPrefillError('');
+    setResubmissionNote('');
     try {
       const res = await fetch('/api/submissions/my', { method: 'GET', cache: 'no-store' });
       const body = await res.json().catch(() => ({}));
@@ -91,6 +94,8 @@ export default function NewSubmissionPage() {
             campaign_name?: string | null;
             campaign_brand?: string | null;
             campaign_notes?: string | null;
+            finance_comment?: string | null;
+            rejection_note?: string | null;
             intake_line_items?: Array<{
               creator_name?: string | null;
               brand_name?: string | null;
@@ -100,6 +105,7 @@ export default function NewSubmissionPage() {
           } & Record<string, unknown>)
         | undefined;
       if (!found) throw new Error('Submission not found for resubmit.');
+      setResubmissionNote(String(found.finance_comment ?? found.rejection_note ?? '').trim());
 
       const lineItems = Array.isArray(found.intake_line_items) ? found.intake_line_items : [];
       const addressParts = String(found.address ?? '')
@@ -289,6 +295,28 @@ export default function NewSubmissionPage() {
             </button>
           </div>
         </section>
+      ) : resubmitId ? (
+        <>
+          <InvoiceIntakeForm
+            submitterName={user.full_name || ''}
+            submitterEmail={user.email || ''}
+            initialValues={prefillValues}
+            previousSubmissionId={resubmitId}
+            submitEnabled
+            onSubmit={handleCreateSubmit}
+          />
+          <div className="pointer-events-none fixed right-6 top-28 z-30 hidden lg:block">
+            <button
+              type="button"
+              onClick={() => setShowResubmissionNote(true)}
+              className="pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border border-rose-300/80 bg-rose-500/10 text-lg font-semibold text-rose-700 shadow-sm transition-none hover:bg-rose-500/15 hover:text-rose-800 dark:border-rose-300/40 dark:bg-rose-400/10 dark:text-rose-200 dark:hover:bg-rose-400/15"
+              aria-label="Open resubmission note"
+              title="Open resubmission note"
+            >
+              ⚠
+            </button>
+          </div>
+        </>
       ) : (
         <InvoiceIntakeForm
           submitterName={user.full_name || ''}
@@ -301,7 +329,47 @@ export default function NewSubmissionPage() {
       )}
       {prefillLoading ? <StatePanel>Loading previous submission...</StatePanel> : null}
       {prefillError ? <StatePanel tone="danger">{prefillError}</StatePanel> : null}
+      {showResubmissionNote ? (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 px-4 backdrop-blur-[2px] transition-opacity duration-150 ease-out"
+          onClick={() => setShowResubmissionNote(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-rose-200/80 bg-card p-4 shadow-[0_28px_80px_-40px_rgba(15,23,42,0.45)] transition-all duration-150 ease-out dark:border-rose-300/20"
+            style={{ transformOrigin: 'center', animation: 'resubmissionNotePop 160ms ease-out' }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-rose-700 dark:text-rose-300">Resubmission Note</div>
+                <div className="mt-1 text-xs text-muted-foreground">Finance feedback for this resubmission.</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowResubmissionNote(false)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-rose-200 text-rose-600 transition-none hover:bg-rose-500/10 dark:border-rose-300/20 dark:text-rose-300"
+                aria-label="Close resubmission note"
+              >
+                ×
+              </button>
+            </div>
+            <div className="mt-4 rounded-xl border border-border/70 bg-muted/20 p-3 text-sm leading-6 text-foreground">
+              {resubmissionNote || 'No resubmission note available.'}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <style jsx>{`
+        @keyframes resubmissionNotePop {
+          from {
+            opacity: 0;
+            transform: translateY(8px) scale(0.98);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
         .intake-submit-success {
           animation: intakeSuccessPulse 900ms ease;
         }

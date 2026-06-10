@@ -29,6 +29,7 @@ type MySubmissionApiRow = {
   reimbursement_amount: number | string | null;
   reimbursement_receipts: string | null;
   additional_information: string | null;
+  finance_notes?: string | null;
   finance_comment?: string | null;
   creator_invoice_status?: string | null;
   payment_received_status?: string | null;
@@ -280,6 +281,16 @@ function OverviewListRow({
 
       {action ? <div className="shrink-0">{action}</div> : null}
     </div>
+  );
+}
+
+function renderResubmissionNote(note?: string | null) {
+  const text = String(note || '').trim();
+  if (!text) return undefined;
+  return (
+    <>
+      <span className="text-rose-600 dark:text-rose-400">Resubmission Note:</span> {text}
+    </>
   );
 }
 
@@ -614,7 +625,8 @@ export default function DashboardHomePage() {
           invoice_status: item.invoice_status || '-',
           sync_status: item.sync_status || 'pending_sheet_sync',
           submitted_at: item.submitted_at || new Date().toISOString(),
-          rejection_note: item.rejection_note || null,
+          rejection_note: item.rejection_note || item.finance_comment || null,
+          finance_notes: item.finance_notes || null,
           trade_name: item.agency_brand_trade_name || null,
           gst_number: item.gst_number || null,
           address: item.address || null,
@@ -699,7 +711,7 @@ export default function DashboardHomePage() {
       <div style={{ display: 'grid', gap: 12 }}>
         <PageHeader
           title={getOverviewTitle(user.role)}
-          description="Track your submissions, statuses, rejection notes, and next actions in one place."
+          description="Track your submissions, statuses, resubmission notes, and next actions in one place."
           className="gap-4 border-b-0 pb-4"
           actions={canSubmitInvoice(user.role) ? (
             <Link href={getInvoiceIntakePath()} className="btn btn-primary" style={{ textDecoration: 'none' }}>
@@ -734,7 +746,7 @@ export default function DashboardHomePage() {
                     key={`employee-action-${entry.id}`}
                     title={getOverviewPiMeta(entry).label}
                     primaryChip={<StatusChip label="Resubmission" tone="orange" />}
-                    note={entry.rejection_note || 'Finance requested corrections.'}
+                    note={renderResubmissionNote(entry.finance_comment || entry.rejection_note || 'Finance requested corrections.')}
                     action={
                       <button className="btn" type="button" onClick={() => setOpenId(entry.id)}>
                         Open
@@ -769,7 +781,11 @@ export default function DashboardHomePage() {
                         {entry.invoice_status ? ` · ${titleCaseStatus(entry.invoice_status)}` : ''}
                       </>
                     }
-                    note={entry.intake_status === 'rejected' && entry.rejection_note ? entry.rejection_note : undefined}
+                    note={
+                      entry.intake_status === 'rejected'
+                        ? renderResubmissionNote(entry.finance_comment || entry.rejection_note || undefined)
+                        : undefined
+                    }
                     action={
                       canResubmitSubmission(user.role, entry) ? (
                         <Link

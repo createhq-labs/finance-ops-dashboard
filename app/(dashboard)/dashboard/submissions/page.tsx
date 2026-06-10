@@ -35,6 +35,7 @@ type MySubmissionApiRow = {
   reimbursement_receipts: string | null;
   additional_information: string | null;
   previous_submission_id: string | null;
+  finance_notes?: string | null;
   finance_comment?: string | null;
   creator_invoice_status?: string | null;
   payment_received?: string | null;
@@ -135,6 +136,7 @@ export default function EmployeeSubmissionsPage() {
           reimbursement_receipts: item.reimbursement_receipts || null,
           additional_information: item.additional_information || null,
           previous_submission_id: item.previous_submission_id || null,
+          finance_notes: item.finance_notes || null,
           finance_comment: item.finance_comment || undefined,
           creator_invoice_received: normalizeStatusValue(item.creator_invoice_status) || undefined,
           payment_received: normalizeStatusValue(item.payment_received_status || item.payment_received) || undefined,
@@ -219,7 +221,7 @@ export default function EmployeeSubmissionsPage() {
     <div style={{ display: 'grid', gap: 16 }}>
       <PageHeader
         title={getSubmissionsLabel(user.role)}
-        description="Review your intake records, status updates, rejection notes, and resubmission actions."
+        description="Review your intake records, status updates, resubmission notes, and resubmission actions."
         className="border-b-0 pb-4"
         actions={canSubmitInvoice(user.role) ? (
           <Link className="btn btn-primary" href="/dashboard/submissions/new">
