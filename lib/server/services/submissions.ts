@@ -42,12 +42,14 @@ export async function createSubmissionWithLineItems(params: {
 
   const shouldSkipPi = shouldSkipPiGeneration(submissionPayload, lineItemsPayload);
   let carryForwardPi: string | null | undefined;
+  let previousSubmissionId: string | null = null;
 
   if (submissionPayload.previous_submission_id) {
+    previousSubmissionId = submissionPayload.previous_submission_id;
     const { data: previousSubmission, error: previousError } = await adminClient
       .from('intake_submissions')
       .select('proforma_invoice')
-      .eq('id', submissionPayload.previous_submission_id)
+      .eq('id', previousSubmissionId)
       .maybeSingle();
 
     if (previousError) {
@@ -67,6 +69,22 @@ export async function createSubmissionWithLineItems(params: {
     }
 
     carryForwardPi = previousSubmission.proforma_invoice ?? null;
+
+    const { error: supersedeError } = await adminClient
+      .from('intake_submissions')
+      .update({
+        is_latest_version: false,
+        superseded_at: new Date().toISOString(),
+      })
+      .eq('id', previousSubmissionId);
+
+    if (supersedeError) {
+      return {
+        success: false,
+        stage: 'fetch_previous_submission',
+        error: supersedeError.message,
+      };
+    }
   }
 
   const insertPayload = {
@@ -86,6 +104,16 @@ export async function createSubmissionWithLineItems(params: {
     .single();
 
   if (submissionError || !submission) {
+    if (previousSubmissionId) {
+      await adminClient
+        .from('intake_submissions')
+        .update({
+          is_latest_version: true,
+          superseded_at: null,
+        })
+        .eq('id', previousSubmissionId);
+    }
+
     return {
       success: false,
       stage: 'insert_submission',
@@ -99,6 +127,15 @@ export async function createSubmissionWithLineItems(params: {
 
     if (lineError) {
       await adminClient.from('intake_submissions').delete().eq('id', submission.id);
+      if (previousSubmissionId) {
+        await adminClient
+          .from('intake_submissions')
+          .update({
+            is_latest_version: true,
+            superseded_at: null,
+          })
+          .eq('id', previousSubmissionId);
+      }
       return {
         success: false,
         stage: 'insert_line_items',
