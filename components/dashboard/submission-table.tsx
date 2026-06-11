@@ -1001,6 +1001,7 @@ function InlineValueCell({
   onActivate,
   onCancel,
   onSave,
+  className,
 }: {
   value: string;
   copied: boolean;
@@ -1011,6 +1012,7 @@ function InlineValueCell({
   onActivate: () => void;
   onCancel: () => void;
   onSave: (value: string) => Promise<void>;
+  className?: string;
 }) {
   const [draft, setDraft] = useState(value === '-' ? '' : value);
 
@@ -1078,7 +1080,7 @@ function InlineValueCell({
   return (
     <div className="flex items-center gap-1.5" onDoubleClick={onCopy} title={displayValue}>
       <CopyNotice active={copied} />
-      <span className={['truncate text-[12px]', value === '-' ? 'text-muted-foreground' : 'text-foreground'].join(' ')}>
+      <span className={['truncate text-[12px]', value === '-' ? 'text-muted-foreground' : 'text-foreground', className || ''].join(' ')}>
         {collapsed ? (value === '-' ? '—' : displayValue.slice(0, 4)) : displayValue}
       </span>
       {!collapsed ? (
@@ -1953,7 +1955,7 @@ export function SubmissionTable({
               await updateFinanceValue(row, field, value);
               setActiveEditor(null);
             }}
-            valueClassName={colorClass}
+            className={colorClass}
           />
         );
       }
