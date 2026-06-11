@@ -15,6 +15,7 @@ import {
 import { createPortal } from 'react-dom';
 import { Check, ChevronLeft, ChevronRight, Pencil, X } from 'lucide-react';
 import { getPiDisplayMeta } from '../../lib/client/pi-display';
+import { formatSubmissionAmount, getCurrencyTitle } from '../../lib/shared/currency';
 import {
   CLOSURE_STATUS_OPTIONS,
   CREATOR_INVOICE_STATUS_OPTIONS,
@@ -33,6 +34,7 @@ export type SubmissionRow = {
   pi: string;
   entity: string;
   amount: number;
+  currency?: string | null;
   owner_name?: string;
   submitter_email?: string;
   intake_status: 'submitted' | 'rejected' | 'accepted';
@@ -243,16 +245,16 @@ const COLUMN_WIDTHS: Record<SheetColumnId, number> = {
   invoice_type: 94,
   bill_due: 90,
   creator_name: 144,
-  creator_brand: 136,
-  deliverables: 142,
-  line_amounts: 110,
+  creator_brand: 150,
+  deliverables: 152,
+  line_amounts: 168,
   campaign_code: 108,
   campaign_name: 126,
   campaign_brand: 126,
   campaign_notes: 144,
   product_reimbursement_upload: 124,
-  commercials: 126,
-  additional_agency_commission: 132,
+  commercials: 170,
+  additional_agency_commission: 154,
   additional_information: 144,
   invoice_number: 104,
   debit_note_number: 104,
@@ -279,12 +281,8 @@ const COLLAPSED_COLUMN_WIDTHS: Record<'invoice_number' | 'debit_note_number', nu
 const STATUS_PILL_BASE =
   'inline-flex h-6 max-w-full items-center gap-1 rounded-md border px-2 text-[11px] font-medium leading-none';
 
-function money(n: number) {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(n);
+function money(n: number, currency?: string | null) {
+  return formatSubmissionAmount(n, currency);
 }
 
 function fieldValue(value: string | number | null | undefined) {
@@ -382,15 +380,15 @@ function getCreatorData(row: SubmissionRow) {
       : [row.deliverables]
   );
   const amounts = nonReimbursementLineItems.some((item) => item.amount)
-    ? joinLines(nonReimbursementLineItems.map((item) => (item.amount ? money(item.amount) : null)))
-    : money(row.amount);
+    ? joinLines(nonReimbursementLineItems.map((item) => (item.amount ? money(item.amount, row.currency) : null)))
+    : money(row.amount, row.currency);
 
   if (!isTM) {
     return {
       creatorNames: '-',
       creatorBrands: '-',
       deliverables: fieldValue(row.deliverables),
-      amounts: money(row.amount),
+      amounts: money(row.amount, row.currency),
     };
   }
 
@@ -428,14 +426,14 @@ function getProductReimbursementValue(row: SubmissionRow) {
 
   if (reimbursementLineItems.length > 0) {
     const values = reimbursementLineItems
-      .map((item) => (typeof item.amount === 'number' ? money(item.amount) : null))
+      .map((item) => (typeof item.amount === 'number' ? money(item.amount, row.currency) : null))
       .filter(Boolean);
 
     if (values.length) return values.join('\n');
   }
 
   if (row.reimbursement_amount === null || row.reimbursement_amount === undefined) return '-';
-  return money(row.reimbursement_amount);
+  return money(row.reimbursement_amount, row.currency);
 }
 
 function formatSubmittedAt(value: string | null | undefined) {
@@ -627,6 +625,8 @@ function getColumns(viewer: ViewerRole) {
       'pi',
       'intake_status',
       'submitted_at',
+      'invoice_number',
+      'debit_note_number',
       'rejection_note',
       'invoice_status',
       'payment_received',
@@ -715,10 +715,14 @@ function ExpandableText({
   value,
   copied,
   onCopy,
+  title,
+  className,
 }: {
   value: string;
   copied: boolean;
   onCopy: () => void;
+  title?: string;
+  className?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -761,15 +765,15 @@ function ExpandableText({
         setExpanded((current) => !current);
       }}
       onDoubleClick={onCopy}
-      title={value}
+      title={title || value}
     >
       <CopyNotice active={copied} />
       <div
         ref={textRef}
         className={[
           expanded
-            ? 'whitespace-pre-line break-words pr-7 text-[13px] leading-4 text-foreground'
-            : 'line-clamp-2 break-words pr-7 text-[13px] leading-4 text-foreground',
+            ? `whitespace-pre-line break-words pr-7 text-[13px] leading-4 text-foreground ${className || ''}`
+            : `line-clamp-2 break-words pr-7 text-[13px] leading-4 text-foreground ${className || ''}`,
         ].join(' ')}
       >
         {value}
@@ -1753,8 +1757,8 @@ export function SubmissionTable({
     const creatorData = getCreatorData(row);
     const isCopied = copiedKey === cellKey;
     const isSaving = savingKey === `${row.id}:${column}`;
-    const commonText = (value: string) => (
-      <ExpandableText value={value} copied={isCopied} onCopy={() => void copyCell(cellKey, value)} />
+    const commonText = (value: string, title?: string) => (
+      <ExpandableText value={value} copied={isCopied} onCopy={() => void copyCell(cellKey, value)} title={title} />
     );
 
     switch (column) {
@@ -1879,7 +1883,7 @@ export function SubmissionTable({
       case 'deliverables':
         return commonText(creatorData.deliverables);
       case 'line_amounts':
-        return commonText(creatorData.amounts);
+        return commonText(creatorData.amounts, getCurrencyTitle(row.currency));
       case 'campaign_code':
         return commonText(fieldValue(row.campaign_code));
       case 'campaign_name':
@@ -1889,11 +1893,14 @@ export function SubmissionTable({
       case 'campaign_notes':
         return commonText(fieldValue(row.campaign_notes));
       case 'product_reimbursement_upload':
-        return commonText(getProductReimbursementValue(row));
+        return commonText(getProductReimbursementValue(row), getCurrencyTitle(row.currency));
       case 'commercials':
-        return commonText(money(row.amount));
+        return commonText(money(row.amount, row.currency), getCurrencyTitle(row.currency, row.amount));
       case 'additional_agency_commission':
-        return commonText(row.additional_agency_commission ? money(row.additional_agency_commission) : '-');
+        return commonText(
+          row.additional_agency_commission ? money(row.additional_agency_commission, row.currency) : '-',
+          row.additional_agency_commission ? getCurrencyTitle(row.currency, row.additional_agency_commission) : undefined
+        );
       case 'additional_information':
         return commonText(fieldValue(row.additional_information));
       case 'rejection_note': {
@@ -1918,8 +1925,19 @@ export function SubmissionTable({
       case 'invoice_number':
       case 'debit_note_number': {
         const field = column as 'invoice_number' | 'debit_note_number';
+        const colorClass =
+          field === 'invoice_number'
+            ? 'text-purple-700 dark:text-purple-300'
+            : 'text-blue-900 dark:text-blue-200';
         if (!isFinanceViewer || !onFinanceUpdate) {
-          return commonText(fieldValue(row[field]));
+          return (
+            <ExpandableText
+              value={fieldValue(row[field])}
+              copied={isCopied}
+              onCopy={() => void copyCell(cellKey, fieldValue(row[field]))}
+              className={colorClass}
+            />
+          );
         }
         return (
           <InlineValueCell
@@ -1935,6 +1953,7 @@ export function SubmissionTable({
               await updateFinanceValue(row, field, value);
               setActiveEditor(null);
             }}
+            valueClassName={colorClass}
           />
         );
       }

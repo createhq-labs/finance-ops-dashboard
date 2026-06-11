@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 type SearchableSelectProps = {
   value: string;
   options: string[];
-  onChange: (next: string) => void;
+  onChange?: (next: string) => void;
   allowCustom?: boolean;
   placeholder?: string;
   disabled?: boolean;
@@ -78,7 +78,7 @@ export function SearchableSelect({
   }, [filteredOptions.length, highlightedIndex]);
 
   function selectOption(next: string) {
-    onChange(next);
+    if (typeof onChange === "function") onChange(next);
     setQuery(next);
     setOpen(false);
     requestAnimationFrame(() => inputRef.current?.focus());
@@ -155,7 +155,7 @@ export function SearchableSelect({
           requestAnimationFrame(() => {
             if (!rootRef.current?.contains(document.activeElement)) {
               if (allowCustom && query.trim()) {
-                onChange(query.trim());
+                if (typeof onChange === "function") onChange(query.trim());
               }
               setOpen(false);
               setQuery(allowCustom && query.trim() ? query.trim() : value);
@@ -178,7 +178,7 @@ export function SearchableSelect({
         style={{
           position: "absolute",
           right: 10,
-          top: "50%",
+          top: "48%",
           transform: "translateY(-50%)",
           pointerEvents: "none",
           color: "var(--muted)",

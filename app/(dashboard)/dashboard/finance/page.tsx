@@ -36,6 +36,7 @@ type FinanceApiRow = {
   deliverables: string | null;
   creator_creators_name: string | null;
   brand_name: string | null;
+  currency?: string | null;
   campaign_code?: string | null;
   campaign_name?: string | null;
   campaign_brand?: string | null;
@@ -380,6 +381,7 @@ export default function FinanceReviewPage() {
       pi: item.proforma_invoice ?? '',
       entity: item.agency_brand_name || '-',
       amount: Number(item.commercials ?? 0),
+      currency: item.currency || 'INR',
       owner_name: item.submitted_by_name || undefined,
       submitter_email: item.submitted_by_email || item.email_address || undefined,
       intake_status: item.intake_status,

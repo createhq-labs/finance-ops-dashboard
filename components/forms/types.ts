@@ -1,6 +1,7 @@
 export type BusinessLine = "TM" | "IM";
 export type EntryType = "SC" | "MC";
 export type EntityType = "Agency" | "Brand";
+export type SubmissionCurrency = "INR" | "USD" | "EUR" | "GBP" | "AED";
 
 export type MasterBrand = {
   name: string;
@@ -62,6 +63,7 @@ export type InvoiceIntakeFormValues = {
   campaignNotes: string;
   imCommercials: string;
   totalAmount: string;
+  currency: SubmissionCurrency;
 };
 
 export type InvoiceIntakeIntegrationMetadata = {
@@ -81,6 +83,7 @@ export type InvoiceIntakeIntegrationMetadata = {
   campaignDeliverable: string;
   campaignNotes: string;
   brandNamesText: string;
+  currency: SubmissionCurrency;
 };
 
 export type InvoiceIntakeSubmissionPayload = {
@@ -104,6 +107,7 @@ export type InvoiceIntakeSubmissionPayload = {
   campaign_brand: string;
   campaign_notes: string;
   brand_names_text: string;
+  currency: SubmissionCurrency;
   commercials: number;
   additional_information: string;
   additional_agency_commission: number;

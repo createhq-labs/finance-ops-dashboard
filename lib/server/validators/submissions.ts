@@ -4,6 +4,7 @@ import type {
   SanitizedLineItemPayload,
   SanitizedSubmissionPayload,
 } from '../types/submissions';
+import { normalizeCurrency } from '../../shared/currency';
 
 function toNullableText(v: unknown): string | null {
   if (v === undefined || v === null) return null;
@@ -54,6 +55,7 @@ export function sanitizeSubmissionInput(input: CreateSubmissionInput): Sanitized
     campaign_name: businessLine === 'IM' ? campaignName : null,
     campaign_brand: businessLine === 'IM' ? campaignBrand : null,
     campaign_notes: businessLine === 'IM' ? campaignNotes : null,
+    currency: normalizeCurrency((input as { currency?: string | null }).currency),
     commercials: toMoney(input.commercials, 0),
     additional_information: toNullableText(input.additional_information),
     additional_agency_commission: toMoney(input.additional_agency_commission, 0),

@@ -1,4 +1,5 @@
 export type AppRole = 'employee' | 'team_lead' | 'finance' | 'admin' | 'developer';
+export type SubmissionCurrency = 'INR' | 'USD' | 'EUR' | 'GBP' | 'AED';
 
 export type CreateLineItemInput = {
   creator_id?: string | null;
@@ -32,6 +33,7 @@ export type CreateSubmissionInput = {
   campaign_name?: string | null;
   campaign_brand?: string | null;
   campaign_notes?: string | null;
+  currency?: SubmissionCurrency | null;
   commercials?: number | string | null;
   additional_information?: string | null;
   additional_agency_commission?: number | string | null;
@@ -65,6 +67,7 @@ export type SanitizedSubmissionPayload = {
   campaign_name: string | null;
   campaign_brand: string | null;
   campaign_notes: string | null;
+  currency: SubmissionCurrency;
   commercials: number;
   additional_information: string | null;
   additional_agency_commission: number;
