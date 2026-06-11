@@ -178,11 +178,12 @@ export function SearchableSelect({
         style={{
           position: "absolute",
           right: 10,
-          top: "48%",
+          top: "46%",
           transform: "translateY(-50%)",
           pointerEvents: "none",
           color: "var(--muted)",
           fontSize: 11,
+          lineHeight: 1,
         }}
       >
         ▼

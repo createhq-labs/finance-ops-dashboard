@@ -38,7 +38,7 @@ export function CommercialsSection({ values, totalAmount, onChange, errors = {} 
         `}</style>
         <div className="commercials-grid" style={{ display: "grid", gap: 12, alignItems: "start" }}>
         <label className="intake-field">
-          <span className="intake-label">{isInfluencerMarketing ? "Commercials / Total Amount (INR) *" : "Total Amount (INR)"}</span>
+          <span className="intake-label">{isInfluencerMarketing ? "Commercials / Total Amount (INR) *" : "Total Amount *"}</span>
           <input
             className="intake-input"
             type="text"
@@ -66,7 +66,7 @@ export function CommercialsSection({ values, totalAmount, onChange, errors = {} 
         </label>
 
         <label className="intake-field">
-          <span className="intake-label">Additional Agency Commission (INR)</span>
+          <span className="intake-label">Additional Agency Commission </span>
           <input
             className="intake-input"
             type="text"
