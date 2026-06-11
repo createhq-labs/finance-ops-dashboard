@@ -136,6 +136,7 @@ const INITIAL_VALUES: InvoiceIntakeFormValues = {
   campaignNotes: "",
   imCommercials: "",
   totalAmount: "",
+  currency: "INR",
 };
 
 function sanitizeWholeNumberInput(value: string) {
@@ -542,7 +543,7 @@ export function InvoiceIntakeForm({
     if (!hasInteracted) return;
     const liveErrors = validateForm(values);
     setFieldErrors(liveErrors);
-  }, [hasInteracted, values]);
+  }, [hasInteracted, values]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function resetTalentManagementState(entryType: EntryType) {
     return {
@@ -919,6 +920,7 @@ export function InvoiceIntakeForm({
       creator_creators_name: creatorNames,
       brand_name: brandName,
       brand_names_text: uniqueBrandNames.join(", "),
+      currency: values.currency,
       commercials,
       additional_information: values.additionalInformation,
       additional_agency_commission: parseAmount(values.commission),

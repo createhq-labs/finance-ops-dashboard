@@ -87,6 +87,7 @@ export default function NewSubmissionPage() {
             reimbursement_amount?: number | string | null;
             reimbursement_receipts?: string | null;
             additional_information?: string | null;
+            currency?: string | null;
             creator_creators_name?: string | null;
             deliverables?: string | null;
             commercials?: number | string | null;
@@ -188,6 +189,7 @@ export default function NewSubmissionPage() {
         campaignDeliverable: imDeliverables[0] ?? '',
         campaignExtraDeliverables: imDeliverables.slice(1),
         campaignNotes: found.campaign_notes ?? '',
+        currency: (String(found.currency ?? 'INR').toUpperCase() as InvoiceIntakeFormValues["currency"]) || 'INR',
         imCommercials: commercialsValue > 0 ? String(Math.max(commercialsValue - commissionValue, 0)) : '',
       };
 

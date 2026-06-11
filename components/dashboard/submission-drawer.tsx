@@ -7,10 +7,11 @@ import {
   formatPaymentReceivedStatus,
 } from '../../lib/client/finance-status';
 import { getPiDisplayMeta } from '../../lib/client/pi-display';
+import { formatSubmissionAmount, getCurrencyTitle } from '../../lib/shared/currency';
 import { canResubmitSubmission, canViewFinanceFields, canViewInvoiceStatus, canViewSystemFields } from '../../lib/client/dashboard-access';
 
-function money(value: number | null | undefined) {
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value || 0);
+function money(value: number | null | undefined, currency?: string | null) {
+  return formatSubmissionAmount(value || 0, currency);
 }
 
 function isBlank(value: React.ReactNode) {
@@ -256,7 +257,7 @@ export function SubmissionDrawer({
                           <td>{item.creator_name || '-'}</td>
                           <td>{item.brand_name || '-'}</td>
                           <td>{item.deliverable_name || '-'}</td>
-                          <td>{money(item.amount || 0)}</td>
+                          <td title={getCurrencyTitle(row.currency, item.amount || 0)}>{money(item.amount || 0, row.currency)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -267,15 +268,23 @@ export function SubmissionDrawer({
           )}
 
           <DetailSection title="Commercials">
-            <DetailItem label="Total Amount" value={money(row.amount)} alwaysShow />
+            <DetailItem label="Total Amount" value={money(row.amount, row.currency)} alwaysShow />
             {(row.additional_agency_commission || 0) > 0 ? (
-              <DetailItem label="Additional Agency Commission" value={money(row.additional_agency_commission)} />
+              <DetailItem
+                label="Additional Agency Commission"
+                value={money(row.additional_agency_commission, row.currency)}
+              />
             ) : null}
           </DetailSection>
 
           <DetailSection title="Additional">
             <DetailItem label="Internal Notes / Additional Information" value={row.additional_information} />
-            {(row.reimbursement_amount || 0) > 0 ? <DetailItem label="Product Reimbursement Amount" value={money(row.reimbursement_amount)} /> : null}
+            {(row.reimbursement_amount || 0) > 0 ? (
+              <DetailItem
+                label="Product Reimbursement Amount"
+                value={money(row.reimbursement_amount, row.currency)}
+              />
+            ) : null}
             <DetailItem label="Reimbursement/Product Reimbursement File Info" value={row.reimbursement_receipts} />
           </DetailSection>
 

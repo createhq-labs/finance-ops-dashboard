@@ -24,6 +24,7 @@ type MySubmissionApiRow = {
   deliverables: string | null;
   creator_creators_name: string | null;
   brand_name: string | null;
+  currency?: string | null;
   commercials: number | string | null;
   additional_agency_commission: number | string | null;
   reimbursement_amount: number | string | null;
@@ -619,6 +620,7 @@ export default function DashboardHomePage() {
           pi: item.proforma_invoice ?? '',
           entity: item.agency_brand_name || '-',
           amount: Number(item.commercials ?? 0),
+          currency: item.currency || 'INR',
           owner_name: item.submitted_by_name || user.full_name || undefined,
           submitter_email: item.submitted_by_email || item.email_address || undefined,
           intake_status: item.intake_status,

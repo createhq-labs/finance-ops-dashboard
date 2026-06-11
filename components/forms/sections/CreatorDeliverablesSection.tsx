@@ -1,6 +1,7 @@
 import { MultiCreatorRows, SingleCreatorRows } from "../invoice-line-items";
 import { SearchableSelect } from "../searchable-select";
 import type { InvoiceIntakeFormValues } from "../types";
+import { CURRENCY_OPTIONS } from "../../../lib/shared/currency";
 
 type Props = {
   values: InvoiceIntakeFormValues;
@@ -28,6 +29,28 @@ type Props = {
   onProductReimbursementFileChange: (key: string, file: File | null) => void;
 };
 
+function CurrencyField({
+  currency,
+  onCurrencyChange,
+}: {
+  currency: string;
+  onCurrencyChange: (next: string) => void;
+}) {
+  return (
+    <label className="intake-field" style={{ width: 160, maxWidth: '100%' }}>
+      <span className="intake-label">Currency *</span>
+      <SearchableSelect
+        value={currency}
+        options={CURRENCY_OPTIONS}
+        onChange={onCurrencyChange}
+        placeholder="Select currency"
+        dataField="currency"
+        panelMaxHeight={160}
+      />
+    </label>
+  );
+}
+
 export function CreatorDeliverablesSection({
   values,
   onChange,
@@ -50,11 +73,15 @@ export function CreatorDeliverablesSection({
   getProductReimbursementError,
   onProductReimbursementFileChange,
 }: Props) {
+  const showCurrency = values.clientType === "Foreign";
+
   if (values.businessLine === "TM" && values.entryType === "SC") {
     return (
       <SingleCreatorRows
         scCreator={values.scCreator}
         scBrand={values.scBrand}
+        currency={values.currency}
+        showCurrency={showCurrency}
         rows={values.scDeliverables}
         errors={errors}
         creatorOptions={creatorOptions}
@@ -62,6 +89,7 @@ export function CreatorDeliverablesSection({
         deliverableOptions={deliverableOptions.TM}
         getProductReimbursementFile={getProductReimbursementFile}
         getProductReimbursementError={getProductReimbursementError}
+        onCurrencyChange={(next) => onChange("currency", next as InvoiceIntakeFormValues["currency"])}
         onCreatorChange={onPatchScCreator}
         onBrandChange={(value) => onChange("scBrand", value)}
         onAddRow={addScDeliverable}
@@ -77,11 +105,14 @@ export function CreatorDeliverablesSection({
       <MultiCreatorRows
         rows={values.mcRows}
         errors={errors}
+        currency={values.currency}
+        showCurrency={showCurrency}
         creatorOptions={creatorOptions}
         brandOptions={brandOptions}
         deliverableOptions={deliverableOptions.TM}
         getProductReimbursementFile={getProductReimbursementFile}
         getProductReimbursementError={getProductReimbursementError}
+        onCurrencyChange={(next) => onChange("currency", next as InvoiceIntakeFormValues["currency"])}
         onAddRow={addMcRow}
         onRemoveRow={removeMcRow}
         onRowChange={patchMcRow}
@@ -120,7 +151,7 @@ export function CreatorDeliverablesSection({
           }
           @media (min-width: 1024px) {
             .campaign-grid {
-              grid-template-columns: repeat(4, minmax(0, 1fr));
+              grid-template-columns: repeat(5, minmax(0, 1fr));
             }
             .campaign-extra-grid {
               grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -151,6 +182,12 @@ export function CreatorDeliverablesSection({
               {errors.campaignBrand ? <p className="text-danger intake-inline-error">{errors.campaignBrand}</p> : null}
             </div>
           </label>
+
+          {showCurrency ? (
+            <div className="intake-field">
+              <CurrencyField currency={values.currency} onCurrencyChange={(next) => onChange("currency", next as InvoiceIntakeFormValues["currency"])} />
+            </div>
+          ) : null}
 
           <label className="intake-field">
             <span className="intake-label">Deliverable *</span>

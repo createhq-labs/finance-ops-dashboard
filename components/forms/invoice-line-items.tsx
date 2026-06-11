@@ -1,5 +1,20 @@
 import type { DeliverableAmountRow, MultiCreatorRow } from "./types";
 import { SearchableSelect } from "./searchable-select";
+import { CURRENCY_OPTIONS } from "../../lib/shared/currency";
+
+function CurrencyField({
+  currency,
+  onChange,
+}: {
+  currency: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <div className="grid gap-1" style={{ width: 160, maxWidth: "100%" }}>  
+      <SearchableSelect value={currency} options={CURRENCY_OPTIONS} onChange={onChange} placeholder="Select currency" dataField="currency" />
+    </div>
+  );
+}
 
 function ProductReimbursementField({
   fieldKey,
@@ -37,6 +52,8 @@ function ProductReimbursementField({
 type SingleCreatorProps = {
   scCreator: string;
   scBrand: string;
+  currency: string;
+  onCurrencyChange: (next: string) => void;
   rows: DeliverableAmountRow[];
   errors?: Record<string, string>;
   creatorOptions: string[];
@@ -50,11 +67,14 @@ type SingleCreatorProps = {
   onRemoveRow: (index: number) => void;
   onRowChange: (index: number, patch: Partial<DeliverableAmountRow>) => void;
   onProductReimbursementFileChange: (key: string, file: File | null) => void;
+  showCurrency?: boolean;
 };
 
 export function SingleCreatorRows({
   scCreator,
   scBrand,
+  currency,
+  onCurrencyChange,
   rows,
   errors = {},
   creatorOptions,
@@ -68,7 +88,9 @@ export function SingleCreatorRows({
   onRemoveRow,
   onRowChange,
   onProductReimbursementFileChange,
+  showCurrency = false,
 }: SingleCreatorProps) {
+  const gridColumns = showCurrency ? "grid gap-2 md:grid-cols-[1fr_1fr_160px_180px_120px_auto]" : "grid gap-2 md:grid-cols-[1fr_1fr_180px_120px_auto]";
   return (
     <section className="intake-section">
       <div className="intake-section-header">
@@ -82,7 +104,7 @@ export function SingleCreatorRows({
         <div className="intake-row-stack">
           {rows.map((row, idx) => (
             <div key={`sc-${idx}`} className="grid gap-2">
-              <div className="intake-row-grid intake-row-grid-multi">
+              <div className={`${gridColumns} intake-row-grid-multi`}>
                 <div className="grid gap-1">
                   <SearchableSelect
                     value={scCreator}
@@ -113,6 +135,11 @@ export function SingleCreatorRows({
                     {idx === 0 && errors.scBrand ? <p className="text-danger intake-inline-error">{errors.scBrand}</p> : null}
                   </div>
                 </div>
+                {showCurrency ? (
+                  <div className="grid gap-1">
+                    <CurrencyField currency={currency} onChange={onCurrencyChange} />
+                  </div>
+                ) : null}
                 <div className="grid gap-1">
                   <SearchableSelect
                     value={row.deliverable}
@@ -131,7 +158,7 @@ export function SingleCreatorRows({
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
-                    placeholder="Amount INR"
+                    placeholder={`Amount ${currency}`}
                     value={row.amount}
                     onChange={(e) => onRowChange(idx, { amount: e.target.value })}
                     data-field={`scDeliverables.${idx}.amount`}
@@ -172,6 +199,8 @@ export function SingleCreatorRows({
 type MultiCreatorProps = {
   rows: MultiCreatorRow[];
   errors?: Record<string, string>;
+  currency: string;
+  onCurrencyChange: (next: string) => void;
   creatorOptions: string[];
   brandOptions: string[];
   deliverableOptions: string[];
@@ -182,11 +211,14 @@ type MultiCreatorProps = {
   onRowChange: (index: number, patch: Partial<MultiCreatorRow>) => void;
   onCreatorChange: (index: number, creator: string) => void;
   onProductReimbursementFileChange: (key: string, file: File | null) => void;
+  showCurrency?: boolean;
 };
 
 export function MultiCreatorRows({
   rows,
   errors = {},
+  currency,
+  onCurrencyChange,
   creatorOptions,
   brandOptions,
   deliverableOptions,
@@ -197,7 +229,9 @@ export function MultiCreatorRows({
   onRowChange,
   onCreatorChange,
   onProductReimbursementFileChange,
+  showCurrency = false,
 }: MultiCreatorProps) {
+  const gridColumns = showCurrency ? "grid gap-2 md:grid-cols-[1fr_1fr_160px_180px_120px_auto]" : "grid gap-2 md:grid-cols-[1fr_1fr_180px_120px_auto]";
   return (
     <section className="intake-section">
       <div className="intake-section-header">
@@ -211,7 +245,7 @@ export function MultiCreatorRows({
         <div className="intake-row-stack">
           {rows.map((row, idx) => (
             <div key={`mc-${idx}`} className="grid gap-2">
-              <div className="intake-row-grid intake-row-grid-multi">
+              <div className={`${gridColumns} intake-row-grid-multi`}>
                 <div className="grid gap-1">
                   <SearchableSelect
                     value={row.creator}
@@ -242,6 +276,11 @@ export function MultiCreatorRows({
                     {errors[`mcRows.${idx}.brand`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.brand`]}</p> : null}
                   </div>
                 </div>
+                {showCurrency ? (
+                  <div className="grid gap-1">
+                    <CurrencyField currency={currency} onChange={onCurrencyChange} />
+                  </div>
+                ) : null}
 
                 <div className="grid gap-1">
                   <SearchableSelect
@@ -262,7 +301,7 @@ export function MultiCreatorRows({
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
-                    placeholder="Amount INR"
+                    placeholder={`Amount ${currency}`}
                     value={row.amount}
                     onChange={(e) => onRowChange(idx, { amount: e.target.value })}
                     data-field={`mcRows.${idx}.amount`}

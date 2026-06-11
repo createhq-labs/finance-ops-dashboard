@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
         success: true,
         submission_id: result.submission.id,
         pi_number: result.submission.proforma_invoice,
+        currency: result.submission.currency ?? submissionPayload.currency,
         master_data_reviews: masterReviewResult,
         sync_status: {
           supabase: 'ok',

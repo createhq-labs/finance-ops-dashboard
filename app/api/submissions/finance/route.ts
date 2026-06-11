@@ -22,9 +22,9 @@ export async function GET(req: NextRequest) {
     }
 
     const baseSelect =
-      'id, submitted_by, reviewed_by, reviewed_at, proforma_invoice, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, finance_notes, finance_comment, payment_received, payment_received_status, creator_invoice_status, invoice_via_creators_received, payment_made, payment_made_status, closed, closure_status, invoice_number, debit_note_number, sync_status, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
+      'id, submitted_by, reviewed_by, reviewed_at, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, finance_notes, finance_comment, payment_received, payment_received_status, creator_invoice_status, invoice_via_creators_received, payment_made, payment_made_status, closed, closure_status, invoice_number, debit_note_number, sync_status, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
     const legacySelect =
-      'id, submitted_by, reviewed_by, reviewed_at, proforma_invoice, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, finance_notes, payment_received, payment_made, closed, invoice_number, debit_note_number, sync_status, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
+      'id, submitted_by, reviewed_by, reviewed_at, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, finance_notes, payment_received, payment_made, closed, invoice_number, debit_note_number, sync_status, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
 
     let { data, error } = await userClient
       .from('intake_submissions')
@@ -62,6 +62,7 @@ export async function GET(req: NextRequest) {
         campaign_name: null,
         campaign_brand: null,
         campaign_notes: null,
+        currency: 'INR',
         creator_invoice_status: null,
         invoice_via_creators_received: null,
         payment_received_status: null,

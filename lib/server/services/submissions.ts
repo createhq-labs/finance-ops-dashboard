@@ -4,11 +4,11 @@ import type { AppUser, SanitizedLineItemPayload, SanitizedSubmissionPayload } fr
 type CreateSubmissionResult =
   | {
       success: true;
-      submission: { id: string; proforma_invoice: string | null; sync_status: string | null };
+      submission: { id: string; proforma_invoice: string | null; sync_status: string | null; currency: string | null };
     }
   | {
       success: false;
-      stage: 'insert_submission' | 'insert_line_items';
+      stage: 'fetch_previous_submission' | 'insert_submission' | 'insert_line_items';
       error: string;
     };
 
@@ -41,17 +41,48 @@ export async function createSubmissionWithLineItems(params: {
   const { userClient, adminClient, appUser, submissionPayload, lineItemsPayload } = params;
 
   const shouldSkipPi = shouldSkipPiGeneration(submissionPayload, lineItemsPayload);
+  let carryForwardPi: string | null | undefined;
+
+  if (submissionPayload.previous_submission_id) {
+    const { data: previousSubmission, error: previousError } = await adminClient
+      .from('intake_submissions')
+      .select('proforma_invoice')
+      .eq('id', submissionPayload.previous_submission_id)
+      .maybeSingle();
+
+    if (previousError) {
+      return {
+        success: false,
+        stage: 'fetch_previous_submission',
+        error: previousError.message,
+      };
+    }
+
+    if (!previousSubmission) {
+      return {
+        success: false,
+        stage: 'fetch_previous_submission',
+        error: 'Previous submission not found for resubmission',
+      };
+    }
+
+    carryForwardPi = previousSubmission.proforma_invoice ?? null;
+  }
 
   const insertPayload = {
     ...submissionPayload,
     submitted_by: appUser.id,
-    ...(shouldSkipPi ? { proforma_invoice: null } : {}),
+    ...(submissionPayload.previous_submission_id
+      ? { proforma_invoice: carryForwardPi ?? null }
+      : shouldSkipPi
+        ? { proforma_invoice: null }
+        : {}),
   };
 
   const { data: submission, error: submissionError } = await userClient
     .from('intake_submissions')
     .insert(insertPayload)
-    .select('id, proforma_invoice, sync_status')
+    .select('id, proforma_invoice, sync_status, currency')
     .single();
 
   if (submissionError || !submission) {

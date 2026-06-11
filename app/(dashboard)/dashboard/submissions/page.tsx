@@ -25,6 +25,7 @@ type MySubmissionApiRow = {
   deliverables: string | null;
   creator_creators_name: string | null;
   brand_name: string | null;
+  currency?: string | null;
   campaign_code?: string | null;
   campaign_name?: string | null;
   campaign_brand?: string | null;
@@ -112,6 +113,7 @@ export default function EmployeeSubmissionsPage() {
           pi: item.proforma_invoice ?? '',
           entity: item.agency_brand_name || '-',
           amount: Number(item.commercials ?? 0),
+          currency: item.currency || 'INR',
           owner_name: user.full_name || undefined,
           submitter_email: item.email_address || user.email || undefined,
           intake_status: item.intake_status,
