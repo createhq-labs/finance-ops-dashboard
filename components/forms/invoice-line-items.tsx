@@ -1,6 +1,6 @@
 import type { DeliverableAmountRow, MultiCreatorRow } from "./types";
-import { SearchableSelect } from "./searchable-select";
 import { CURRENCY_OPTIONS } from "../../lib/shared/currency";
+import { SearchableSelect } from "./searchable-select";
 
 function CurrencyField({
   currency,
@@ -10,8 +10,15 @@ function CurrencyField({
   onChange: (next: string) => void;
 }) {
   return (
-    <div className="grid gap-1" style={{ width: 160, maxWidth: "100%" }}>  
-      <SearchableSelect value={currency} options={CURRENCY_OPTIONS} onChange={onChange} placeholder="Select currency" dataField="currency" />
+    <div className="grid gap-1 min-w-0">
+      <SearchableSelect
+        value={currency}
+        options={CURRENCY_OPTIONS}
+        onChange={onChange}
+        placeholder="INR"
+        dataField="currency"
+      />
+      <div style={{ minHeight: 16 }} />
     </div>
   );
 }
@@ -90,7 +97,9 @@ export function SingleCreatorRows({
   onProductReimbursementFileChange,
   showCurrency = false,
 }: SingleCreatorProps) {
-  const gridColumns = showCurrency ? "grid gap-2 md:grid-cols-[1fr_1fr_160px_180px_120px_auto]" : "grid gap-2 md:grid-cols-[1fr_1fr_180px_120px_auto]";
+  const gridColumns = showCurrency
+    ? "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_92px_minmax(0,1fr)_minmax(0,0.85fr)_96px]"
+    : "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_96px]";
   return (
     <section className="intake-section">
       <div className="intake-section-header">
@@ -104,7 +113,7 @@ export function SingleCreatorRows({
         <div className="intake-row-stack">
           {rows.map((row, idx) => (
             <div key={`sc-${idx}`} className="grid gap-2">
-              <div className={`${gridColumns} intake-row-grid-multi`}>
+              <div className={`${gridColumns} intake-row-grid-multi`} style={showCurrency ? { gridTemplateColumns: "minmax(0,1.1fr) minmax(0,1.1fr) 92px minmax(0,1fr) minmax(0,0.85fr) 96px" } : { gridTemplateColumns: "minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,0.85fr) 96px" }}>
                 <div className="grid gap-1">
                   <SearchableSelect
                     value={scCreator}
@@ -136,10 +145,11 @@ export function SingleCreatorRows({
                   </div>
                 </div>
                 {showCurrency ? (
-                  <div className="grid gap-1">
-                    <CurrencyField currency={currency} onChange={onCurrencyChange} />
-                  </div>
-                ) : null}
+  <CurrencyField
+    currency={currency}
+    onChange={onCurrencyChange}
+  />
+) : null}
                 <div className="grid gap-1">
                   <SearchableSelect
                     value={row.deliverable}
@@ -231,7 +241,9 @@ export function MultiCreatorRows({
   onProductReimbursementFileChange,
   showCurrency = false,
 }: MultiCreatorProps) {
-  const gridColumns = showCurrency ? "grid gap-2 md:grid-cols-[1fr_1fr_160px_180px_120px_auto]" : "grid gap-2 md:grid-cols-[1fr_1fr_180px_120px_auto]";
+  const gridColumns = showCurrency
+    ? "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_92px_minmax(0,1fr)_minmax(0,0.85fr)_96px]"
+    : "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_96px]";
   return (
     <section className="intake-section">
       <div className="intake-section-header">
@@ -245,7 +257,7 @@ export function MultiCreatorRows({
         <div className="intake-row-stack">
           {rows.map((row, idx) => (
             <div key={`mc-${idx}`} className="grid gap-2">
-              <div className={`${gridColumns} intake-row-grid-multi`}>
+              <div className={`${gridColumns} intake-row-grid-multi`} style={showCurrency ? { gridTemplateColumns: "minmax(0,1.1fr) minmax(0,1.1fr) 92px minmax(0,1fr) minmax(0,0.85fr) 96px" } : { gridTemplateColumns: "minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,0.85fr) 96px" }}>
                 <div className="grid gap-1">
                   <SearchableSelect
                     value={row.creator}
@@ -277,10 +289,11 @@ export function MultiCreatorRows({
                   </div>
                 </div>
                 {showCurrency ? (
-                  <div className="grid gap-1">
-                    <CurrencyField currency={currency} onChange={onCurrencyChange} />
-                  </div>
-                ) : null}
+  <CurrencyField
+    currency={currency}
+    onChange={onCurrencyChange}
+  />
+) : null}
 
                 <div className="grid gap-1">
                   <SearchableSelect
