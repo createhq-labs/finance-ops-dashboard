@@ -11,6 +11,7 @@ import { SubmissionTable, type SubmissionRow } from '../../../../components/dash
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { PAYMENT_RECEIVED_STATUS_OPTIONS } from '../../../../lib/client/finance-status';
 import { canSubmitInvoice, getDrawerViewerRole, getSubmissionsLabel } from '../../../../lib/client/dashboard-access';
+import { getPiDisplayMeta } from '../../../../lib/client/pi-display';
 
 type MySubmissionApiRow = {
   id: string;
@@ -187,8 +188,16 @@ export default function EmployeeSubmissionsPage() {
 
       if (!normalizedQuery) return true;
 
+      const piMeta = getPiDisplayMeta({
+        pi: row.pi,
+        submittedAt: row.submitted_at,
+        invoiceType: row.invoice_type,
+        lineItems: row.intake_line_items,
+      });
       const haystack = [
         row.pi,
+        piMeta.label,
+        piMeta.title,
         row.entity,
         row.brand_name,
         row.creator_creators_name,
@@ -300,7 +309,7 @@ export default function EmployeeSubmissionsPage() {
         <SubmissionTable
           rows={filteredRows}
           onOpen={(id, selectedRow) => {
-            if (selectedRow?.intake_status === 'rejected') {
+            if (user.role === 'employee' && selectedRow?.intake_status === 'rejected') {
               router.push(`/dashboard/submissions/new?resubmit_id=${id}`);
               return;
             }
@@ -308,8 +317,8 @@ export default function EmployeeSubmissionsPage() {
           }}
           columns={['pi', 'entity', 'amount', 'intake_status', 'invoice_status', 'submitted_at', 'rejection_note', 'actions']}
           emptyLabel="No submissions found yet."
-          getActionLabel={(row) => row.intake_status === 'rejected' ? 'Resubmit' : 'View'}
-          viewer="employee"
+          getActionLabel={(row) => user.role === 'employee' && row.intake_status === 'rejected' ? 'Resubmit' : 'View'}
+          viewer={user.role}
         />
       ) : null}
 

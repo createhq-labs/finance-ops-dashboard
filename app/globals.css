@@ -63,23 +63,23 @@
 }
 
 .dark {
-  --background: #02040a;
+  --background: #060a17;
   --foreground: #f8fafc;
-  --card: #070b14;
+  --card: #000000;
   --card-foreground: #f8fafc;
   --popover: #080d18;
   --popover-foreground: #f8fafc;
-  --primary: #38ddf8;
+  --primary: #03c4f9;
   --primary-foreground: #02040a;
   --secondary: #0d1726;
   --secondary-foreground: #eafbff;
   --muted: #0f172a;
-  --muted-foreground: #b8c7d9;
-  --accent: #38ddf8;
-  --accent-foreground: #02040a;
+  --muted-foreground: #aad3ff;
+  --accent: #243b5c;
+  --accent-foreground: #dbeafe;
   --destructive: #fb7185;
   --destructive-foreground: #02040a;
-  --border: rgba(56, 221, 248, 0.2);
+  --border: rgba(19, 208, 237, 0.2);
   --input: #111827;
   --ring: #38ddf8;
   --chart-1: #38ddf8;
@@ -89,16 +89,16 @@
   --chart-5: #f59e0b;
   --sidebar: #02040a;
   --sidebar-foreground: #f8fafc;
-  --sidebar-primary: #38ddf8;
+  --sidebar-primary: #07dafb;
   --sidebar-primary-foreground: #02040a;
   --sidebar-accent: #0d1726;
   --sidebar-accent-foreground: #eafbff;
-  --sidebar-border: rgba(56, 221, 248, 0.18);
+  --sidebar-border: rgba(30, 220, 249, 0.18);
   --sidebar-ring: #38ddf8;
 
   --bg: var(--background);
   --fg: var(--foreground);
-  --primary-strong: #60a5fa;
+  --primary-strong: #06abfe;
   --danger: var(--destructive);
   --success: #34d399;
   --sidebar-bg: var(--sidebar);
@@ -467,52 +467,153 @@ h3 {
   margin-top: 8px;
 }
 
+/* ── Sidebar shell ───────────────────────────────────────────── */
 .sidebar {
+  position: relative;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--sidebar-border);
   transition: width 0.2s ease;
   overflow: hidden;
 }
 
+
+
 .sidebar-expanded { width: 240px; }
 .sidebar-collapsed { width: 64px; }
 
-.nav-item {
+/* ── Logo area ───────────────────────── */
+.sidebar-logo {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 11px;
-  border-radius: 10px;
+  padding: 0 10px 14px;
+  border-bottom: 1px solid var(--sidebar-border);
+  margin-bottom: 8px;
+}
+
+.sidebar-logo-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--primary-strong), var(--accent));
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 15px;
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(14, 165, 233, 0.20);
+}
+
+.sidebar-logo-text {
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--fg);
+  white-space: nowrap;
+  letter-spacing: -0.02em;
+}
+
+.sidebar-logo-subtext {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+/* ── Group labels ────────────────────────────────────────────── */
+.sidebar-group {
+  padding-top: 4px;
+  
+}
+
+.sidebar-group-label {
+  display: block;
+  padding: 6px 10px 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase; 
+  color: var(--muted-foreground);
+  opacity: 0.5;
+  white-space: nowrap;
+  overflow: hidden;
+  /* height collapses to 0 when opacity is 0 to avoid phantom spacing */
+  max-height: 24px;
+  transition: opacity 0.2s ease, max-height 0.2s ease;
+}
+
+.sidebar-collapsed .sidebar-group-label {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* ── Nav items ───────────────────────────────────────────────── */
+.nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
   color: var(--muted-foreground);
   text-decoration: none;
-  transition: all 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
   white-space: nowrap;
   overflow: hidden;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  border: none;
+  background: transparent;
 }
 
 .nav-item:hover {
-  background: rgba(124, 92, 255, 0.08);
+  background: rgba(14, 165, 233, 0.07);
   color: var(--fg);
 }
 
 .nav-item-active {
-  background: rgba(53, 213, 255, 0.1);
+  background: rgba(14, 165, 233, 0.10);
   color: var(--fg);
-  border-left: 3px solid var(--primary);
-  padding-left: 9px;
+  font-weight: 600;
+  box-shadow: none;
 }
 
-.dark .nav-item:hover {
-  background: rgba(56, 221, 248, 0.06);
+/* ── Icon containers ─────────────────────────────────────────── */
+.nav-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  color: inherit;
 }
 
-.dark .nav-item-active {
-  background: rgba(56, 221, 248, 0.12);
-  color: var(--foreground);
+/* Active icon gets the contained pill */
+.nav-icon-active {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--primary);
 }
 
+.nav-item-active svg {
+  color: var(--primary);
+}
+
+/* ── Badge ───────────────────────────────────────────────────── */
 .nav-badge {
   margin-left: auto;
   min-width: 18px;
@@ -521,29 +622,99 @@ h3 {
   display: inline-grid;
   place-items: center;
   padding: 0 5px;
-  background: var(--primary);
+  background: #ef4444;
   color: #fff;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 800;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.22);
 }
 
-.dark .nav-badge {
-  color: var(--primary-foreground);
+/* ── Bottom section ──────────────────────────────────────────── */
+.sidebar-bottom {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Bottom items are smaller and more muted */
+.nav-item-bottom {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 10px;
+  color: var(--muted-foreground);
+  opacity: 0.75;
+}
+
+.nav-item-bottom:hover {
+  opacity: 1;
+  background: rgba(14, 165, 233, 0.06);
+  color: var(--fg);
+}
+
+/* Logout — neutral until hover, then destructive */
+.nav-item-logout:hover {
+  background: rgba(239, 68, 68, 0.07);
+  color: #ef4444;
+}
+
+/* ── Transitions ─────────────────────────────────────────────── */
+.sidebar-copy,
+.sidebar-nav-label {
+  transition: opacity 0.2s ease;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* ── Dark mode ───────────────────────────────────────────────── */
+.dark .nav-item:hover {
+  background: rgba(56, 221, 248, 0.07);
+}
+
+.dark .nav-item-active {
+  background: rgba(56, 221, 248, 0.10);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.dark .nav-icon-active {
+  background: rgba(56, 221, 248, 0.13);
+  color: var(--primary);
+}
+
+.dark .nav-item-logout:hover {
+  background: rgba(239, 68, 68, 0.10);
+  color: #f87171;
+}
+.nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 6px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  box-shadow: 0 4px 10px rgba(239, 68, 68, 0.22);
 }
 
 .sidebar-logo {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 12px 16px;
+  padding: 0 10px 16px;
   border-bottom: 1px solid var(--sidebar-border);
   margin-bottom: 12px;
 }
 
 .sidebar-logo-mark {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
   background: linear-gradient(135deg, var(--primary-strong), var(--accent));
   display: grid;
   place-items: center;
@@ -551,21 +722,28 @@ h3 {
   font-size: 16px;
   color: #fff;
   flex-shrink: 0;
+  box-shadow: 0 8px 18px rgba(14, 165, 233, 0.22);
 }
 
 .sidebar-logo-text {
-  font-weight: 700;
+  font-weight: 800;
   font-size: 15px;
   color: var(--fg);
   white-space: nowrap;
+  letter-spacing: -0.02em;
 }
 
 .sidebar-logo-subtext {
   display: block;
-  margin-top: 4px;
-  font-size: 12px;
+  margin-top: 3px;
+  font-size: 11.5px;
   color: var(--muted-foreground);
   white-space: nowrap;
+}
+.sidebar-group {
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--sidebar-border);
 }
 
 .sidebar-copy,
@@ -641,11 +819,6 @@ h3 {
   margin-inline: auto;
 }
 
-.intake-page-header-compact {
-  gap: 10px !important;
-  padding-bottom: 14px !important;
-}
-
 .intake-page-header {
   display: flex;
   justify-content: space-between;
@@ -654,51 +827,22 @@ h3 {
 }
 
 .intake-eyebrow {
-  margin: 0 0 6px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: #7dd3fc;
 }
 
 .intake-page-title {
   margin: 0;
-  font-size: 30px;
-  line-height: 1.04;
-  letter-spacing: -0.04em;
+  font-size: 28px;
+  line-height: 1.08;
 }
 
 .intake-page-copy {
-  max-width: 700px;
-  margin-top: 2px;
-  font-size: 15px;
-  line-height: 1.7;
-}
-
-.intake-callout {
-  border: 1px solid color-mix(in oklab, var(--accent) 16%, var(--border) 84%);
-  background: color-mix(in oklab, var(--card) 82%, var(--accent) 18%);
-  border-radius: 14px;
-  padding: 12px 14px;
-  display: grid;
-  gap: 4px;
-}
-
-.intake-callout-title {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--foreground);
-}
-
-.intake-callout-copy {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--muted-foreground);
+  max-width: 620px;
+  margin-top: 4px;
 }
 
 .intake-banner {
@@ -776,7 +920,6 @@ h3 {
   padding: 9px 12px;
   font-size: 13px;
   line-height: 1.35;
-  color-scheme: light dark;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
@@ -793,18 +936,6 @@ h3 {
 }
 
 .intake-input option {
-  background: var(--intake-option-bg);
-  color: var(--intake-option-fg);
-}
-
-select.intake-input {
-  appearance: auto;
-  background-color: var(--intake-input-bg);
-  color: var(--intake-input-fg);
-}
-
-select.intake-input option,
-select.intake-input optgroup {
   background: var(--intake-option-bg);
   color: var(--intake-option-fg);
 }

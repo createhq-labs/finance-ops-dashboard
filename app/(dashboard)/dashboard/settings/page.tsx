@@ -1,25 +1,36 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Bell, Lock, Moon, User } from 'lucide-react';
 import { ThemeToggle } from '../../../../components/layout/theme-toggle';
+import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 
 type SettingsTab = 'profile' | 'appearance' | 'notifications';
 
 export default function SettingsPage() {
+  const { user, loading } = useDashboardSession();
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
-  const [name, setName] = useState('Soham R');
-  const [email] = useState('soham.r@create.wtf');
-  const [role] = useState('employee');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState('');
   const [toggles, setToggles] = useState({
     submissions: true,
     rejections: true,
     finance: false,
   });
 
+  useEffect(() => {
+    if (!user) return;
+    setName(user.full_name || '');
+    setEmail(user.email || '');
+    setRole(user.role || '');
+  }, [user]);
+
   const handleSave = () => {
     console.log('save clicked');
   };
+
+  if (loading || !user) return null;
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
@@ -60,7 +71,7 @@ export default function SettingsPage() {
           {activeTab === 'profile' && (
             <div style={{ display: 'grid', gap: 28 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
-                <div className="settings-avatar">S</div>
+                <div className="settings-avatar">{(name || 'U').charAt(0).toUpperCase()}</div>
                 <button
                   type="button"
                   className="settings-action-button"
@@ -78,23 +89,13 @@ export default function SettingsPage() {
               <div style={{ display: 'grid', gap: 20, borderTop: '1px solid var(--surface-border)', paddingTop: 20 }}>
                 <div style={{ display: 'grid', gap: 8 }}>
                   <label className="settings-field-label">Full Name</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="settings-form-input"
-                  />
+                  <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="settings-form-input" />
                 </div>
 
                 <div style={{ display: 'grid', gap: 8 }}>
                   <label className="settings-field-label">Email Address</label>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                    <input
-                      type="email"
-                      value={email}
-                      readOnly
-                      className="settings-form-input"
-                    />
+                    <input type="email" value={email} readOnly className="settings-form-input" />
                     <Lock size={16} className="text-muted" />
                   </div>
                   <p className="text-muted" style={{ margin: '6px 0 0', fontSize: 12 }}>
@@ -104,13 +105,7 @@ export default function SettingsPage() {
 
                 <div style={{ display: 'grid', gap: 8 }}>
                   <label className="settings-field-label">Role</label>
-                  <input
-                    type="text"
-                    value={role}
-                    readOnly
-                    className="settings-form-input"
-                    style={{ textTransform: 'capitalize' }}
-                  />
+                  <input type="text" value={role} readOnly className="settings-form-input" style={{ textTransform: 'capitalize' }} />
                 </div>
 
                 <button
@@ -182,10 +177,8 @@ export default function SettingsPage() {
                   />
                 </label>
               ))}
-
             </div>
           )}
-
         </section>
       </div>
     </div>

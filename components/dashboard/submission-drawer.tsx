@@ -123,7 +123,7 @@ export function SubmissionDrawer({
 
   const canSeeFinanceFields = canViewFinanceFields(viewer);
   const canSeeSystemFields = canViewSystemFields(viewer);
-  const canSeeInvoice = canViewInvoiceStatus(viewer) || viewer === 'employee';
+  const canSeeInvoice = canViewInvoiceStatus(viewer) || viewer === 'employee' || viewer === 'team_lead';
   const shouldShowFinanceStatus = viewer === 'employee' || (canSeeFinanceFields && !financePanel);
   const canResubmit = viewer === 'employee' || canResubmitSubmission(viewer, row);
   const lineItems = [...(row.intake_line_items || [])].sort((a, b) => (a.line_order ?? 0) - (b.line_order ?? 0));

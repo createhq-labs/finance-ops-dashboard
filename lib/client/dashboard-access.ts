@@ -1,7 +1,19 @@
 ﻿import type { SessionUser } from './session';
 
 export type AppRole = SessionUser['role'];
-export type DashboardPath = '/dashboard' | '/dashboard/submit' | '/dashboard/submissions' | '/dashboard/submissions/new' | '/dashboard/finance' | '/dashboard/master-data' | '/dashboard/notifications' | '/dashboard/guide' | '/dashboard/settings' | '/dashboard/users' | '/dashboard/system';
+export type DashboardPath =
+  | '/dashboard'
+  | '/dashboard/submit'
+  | '/dashboard/submissions'
+  | '/dashboard/team-submissions'
+  | '/dashboard/submissions/new'
+  | '/dashboard/finance'
+  | '/dashboard/master-data'
+  | '/dashboard/notifications'
+  | '/dashboard/guide'
+  | '/dashboard/settings'
+  | '/dashboard/users'
+  | '/dashboard/system';
 
 export function getInvoiceIntakePath(): DashboardPath {
   return '/dashboard/submissions/new';
@@ -44,19 +56,19 @@ export function canViewSystemPage(role: AppRole) {
 }
 
 export function canViewTeamSubmissions(role: AppRole) {
-  return isTeamLeadRole(role) || isAdminRole(role);
+  return isTeamLeadRole(role);
 }
 
 export function canCreateSubmission(role: AppRole) {
-  return isEmployeeRole(role);
+  return isEmployeeRole(role) || isTeamLeadRole(role);
 }
 
 export function canSubmitInvoice(role: AppRole) {
-  return isEmployeeRole(role);
+  return isEmployeeRole(role) || isTeamLeadRole(role);
 }
 
 export function canViewInvoiceStatus(role: AppRole) {
-  return !isEmployeeRole(role);
+  return role === 'finance' || role === 'admin' || role === 'developer';
 }
 
 export function canViewFinanceFields(role: AppRole) {
@@ -68,7 +80,7 @@ export function canViewSystemFields(role: AppRole) {
 }
 
 export function canResubmitSubmission(role: AppRole, row: { intake_status: 'submitted' | 'rejected' | 'accepted' }) {
-  return isEmployeeRole(role) && row.intake_status === 'rejected';
+  return (isEmployeeRole(role) || isTeamLeadRole(role)) && row.intake_status === 'rejected';
 }
 
 export function getDefaultDashboardPath(role: AppRole) {
@@ -82,6 +94,7 @@ export function canAccessDashboardPath(role: AppRole, pathname: string) {
   if (pathname === '/dashboard/submit') return canSubmitInvoice(role);
   if (pathname === '/dashboard/submissions/new') return canSubmitInvoice(role);
   if (pathname === '/dashboard/submissions') return canViewSubmissionsPage(role);
+  if (pathname === '/dashboard/team-submissions') return canViewTeamSubmissions(role);
   if (pathname === '/dashboard/finance') return canViewFinanceDashboard(role);
   if (pathname === '/dashboard/master-data') return canViewMasterData(role);
   if (pathname === '/dashboard/notifications') return canViewNotifications(role);
@@ -93,7 +106,7 @@ export function canAccessDashboardPath(role: AppRole, pathname: string) {
 }
 
 export function getSubmissionsLabel(role: AppRole | undefined) {
-  if (role && canViewTeamSubmissions(role)) return 'Team Submissions';
+  void role;
   return 'My Submissions';
 }
 
