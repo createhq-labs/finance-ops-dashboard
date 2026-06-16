@@ -1,0 +1,284 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+type TeamLeadMemberRow = {
+  id: string;
+  team_lead_id: string;
+  employee_id: string;
+  created_by: string;
+  created_at: string;
+};
+
+type TeamEmployeeRow = {
+  id: string;
+  full_name: string;
+  email: string;
+  role: string;
+  status: string;
+};
+
+export type TeamMemberRecord = {
+  employee_id: string;
+  full_name: string;
+  email: string;
+  status: string;
+  created_at: string;
+  created_by: string;
+};
+
+export type TeamCandidateRecord = {
+  id: string;
+  full_name: string;
+  email: string;
+  status: string;
+  team_lead_names: string[];
+  is_current_team_member: boolean;
+};
+
+export async function listTeamLeadMembers(client: SupabaseClient, teamLeadId: string) {
+  const { data, error } = await client
+    .from('team_lead_members')
+    .select('id, team_lead_id, employee_id, created_by, created_at')
+    .eq('team_lead_id', teamLeadId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  const mappings = (data ?? []) as TeamLeadMemberRow[];
+  const employeeIds = mappings.map((item) => item.employee_id);
+
+  if (employeeIds.length === 0) {
+    return [] as TeamMemberRecord[];
+  }
+
+  const { data: employees, error: employeesError } = await client
+    .from('users')
+    .select('id, full_name, email, role, status')
+    .in('id', employeeIds);
+
+  if (employeesError) throw new Error(employeesError.message);
+
+  const employeeById = new Map(
+    ((employees ?? []) as TeamEmployeeRow[]).map((employee) => [employee.id, employee])
+  );
+
+  return mappings
+    .map((mapping) => {
+      const employee = employeeById.get(mapping.employee_id);
+      if (!employee) return null;
+      return {
+        employee_id: mapping.employee_id,
+        full_name: employee.full_name,
+        email: employee.email,
+        status: employee.status,
+        created_at: mapping.created_at,
+        created_by: mapping.created_by,
+      } satisfies TeamMemberRecord;
+    })
+    .filter(Boolean) as TeamMemberRecord[];
+}
+
+export async function searchTeamLeadCandidates(
+  client: SupabaseClient,
+  teamLeadId: string,
+  search: string
+) {
+  const normalizedSearch = search.trim().toLowerCase();
+
+  const { data: existingMappings, error: existingMappingsError } = await client
+    .from('team_lead_members')
+    .select('employee_id')
+    .eq('team_lead_id', teamLeadId);
+
+  if (existingMappingsError) throw new Error(existingMappingsError.message);
+
+  const currentTeamIds = new Set((existingMappings ?? []).map((item) => String(item.employee_id)));
+
+  const { data, error } = await client
+    .from('users')
+    .select('id, full_name, email, role, status')
+    .eq('role', 'employee');
+
+  if (error) throw new Error(error.message);
+
+  const employees = ((data ?? []) as TeamEmployeeRow[])
+    .filter((employee) => employee.status === 'active')
+    .filter((employee) => {
+      if (!normalizedSearch) return true;
+      const haystack = `${employee.full_name} ${employee.email}`.toLowerCase();
+      return haystack.includes(normalizedSearch);
+    })
+    .sort((left, right) => left.full_name.localeCompare(right.full_name));
+
+  if (employees.length === 0) return [] as TeamCandidateRecord[];
+
+  const employeeIds = employees.map((employee) => employee.id);
+
+  const { data: mappings, error: mappingsError } = await client
+    .from('team_lead_members')
+    .select('employee_id, team_lead_id')
+    .in('employee_id', employeeIds);
+
+  if (mappingsError) throw new Error(mappingsError.message);
+
+  const leadIds = Array.from(new Set(((mappings ?? []) as Array<{ employee_id: string; team_lead_id: string }>).map((item) => item.team_lead_id).filter(Boolean)));
+
+  let leadNameMap = new Map<string, string>();
+  if (leadIds.length > 0) {
+    const { data: leads, error: leadsError } = await client
+      .from('users')
+      .select('id, full_name')
+      .in('id', leadIds);
+    if (leadsError) throw new Error(leadsError.message);
+    leadNameMap = new Map(
+      ((leads ?? []) as Array<{ id: string; full_name: string }>).map((lead) => [lead.id, lead.full_name])
+    );
+  }
+
+  const leadNamesByEmployee = new Map<string, string[]>();
+  for (const mapping of (mappings ?? []) as Array<{ employee_id: string; team_lead_id: string }>) {
+    if (mapping.team_lead_id === teamLeadId) continue;
+    const current = leadNamesByEmployee.get(mapping.employee_id) || [];
+    const name = leadNameMap.get(mapping.team_lead_id);
+    if (name && !current.includes(name)) current.push(name);
+    leadNamesByEmployee.set(mapping.employee_id, current);
+  }
+
+  return employees
+    .map((employee) => ({
+      id: employee.id,
+      full_name: employee.full_name,
+      email: employee.email,
+      status: employee.status,
+      team_lead_names: leadNamesByEmployee.get(employee.id) || [],
+      is_current_team_member: currentTeamIds.has(employee.id),
+    }));
+}
+
+export async function addTeamLeadMember(
+  client: SupabaseClient,
+  teamLeadId: string,
+  employeeId: string,
+  createdBy: string
+) {
+  if (teamLeadId === employeeId) {
+    throw new Error('You cannot add yourself as a team member.');
+  }
+
+  const { data: employee, error: employeeError } = await client
+    .from('users')
+    .select('id, role, status, full_name, email')
+    .eq('id', employeeId)
+    .maybeSingle();
+
+  if (employeeError) throw new Error(employeeError.message);
+  if (!employee) throw new Error('Employee not found.');
+  if (employee.role !== 'employee') throw new Error('Only employee users can be added to a team.');
+  if (employee.status !== 'active') throw new Error('Only active employees can be added to a team.');
+
+  const { data: existing, error: existingError } = await client
+    .from('team_lead_members')
+    .select('id')
+    .eq('team_lead_id', teamLeadId)
+    .eq('employee_id', employeeId)
+    .maybeSingle();
+
+  if (existingError) throw new Error(existingError.message);
+  if (existing) {
+    throw new Error('This employee is already in your team.');
+  }
+
+  const { data, error } = await client
+    .from('team_lead_members')
+    .insert({
+      team_lead_id: teamLeadId,
+      employee_id: employeeId,
+      created_by: createdBy,
+    })
+    .select('id, team_lead_id, employee_id, created_by, created_at')
+    .single();
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error('This employee is already in your team.');
+    }
+    throw new Error(error.message);
+  }
+
+  return {
+    mapping: data as TeamLeadMemberRow,
+    employee: employee as TeamEmployeeRow,
+  };
+}
+
+export async function removeTeamLeadMember(
+  client: SupabaseClient,
+  teamLeadId: string,
+  employeeId: string
+) {
+  const { data, error } = await client
+    .from('team_lead_members')
+    .delete()
+    .eq('team_lead_id', teamLeadId)
+    .eq('employee_id', employeeId)
+    .select('id');
+
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) {
+    throw new Error('Team member mapping not found.');
+  }
+
+  return { removed: true as const };
+}
+
+export async function listTeamLeadSubmissions(client: SupabaseClient, teamLeadId: string) {
+  const { data: mappings, error: mappingsError } = await client
+    .from('team_lead_members')
+    .select('employee_id')
+    .eq('team_lead_id', teamLeadId);
+
+  if (mappingsError) throw new Error(mappingsError.message);
+
+  const employeeIds = Array.from(new Set((mappings ?? []).map((item) => String(item.employee_id)).filter(Boolean)));
+  if (employeeIds.length === 0) {
+    return [] as Array<Record<string, unknown>>;
+  }
+
+  const baseSelect =
+    'id, submitted_by, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, invoice_number, debit_note_number, finance_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
+
+  const { data, error } = await client
+    .from('intake_submissions')
+    .select(baseSelect)
+    .in('submitted_by', employeeIds)
+    .order('submitted_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  const submittedByIds = Array.from(
+    new Set(((data ?? []) as Array<{ submitted_by?: string | null }>).map((row) => String(row.submitted_by ?? '')).filter(Boolean))
+  );
+
+  let userMap = new Map<string, { full_name: string; email: string }>();
+  if (submittedByIds.length > 0) {
+    const { data: users, error: usersError } = await client
+      .from('users')
+      .select('id, full_name, email')
+      .in('id', submittedByIds);
+    if (usersError) throw new Error(usersError.message);
+    userMap = new Map(
+      ((users ?? []) as Array<{ id: string; full_name: string; email: string }>).map((user) => [
+        user.id,
+        { full_name: String(user.full_name ?? ''), email: String(user.email ?? '') },
+      ])
+    );
+  }
+
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+    const owner = userMap.get(String(row.submitted_by ?? ''));
+    return {
+      ...row,
+      submitted_by_name: owner?.full_name ?? null,
+      submitted_by_email: owner?.email ?? null,
+    };
+  });
+}

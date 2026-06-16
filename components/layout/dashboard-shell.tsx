@@ -4,7 +4,14 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { Bell, BookOpen, BriefcaseBusiness, Database, FilePlus, Home, ListChecks, LogOut, Settings, Users } from 'lucide-react';
-import { canAccessDashboardPath, canViewNotifications, getDefaultDashboardPath, getInvoiceIntakePath, getSubmissionsLabel } from '../../lib/client/dashboard-access';
+import {
+  canAccessDashboardPath,
+  canViewNotifications,
+  canViewTeamSubmissions,
+  getDefaultDashboardPath,
+  getInvoiceIntakePath,
+  getSubmissionsLabel,
+} from '../../lib/client/dashboard-access';
 import { DashboardNavbar } from './dashboard-navbar';
 import { DashboardSessionProvider, useDashboardSession } from './dashboard-session';
 
@@ -33,22 +40,35 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
   const items = useMemo(() => {
     const role = user?.role;
     const base = [
-      { href: '/dashboard', label: 'Overview', icon: Home },
-      { href: getInvoiceIntakePath(), label: 'Submit Invoice', icon: FilePlus },
-      { href: '/dashboard/submissions', label: getSubmissionsLabel(role), icon: ListChecks },
-      { href: '/dashboard/notifications', label: 'Notifications', icon: Bell, badge: unreadCount > 0 ? unreadCount : undefined },
-      { href: '/dashboard/guide', label: 'Guide', icon: BookOpen },
-      { href: '/dashboard/finance', label: 'Finance Review', icon: BriefcaseBusiness },
-      { href: '/dashboard/master-data', label: 'Master Data', icon: Database },
-      { href: '/dashboard/users', label: 'Users', icon: Users },
-      { href: '/dashboard/system', label: 'System' },
+      { href: '/dashboard',                 label: 'Overview',             icon: Home,              group: 'workspace' },
+      { href: getInvoiceIntakePath(),        label: 'Submit Invoice',       icon: FilePlus,          group: 'workspace' },
+      { href: '/dashboard/submissions',      label: getSubmissionsLabel(role), icon: ListChecks,     group: 'workspace' },
+      { href: '/dashboard/team-submissions', label: 'Team Submissions',     icon: ListChecks,        group: 'workspace' },
+      { href: '/dashboard/notifications',    label: 'Notifications',        icon: Bell,              group: 'workspace', badge: unreadCount > 0 ? unreadCount : undefined },
+      { href: '/dashboard/guide',            label: 'Guide',                icon: BookOpen,          group: 'workspace' },
+      { href: '/dashboard/finance',          label: 'Finance Review',       icon: BriefcaseBusiness, group: 'operations' },
+      { href: '/dashboard/master-data',      label: 'Master Data',          icon: Database,          group: 'operations' },
+      { href: '/dashboard/users',            label: 'Users',                icon: Users,             group: 'admin' },
+      { href: '/dashboard/system',           label: 'System',                                        group: 'admin' },
     ];
 
     return base.filter((i) => {
       if (!role) return i.href === '/dashboard';
+      if (i.href === '/dashboard/team-submissions') return canViewTeamSubmissions(role);
       return canAccessDashboardPath(role, i.href);
     });
   }, [unreadCount, user?.role]);
+
+  const groupOrder = ['workspace', 'operations', 'admin'] as const;
+  const groupLabels: Record<string, string> = {
+    workspace:  'Workspace',
+    operations: 'Operations',
+    admin:      'Admin',
+  };
+
+  const grouped = groupOrder
+    .map((g) => ({ key: g, label: groupLabels[g], items: items.filter((i) => i.group === g) }))
+    .filter((g) => g.items.length > 0);
 
   if (loading) {
     return (
@@ -62,7 +82,14 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-app" style={{ display: 'grid', gridTemplateColumns: collapsed ? '72px 1fr' : '260px 1fr', transition: 'grid-template-columns 0.25s ease' }}>
+    <div
+      className="min-h-screen bg-app"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: collapsed ? '72px 1fr' : '260px 1fr',
+        transition: 'grid-template-columns 0.25s ease',
+      }}
+    >
       <aside
         className={`sidebar ${collapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
         style={{ display: 'flex', flexDirection: 'column', padding: '16px 10px', height: '100vh', position: 'sticky', top: 0 }}
@@ -77,38 +104,60 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        <nav style={{ display: 'grid', gap: 8, flex: 1, alignContent: 'start', gridAutoRows: 'max-content' }}>
-          {items.map((item) => {
-            const active = pathname === item.href || (item.href === getInvoiceIntakePath() && pathname === '/dashboard/submit');
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`nav-item ${active ? 'nav-item-active' : ''}`}
-                title={collapsed ? item.label : undefined}
-                style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 0, flex: 1, alignContent: 'start' }}>
+          {grouped.map((group, gi) => (
+            <div key={group.key} className="sidebar-group">
+
+              <span
+                className="sidebar-group-label"
+                style={{ opacity: collapsed ? 0 : 1 }}
               >
-                {Icon ? <Icon size={16} style={{ flexShrink: 0 }} /> : <span style={{ width: 16 }} />}
-                <span className="sidebar-nav-label" style={{ opacity: collapsed ? 0 : 1 }}>
-                  {item.label}
-                </span>
-                {!collapsed && 'badge' in item && item.badge ? (
-                  <span className="nav-badge">{item.badge}</span>
-                ) : null}
-              </Link>
-            );
-          })}
+                {group.label}
+              </span>
+
+              <div style={{ display: 'grid', gap: 1, gridAutoRows: 'max-content' }}>
+                {group.items.map((item) => {
+                  const active = pathname === item.href || (item.href === getInvoiceIntakePath() && pathname === '/dashboard/submit');
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`nav-item ${active ? 'nav-item-active' : ''}`}
+                      title={collapsed ? item.label : undefined}
+                      style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
+                    >
+                      {/* Single nav-icon — no active variant */}
+                      <span className="nav-icon">
+                        {Icon ? <Icon size={15} style={{ flexShrink: 0 }} /> : <span style={{ width: 15 }} />}
+                      </span>
+
+                      <span className="sidebar-nav-label" style={{ opacity: collapsed ? 0 : 1 }}>
+                        {item.label}
+                      </span>
+
+                      {!collapsed && 'badge' in item && item.badge ? (
+                        <span className="nav-badge">{item.badge}</span>
+                      ) : null}
+                    </Link>
+                  );
+                })}
+              </div>
+
+            </div>
+          ))}
         </nav>
 
         <div className="sidebar-bottom">
           <Link
             href="/dashboard/settings"
-            className="nav-item"
+            className="nav-item nav-item-bottom"
             title={collapsed ? 'Settings' : undefined}
             style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
           >
-            <Settings size={16} style={{ flexShrink: 0 }} />
+            <span className="nav-icon">
+              <Settings size={14} style={{ flexShrink: 0 }} />
+            </span>
             <span className="sidebar-nav-label" style={{ opacity: collapsed ? 0 : 1 }}>
               Settings
             </span>
@@ -117,11 +166,13 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
           <form action="/api/auth/logout" method="post">
             <button
               type="submit"
-              className="nav-item w-full text-muted-foreground transition-colors hover:text-destructive"
+              className="nav-item nav-item-bottom nav-item-logout w-full"
               title={collapsed ? 'Logout' : undefined}
               style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
             >
-              <LogOut size={16} style={{ flexShrink: 0 }} />
+              <span className="nav-icon">
+                <LogOut size={14} style={{ flexShrink: 0 }} />
+              </span>
               <span className="sidebar-nav-label" style={{ opacity: collapsed ? 0 : 1 }}>
                 Logout
               </span>
@@ -138,7 +189,6 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
             onUnreadCountChange={setUnreadCount}
           />
         ) : null}
-
         <div className="p-5">
           {children}
         </div>
