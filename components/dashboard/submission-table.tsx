@@ -133,6 +133,7 @@ type SheetColumnId =
   | 'payment_made'
   | 'closed_status'
   | 'email_address'
+  | 'owner_name'
   | 'business_line'
   | 'entry_type'
   | 'entity_type'
@@ -183,6 +184,7 @@ const COLUMN_TITLES: Record<SheetColumnId, string> = {
   payment_made: 'Payment Made',
   closed_status: 'Closure Status',
   email_address: 'Email Address',
+  owner_name: 'Employee Name / Email',
   business_line: 'Business Line',
   entry_type: 'Entry Type',
   entity_type: 'Entity Type',
@@ -228,6 +230,7 @@ const COLUMN_WIDTHS: Record<SheetColumnId, number> = {
   payment_made: 136,
   closed_status: 130,
   email_address: 166,
+  owner_name: 184,
   business_line: 68,
   entry_type: 108,
   entity_type: 96,
@@ -254,7 +257,7 @@ const COLUMN_WIDTHS: Record<SheetColumnId, number> = {
   campaign_notes: 144,
   product_reimbursement_upload: 124,
   commercials: 170,
-  additional_agency_commission: 154,
+  additional_agency_commission: 94,
   additional_information: 144,
   invoice_number: 104,
   debit_note_number: 104,
@@ -499,7 +502,7 @@ function renderStatusLabel(field: StatusEditableField, value: string | null | un
 
 function getStatusTextTone(field: StatusEditableField, value: string | null | undefined, viewer?: ViewerRole) {
   const normalized = normalizeText(value);
-  if (viewer === 'employee') {
+  if (viewer === 'employee' || viewer === 'team_lead') {
     if (field === 'intake_status' && normalized === 'submitted') {
       return 'text-[#A68835] dark:text-[#A68835]';
     }
@@ -620,9 +623,12 @@ function getColumns(viewer: ViewerRole) {
     'additional_information',
   ];
 
-  if (viewer === 'employee') {
+  if (viewer === 'employee' || viewer === 'team_lead') {
+    const baseColumns: SheetColumnId[] = ['pi'];
+    const teamLeadColumns: SheetColumnId[] = viewer === 'team_lead' ? ['owner_name'] : [];
     return [
-      'pi',
+      ...baseColumns,
+      ...teamLeadColumns,
       'intake_status',
       'submitted_at',
       'invoice_number',
@@ -1455,6 +1461,8 @@ export function SubmissionTable({
         return formatPiNumber(row);
       case 'submitted_at':
         return formatSubmittedAt(row.submitted_at);
+      case 'owner_name':
+        return fieldValue(row.owner_name);
       case 'intake_status':
       case 'invoice_status':
       case 'creator_invoice_received':
@@ -1795,6 +1803,8 @@ export function SubmissionTable({
             {formatSubmittedAt(row.submitted_at)}
           </div>
         );
+      case 'owner_name':
+        return commonText(fieldValue(row.owner_name));
       case 'intake_status':
       case 'invoice_status':
       case 'creator_invoice_received':
@@ -1805,7 +1815,7 @@ export function SubmissionTable({
         const rawValue = String(getEditableValue(row, field) || '');
         const label = renderStatusLabel(field, rawValue);
         const editable = isFinanceViewer && Boolean(onFinanceUpdate) && !isClosedRow(row);
-        if (viewer === 'employee') {
+        if (viewer === 'employee' || viewer === 'team_lead') {
           return (
             <div className="max-w-full" onDoubleClick={() => void copyCell(cellKey, label)} title={label}>
               <CopyNotice active={isCopied} />
@@ -1978,12 +1988,12 @@ export function SubmissionTable({
         ) : commonText(fieldValue(getFinanceNotes(row)));
       case 'actions':
         return (
-            <button
+          <button
               type="button"
             onClick={() => onOpen?.(row.id, row)}
             className={[
               'inline-flex h-6 items-center rounded-md border px-2 text-[11px] font-medium',
-              viewer === 'employee' && row.intake_status === 'rejected'
+              (viewer === 'employee' || viewer === 'team_lead') && row.intake_status === 'rejected'
                 ? 'border-rose-300/80 bg-rose-500/5 text-rose-700 hover:bg-rose-500/10 dark:border-rose-300/35 dark:text-rose-300'
                 : 'border-border/70 bg-card text-foreground hover:bg-muted/30',
             ].join(' ')}

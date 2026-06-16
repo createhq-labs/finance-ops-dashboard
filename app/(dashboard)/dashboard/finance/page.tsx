@@ -981,9 +981,9 @@ export default function FinanceReviewPage() {
         />
 
         <section style={{ display: 'grid', gap: 12, marginTop: -4, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-          <KpiCard title="Pending Review" value={String(pendingCount)} hint="Requires finance action" compact />
-          <KpiCard title="Accepted" value={String(acceptedCount)} hint="Approved by finance" compact />
-          <KpiCard title="Rejected" value={String(rejectedCount)} hint="Returned with notes" compact />
+          <KpiCard title="Pending Review" value={String(pendingCount)} hint="Requires finance action" variant="warning" compact />
+          <KpiCard title="Accepted" value={String(acceptedCount)} hint="Approved by finance" variant="teal" compact />
+          <KpiCard title="Rejected" value={String(rejectedCount)} hint="Returned with notes" variant="danger" compact />
         </section>
 
       <SectionCard padding={16}>

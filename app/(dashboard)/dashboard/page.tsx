@@ -161,28 +161,33 @@ function CompactMetricCard({ title, value, hint }: { title: string; value: strin
             );
 
   return (
-    <div className="group rounded-2xl border border-border/60 bg-card p-3.5 shadow-[0_1px_3px_rgba(15,23,42,0.05)] transition duration-150 hover:border-primary/15 hover:shadow-[0_4px_12px_rgba(15,23,42,0.06)]">
-      <div className="flex min-h-[92px] flex-col justify-between gap-3">
-        <div className="flex items-start justify-between gap-3">
-          <p className="pr-3 text-[14px] font-medium leading-5 text-foreground">
-            {title}
-          </p>
-          <div className="shrink-0 pt-0.5 text-sky-500/75 dark:text-sky-300/75">
-            {metricIcon}
-          </div>
-        </div>
+  <div className="group relative overflow-hidden rounded-xl border border-border/60 bg-card px-3.5 py-2.5 shadow-[0_1px_3px_rgba(15,23,42,0.07),0_1px_2px_rgba(15,23,42,0.04)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-border/90 hover:shadow-[0_8px_20px_rgba(15,23,42,0.09),0_2px_6px_rgba(15,23,42,0.05)] dark:shadow-[0_1px_3px_rgba(0,0,0,0.2)] dark:hover:shadow-[0_8px_20px_rgba(0,0,0,0.3)]">
+    <div className="absolute inset-y-0 left-0 w-[3px] bg-sky-400 opacity-70 transition-opacity duration-200 group-hover:opacity-100 dark:bg-sky-500" />
 
-        <div>
-          <p className="break-words text-[clamp(1.75rem,2.1vw,2.35rem)] font-bold leading-none tracking-[-0.06em] text-foreground">
-            {value}
-          </p>
-          <p className="mt-1 text-sm leading-5 text-muted-foreground">
-            {hint}
-          </p>
+    <div className="flex flex-col gap-2 pl-2.5">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[13px] font-medium leading-snug text-muted-foreground">
+          {title}
+        </p>
+
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-50 ring-1 ring-inset ring-transparent transition-all duration-200 group-hover:ring-sky-200 dark:bg-sky-500/[0.12] dark:group-hover:ring-sky-500/30">
+          <span className="flex items-center justify-center text-sky-500 transition-transform duration-200 group-hover:-translate-y-px group-hover:scale-110 dark:text-sky-400">
+            {metricIcon}
+          </span>
         </div>
       </div>
+
+      <div>
+        <p className="break-words text-[clamp(1.45rem,1.8vw,1.9rem)] font-bold leading-none tracking-tight text-foreground tabular-nums">
+          {value}
+        </p>
+        <p className="mt-0.5 text-[11.5px] leading-snug text-muted-foreground/75">
+          {hint}
+        </p>
+      </div>
     </div>
-  );
+  </div>
+);
 }
 
 function StatusChip({ label, tone = 'cyan' }: { label: string; tone?: 'cyan' | 'green' | 'amber' | 'orange' | 'rose' | 'slate' }) {
@@ -190,12 +195,12 @@ function StatusChip({ label, tone = 'cyan' }: { label: string; tone?: 'cyan' | '
     <span
       className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
         {
-          cyan: 'border-sky-200/70 bg-sky-50 text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200',
-          green: 'border-emerald-200/70 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200',
-          amber: 'border-amber-200/70 bg-amber-50 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200',
-          orange: 'border-orange-200/70 bg-orange-50 text-orange-700 dark:border-orange-400/20 dark:bg-orange-400/10 dark:text-orange-200',
-          rose: 'border-rose-200/70 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200',
-          slate: 'border-slate-200/70 bg-slate-50 text-slate-600 dark:border-slate-400/20 dark:bg-slate-400/10 dark:text-slate-200',
+          cyan: 'border-sky-200/70 bg-sky-50 text-sky-700 dark:border-sky-400/35 dark:bg-sky-500/20 dark:text-sky-100',
+green: 'border-emerald-200/70 bg-emerald-50 text-emerald-700 dark:border-emerald-400/35 dark:bg-emerald-500/20 dark:text-emerald-100',
+amber: 'border-amber-200/70 bg-amber-50 text-amber-700 dark:border-amber-400/35 dark:bg-amber-500/20 dark:text-amber-100',
+orange: 'border-orange-200/70 bg-orange-50 text-orange-700 dark:border-orange-400/35 dark:bg-orange-500/20 dark:text-orange-100',
+rose: 'border-rose-200/70 bg-rose-50 text-rose-700 dark:border-rose-400/35 dark:bg-rose-500/20 dark:text-rose-100',
+slate: 'border-slate-200/70 bg-slate-50 text-slate-600 dark:border-slate-400/35 dark:bg-slate-500/20 dark:text-slate-100',
         }[tone]
       }`}
     >
@@ -218,25 +223,58 @@ function PremiumOverviewCard({
   title,
   description,
   children,
+  variant = 'neutral',
+  headerAction,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
+  variant?: 'cyan' | 'violet' | 'navy' | 'teal' | 'warning' | 'danger' | 'neutral';
+  headerAction?: ReactNode;
 }) {
+  const tokens: Record<string, { bar: string; titleColor: string }> = {
+    cyan:    { bar: 'bg-sky-400 dark:bg-sky-500',      titleColor: 'text-sky-700 dark:text-sky-400' },
+    violet:  { bar: 'bg-violet-400 dark:bg-violet-500', titleColor: 'text-violet-700 dark:text-violet-400' },
+    navy:    { bar: 'bg-blue-500 dark:bg-blue-400',     titleColor: 'text-blue-700 dark:text-blue-400' },
+    teal:    { bar: 'bg-teal-400 dark:bg-teal-500',     titleColor: 'text-teal-700 dark:text-teal-400' },
+    warning: { bar: 'bg-amber-400 dark:bg-amber-400',   titleColor: 'text-amber-700 dark:text-amber-400' },
+    danger:  { bar: 'bg-rose-400 dark:bg-rose-500',     titleColor: 'text-rose-600 dark:text-rose-400' },
+    neutral: { bar: 'bg-slate-300 dark:bg-slate-600',   titleColor: 'text-foreground' },
+  };
+
+  const t = tokens[variant];
+
   return (
-    <section className="min-h-full rounded-xl border border-border/70 bg-card p-3.5 shadow-sm">
-      <div className="mb-2.5">
-        <h2 className="text-base font-semibold tracking-tight text-foreground">
-          {title}
-        </h2>
-        {description ? (
-          <p className="mt-1 text-sm leading-5 text-muted-foreground">
-            {description}
-          </p>
+    <section className="relative overflow-hidden rounded-xl border border-border/60 bg-card shadow-[0_1px_3px_rgba(15,23,42,0.07),0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-[0_1px_3px_rgba(0,0,0,0.2)]">
+
+      {/* Accent bar */}
+      <div
+        aria-hidden="true"
+        className={`absolute inset-y-0 left-0 w-[3px] ${t.bar}`}
+      />
+
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 border-b border-border/50 py-2.5 pl-4 pr-3.5">
+        <div className="min-w-0 flex items-baseline gap-2">
+          <h2 className={`shrink-0 text-[13.5px] font-semibold leading-tight tracking-tight ${t.titleColor}`}>
+            {title}
+          </h2>
+          {description ? (
+            <p className="truncate text-[12px] leading-none text-muted-foreground/55">
+              {description}
+            </p>
+          ) : null}
+        </div>
+        {headerAction ? (
+          <div className="shrink-0 flex items-center">{headerAction}</div>
         ) : null}
       </div>
 
-      {children}
+      {/* Content */}
+      <div className="p-4 pl-4">
+        {children}
+      </div>
+
     </section>
   );
 }
@@ -426,34 +464,155 @@ function AnimatedDonutChart({
 }
 
 function WorkflowFunnel({ steps }: { steps: Array<{ label: string; count: number }> }) {
-  const max = Math.max(1, ...steps.map((step) => step.count));
+  const max = Math.max(1, ...steps.map((s) => s.count));
+  const W = 500;
+  const H = 160;
+  const padL = 26;
+  const padR = 26;
+  const padT = 20;
+  const padB = 30;
+  const colors = ['#0ea5e9', '#3b82f6', '#8b5cf6', '#14b8a6', '#f94848ff'];
+
+  const logScale = (v: number) => (v === 0 ? 0 : Math.log1p(v) / Math.log1p(max));
+
+  const points = steps.map((s, i) => ({
+    x: padL + (i / (steps.length - 1)) * (W - padL - padR),
+    y: padT + (1 - logScale(s.count)) * (H - padT - padB),
+    count: s.count,
+    label: s.label,
+    color: colors[i],
+    pct: i === 0 ? 100 : Math.round((s.count / steps[0].count) * 100),
+  }));
+
+  const polyline = points.map((p) => `${p.x},${p.y}`).join(' ');
+
+  const areaPoints =
+    `${points[0].x},${H - padB} ` +
+    points.map((p) => `${p.x},${p.y}`).join(' ') +
+    ` ${points[points.length - 1].x},${H - padB}`;
 
   return (
     <PremiumOverviewCard title="Workflow Pipeline">
-      <div className="grid gap-3 pt-1">
-        {steps.map((step) => {
-          const width = `${(step.count / max) * 100}%`;
-          return (
-            <div
-              key={step.label}
-              className="grid items-center gap-4"
-              style={{ gridTemplateColumns: '168px minmax(0, 1fr) 40px' }}
-            >
-              <div className="text-[15px] font-medium leading-6 text-foreground">
-                {step.label}
-              </div>
-              <div className="relative h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800/70">
-                <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-[linear-gradient(90deg,#22d3ee,#2563eb)] transition-all duration-300"
-                  style={{ width }}
-                />
-              </div>
-              <div className="text-right text-[15px] font-semibold tabular-nums leading-6 text-foreground">
-                {step.count}
-              </div>
-            </div>
-          );
-        })}
+      <div className="relative w-full" style={{ paddingBottom: '38%' }}>
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="absolute inset-0 h-full w-full"
+          preserveAspectRatio="xMidYMid meet"
+        >
+          <defs>
+            <linearGradient id="wf-area" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#05b0ffff" stopOpacity="0.10" />
+              <stop offset="100%" stopColor="#08affcff" stopOpacity="0.01" />
+            </linearGradient>
+          </defs>
+
+          {/* baseline */}
+          <line
+            x1={padL} y1={H - padB}
+            x2={W - padR} y2={H - padB}
+            stroke="currentColor" strokeOpacity="0.08" strokeWidth="1"
+          />
+
+          {/* vertical grid lines per stage */}
+          {points.map((p, i) => (
+            <line
+              key={i}
+              x1={p.x} y1={padT}
+              x2={p.x} y2={H - padB}
+              stroke="currentColor" strokeOpacity="0.06" strokeWidth="1"
+              strokeDasharray="3 3"
+            />
+          ))}
+
+          {/* filled area under line */}
+          <polygon points={areaPoints} fill="url(#wf-area)" />
+
+          {/* connecting line */}
+          <polyline
+            points={polyline}
+            fill="none"
+            stroke="#0ea5e9"
+            strokeWidth="2"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+
+          {/* drop annotation between stages */}
+          {points.slice(1).map((p, i) => {
+            const prev = points[i];
+            const mx = (prev.x + p.x) / 2;
+            const my = (prev.y + p.y) / 2 - 10;
+            const dropped = prev.count - p.count;
+            if (dropped <= 0) return null;
+            return (
+              <text
+                key={i}
+                x={mx} y={my}
+                textAnchor="middle"
+                fontSize="10"
+                fontWeight="600"
+                fill="currentColor"
+                fillOpacity="0.35"
+                fontFamily="inherit"
+              >
+                ↓{dropped}
+              </text>
+            );
+          })}
+
+          {/* dots + labels */}
+          {points.map((p, i) => (
+            <g key={steps[i].label}>
+              {/* outer ring */}
+              <circle cx={p.x} cy={p.y} r="7" fill="white" stroke={p.color} strokeWidth="1.5" />
+              {/* inner fill */}
+              <circle cx={p.x} cy={p.y} r="3.5" fill={p.color} />
+
+              {/* count above dot */}
+              <text
+                x={p.x}
+                y={p.y - 13}
+                textAnchor="middle"
+                fontSize="13"
+                fontWeight="600"
+                fill={p.color}
+                fontFamily="inherit"
+              >
+                {p.count}
+              </text>
+
+              {/* stage label below baseline */}
+              <text
+                x={p.x}
+                y={H - padB + 20}
+                textAnchor="middle"
+                fontSize="11"
+                fontWeight="600"
+                fill="currentColor"
+                fillOpacity="0.45"
+                fontFamily="inherit"
+              >
+                {steps[i].label}
+              </text>
+
+              {/* conversion % below label (skip first) */}
+              
+                <text
+                  x={p.x}
+                  y={H - padB + 33}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fontWeight="600"
+                  fill="currentColor"
+                  fillOpacity="0.35"
+                  fontFamily="inherit"
+                >
+                  {p.pct}%
+                </text>
+      
+            </g>
+          ))}
+        </svg>
       </div>
     </PremiumOverviewCard>
   );
@@ -594,6 +753,77 @@ type FinanceOverviewApiRow = MySubmissionApiRow & {
   submitted_by_email?: string | null;
 };
 
+type TeamLeadMemberApiRow = {
+  employee_id: string;
+  full_name: string;
+  email: string;
+  status: string;
+  created_at: string;
+  created_by: string;
+};
+
+type TeamLeadOverviewApiRow = FinanceOverviewApiRow & {
+  invoice_number?: string | null;
+  debit_note_number?: string | null;
+  sync_status?: SubmissionRow['sync_status'];
+  submitted_by_name?: string | null;
+  submitted_by_email?: string | null;
+};
+
+function mapTeamLeadOverviewRow(item: TeamLeadOverviewApiRow): SubmissionRow {
+  return {
+    id: String(item.id),
+    pi: item.proforma_invoice ?? '',
+    entity: item.agency_brand_name || '-',
+    amount: Number(item.commercials ?? 0),
+    currency: item.currency || 'INR',
+    owner_name:
+      [item.submitted_by_name, item.submitted_by_email]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+        .join('\n') || '-',
+    submitter_email: item.submitted_by_email || item.email_address || undefined,
+    intake_status: item.intake_status,
+    invoice_status: item.invoice_status || '-',
+    sync_status: item.sync_status || 'pending_sheet_sync',
+    submitted_at: item.submitted_at || new Date().toISOString(),
+    rejection_note: item.rejection_note || item.finance_comment || null,
+    finance_notes: item.finance_notes || null,
+    trade_name: item.agency_brand_trade_name || null,
+    gst_number: item.gst_number || null,
+    address: item.address || null,
+    bill_due: item.bill_due || null,
+    invoice_type: item.invoice_type || null,
+    creator_creators_name: item.creator_creators_name || null,
+    brand_name: item.brand_name || null,
+    finance_comment: item.finance_comment || undefined,
+    invoice_number: item.invoice_number || null,
+    debit_note_number: item.debit_note_number || null,
+    creator_invoice_received: normalizeOverviewStatus(item.creator_invoice_status) || undefined,
+    payment_received: normalizeOverviewStatus(item.payment_received_status) || undefined,
+    payment_made: normalizeOverviewStatus(item.payment_made_status) || undefined,
+    closed_status: normalizeOverviewStatus(item.closure_status) || undefined,
+    campaign_code: item.campaign_code || null,
+    campaign_name: item.campaign_name || null,
+    campaign_brand: item.campaign_brand || null,
+    campaign_notes: item.campaign_notes || null,
+    deliverables: item.deliverables || null,
+    additional_agency_commission: Number(item.additional_agency_commission ?? 0),
+    reimbursement_amount: Number(item.reimbursement_amount ?? 0),
+    reimbursement_receipts: item.reimbursement_receipts || null,
+    additional_information: item.additional_information || null,
+    previous_submission_id: item.previous_submission_id || null,
+    business_line: item.business_line || null,
+    entity_type: item.entity_type || null,
+    client_type: item.client_type || null,
+    agency_name: item.agency_name || null,
+    agency_trade_name: item.agency_trade_name || null,
+    brand_trade_name: item.brand_trade_name || null,
+    entry_type: item.entry_type || null,
+    intake_line_items: item.intake_line_items || [],
+  };
+}
+
 export default function DashboardHomePage() {
   const { user, loading } = useDashboardSession();
   const [openId, setOpenId] = useState<string | null>(null);
@@ -601,6 +831,10 @@ export default function DashboardHomePage() {
   const [rowsLoading, setRowsLoading] = useState(true);
   const [rowsError, setRowsError] = useState('');
   const [rows, setRows] = useState<SubmissionRow[]>([]);
+  const [teamRows, setTeamRows] = useState<SubmissionRow[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamLeadMemberApiRow[]>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamError, setTeamError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -674,18 +908,71 @@ export default function DashboardHomePage() {
     };
   }, [user]);
 
+  useEffect(() => {
+    let active = true;
+    if (!user || user.role !== 'team_lead') {
+      setTeamRows([]);
+      setTeamMembers([]);
+      setTeamError('');
+      setTeamLoading(false);
+      return;
+    }
+
+    setTeamLoading(true);
+    setTeamError('');
+
+    Promise.all([
+      fetch('/api/submissions/team', { method: 'GET', cache: 'no-store' }),
+      fetch('/api/team/members', { method: 'GET', cache: 'no-store' }),
+    ])
+      .then(async ([teamRes, membersRes]) => {
+        const teamJson = await teamRes.json().catch(() => ({}));
+        const membersJson = await membersRes.json().catch(() => ({}));
+
+        if (!teamRes.ok || !teamJson?.success) {
+          throw new Error(teamJson?.error || 'Failed to load team submissions.');
+        }
+        if (!membersRes.ok || !membersJson?.success) {
+          throw new Error(membersJson?.error || 'Failed to load team members.');
+        }
+
+        if (!active) return;
+        setTeamRows(((teamJson.submissions ?? []) as TeamLeadOverviewApiRow[]).map(mapTeamLeadOverviewRow));
+        setTeamMembers(Array.isArray(membersJson.members) ? membersJson.members : []);
+      })
+      .catch((error) => {
+        if (active) {
+          setTeamError(error instanceof Error ? error.message : 'Failed to load team data.');
+        }
+      })
+      .finally(() => {
+        if (active) setTeamLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
   const visibleRows = useMemo(() => [...rows].sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()), [rows]);
   const financeRecentRows = useMemo(() => visibleRows.slice(0, 6), [visibleRows]);
+  const teamVisibleRows = useMemo(
+    () => [...teamRows].sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()),
+    [teamRows]
+  );
 
-  const row = useMemo(() => visibleRows.find((entry) => entry.id === openId) || null, [openId, visibleRows]);
+  const row = useMemo(
+    () => [...visibleRows, ...teamVisibleRows].find((entry) => entry.id === openId) || null,
+    [openId, teamVisibleRows, visibleRows]
+  );
 
   if (loading || !user) return null;
   const isEmployee = isEmployeeRole(user.role);
   const isTeamLead = isTeamLeadRole(user.role);
   const isDeveloper = user.role === 'developer';
 
-  if (rowsLoading) return <StatePanel>Loading overview...</StatePanel>;
-  if (rowsError) return <StatePanel tone="danger">{rowsError}</StatePanel>;
+  if (rowsLoading || (isTeamLead && teamLoading)) return <StatePanel>Loading overview...</StatePanel>;
+  if (rowsError || (isTeamLead && teamError)) return <StatePanel tone="danger">{rowsError || teamError}</StatePanel>;
 
   if (isEmployee) {
     const submittedCount = visibleRows.filter((entry) => entry.intake_status === 'submitted').length;
@@ -861,17 +1148,23 @@ export default function DashboardHomePage() {
   }
 
   if (isTeamLead) {
-    const pendingCount = visibleRows.filter((entry) => entry.intake_status === 'submitted').length;
-    const acceptedCount = visibleRows.filter((entry) => entry.intake_status === 'accepted').length;
-    const rejectedCount = visibleRows.filter((entry) => entry.intake_status === 'rejected').length;
+    const mySubmissionCount = visibleRows.length;
+    const teamSubmissionCount = teamVisibleRows.length;
+    const teamMembersCount = teamMembers.length;
+    const pendingOrReviewCount = teamVisibleRows.filter((entry) => {
+      const intakeStatus = normalizeOverviewStatus(entry.intake_status);
+      const closedStatus = normalizeOverviewStatus(entry.closed_status);
+      return intakeStatus === 'submitted' || (intakeStatus === 'accepted' && closedStatus !== 'closed');
+    }).length;
+    const resubmissionRequestedCount = teamVisibleRows.filter((entry) => normalizeOverviewStatus(entry.intake_status) === 'rejected').length;
+    const closedTeamCount = teamVisibleRows.filter((entry) => normalizeOverviewStatus(entry.closed_status) === 'closed').length;
 
     return (
       <div style={{ display: 'grid', gap: 12 }}>
         <PageHeader
           title={getOverviewTitle(user.role)}
-          description="Monitor your work and your team's submission pipeline in one place."
-          secondaryDescription="Company-wide finance metrics will appear here once the full finance overview is wired."
-          className="gap-4 pb-4"
+          description="Monitor your submissions and your mapped team submissions in one place."
+          className="gap-2 pb-2"
           actions={canSubmitInvoice(user.role) ? (
             <Link href={getInvoiceIntakePath()} className="btn btn-primary" style={{ textDecoration: 'none' }}>
               Submit Invoice
@@ -879,35 +1172,46 @@ export default function DashboardHomePage() {
           ) : null}
         />
 
-        <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-          <KpiCard title="Team Pending" value={String(pendingCount)} hint="Awaiting finance review" />
-          <KpiCard title="Team Accepted" value={String(acceptedCount)} hint="Moved forward by finance" />
-          <KpiCard title="Team Rejected" value={String(rejectedCount)} hint="Needs fixes from creators" />
+        <section style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
+          <KpiCard title="My Submissions" value={String(mySubmissionCount)} hint="Your own records" compact />
+          <KpiCard title="Team Members" value={String(teamMembersCount)} hint="Mapped employees" compact />
+          <KpiCard title="Team Submissions" value={String(teamSubmissionCount)} hint="Visible team records" compact />
+          <KpiCard title="Pending / In Review" value={String(pendingOrReviewCount)} hint="Waiting on finance" compact />
+          <KpiCard title="Resubmission Requested" value={String(resubmissionRequestedCount)} hint="Needs employee fixes" compact />
+          <KpiCard title="Closed" value={String(closedTeamCount)} hint="Completed items" compact />
         </section>
 
-        <SectionCard title="Recent Team Updates" description="Latest team movements without dropping into the full operating sheet.">
-          {visibleRows.length === 0 ? (
-            <div className="text-muted">No team updates yet.</div>
+        <PremiumOverviewCard title="Recent Team Activity" description="Latest mapped employee submissions.">
+          {teamVisibleRows.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No team submissions yet.</div>
           ) : (
-            <div style={{ display: 'grid', gap: 10, maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
-              {visibleRows.slice(0, 6).map((entry) => (
-                <div
+            <div className="max-h-80 overflow-y-auto pr-1">
+              {teamVisibleRows.slice(0, 6).map((entry) => (
+                <OverviewListRow
                   key={`team-${entry.id}`}
-                  className="surface"
-                  style={{ padding: 12, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600 }} title={getOverviewPiMeta(entry).title}>{getOverviewPiMeta(entry).label}</div>
-                    <div className="text-muted" style={{ fontSize: 13 }}>
-                      {entry.owner_name || 'Unknown owner'} · {titleCaseStatus(entry.intake_status)}
-                    </div>
-                  </div>
-                  <button className="btn" type="button" onClick={() => setOpenId(entry.id)}>View</button>
-                </div>
+                  title={getOverviewPiMeta(entry).label}
+                  primaryChip={<StatusChip label={titleCaseStatus(entry.intake_status)} tone={overviewTone(entry.intake_status)} />}
+                  meta={
+                    <>
+                      {entry.owner_name || 'Unknown owner'} · {formatDateTime(entry.submitted_at)}
+                      {entry.invoice_status ? ` · ${titleCaseStatus(entry.invoice_status)}` : ''}
+                    </>
+                  }
+                  note={
+                    entry.intake_status === 'rejected'
+                      ? renderResubmissionNote(entry.finance_comment || entry.rejection_note || undefined)
+                      : undefined
+                  }
+                  action={
+                    <button className="btn" type="button" onClick={() => setOpenId(entry.id)}>
+                      View
+                    </button>
+                  }
+                />
               ))}
             </div>
           )}
-        </SectionCard>
+        </PremiumOverviewCard>
 
         <SubmissionDrawer open={Boolean(row)} onClose={() => setOpenId(null)} row={row} viewer={getDrawerViewerRole(user.role)} />
       </div>
@@ -1010,7 +1314,7 @@ export default function DashboardHomePage() {
         </section>
 
       <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
-        <PremiumOverviewCard title="Recent Activity" description="Latest operational movement across the visible finance queue.">
+        <PremiumOverviewCard title="Recent Activity" description="">
           {financeRecentRows.length === 0 ? (
             <div className="text-sm text-muted-foreground">No recent activity yet.</div>
           ) : (
@@ -1037,7 +1341,7 @@ export default function DashboardHomePage() {
           )}
         </PremiumOverviewCard>
 
-        <PremiumOverviewCard title="Top 10 Needing Action" description="Prioritize pending checks, payment follow-up, and resubmission requests.">
+        <PremiumOverviewCard title="Top 10 Needing Action" description="">
           {topActionRows.length === 0 ? (
             <div className="text-sm text-muted-foreground">Nothing urgent in the current visible queue.</div>
           ) : (
