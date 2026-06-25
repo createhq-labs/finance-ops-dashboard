@@ -1,5 +1,6 @@
 export type AppRole = 'employee' | 'team_lead' | 'finance' | 'admin' | 'developer';
 export type SubmissionCurrency = 'INR' | 'USD' | 'EUR' | 'GBP' | 'AED';
+export type BusinessLine = 'IM' | 'TM';
 
 export type CreateLineItemInput = {
   creator_id?: string | null;
@@ -48,6 +49,7 @@ export type AppUser = {
   email: string;
   role: AppRole;
   status: 'active' | 'inactive';
+  business_line: BusinessLine | null;
 };
 
 export type SanitizedSubmissionPayload = {

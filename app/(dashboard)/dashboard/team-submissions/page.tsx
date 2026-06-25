@@ -8,6 +8,7 @@ import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
+import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { getDrawerViewerRole } from '../../../../lib/client/dashboard-access';
 import { TeamMemberManagement } from '../../../../components/settings/team-member-management';
 import { getPiDisplayMeta } from '../../../../lib/client/pi-display';
@@ -129,6 +130,10 @@ function mapTeamSubmissionRow(item: TeamSubmissionApiRow): SubmissionRow {
     previous_submission_id: item.previous_submission_id || null,
     finance_notes: item.finance_notes || null,
     finance_comment: item.finance_comment || undefined,
+    invoice_status_started: Boolean(String(item.invoice_status || '').trim() && String(item.invoice_status || '') !== '-'),
+    creator_invoice_received_started: Boolean(String(item.creator_invoice_status || '').trim()),
+    payment_received_started: Boolean(String(item.payment_received_status || item.payment_received || '').trim()),
+    payment_made_started: Boolean(String(item.payment_made_status || item.payment_made || '').trim()),
     creator_invoice_received: normalizeStatus(item.creator_invoice_status) || undefined,
     payment_received: normalizeStatus(item.payment_received_status || item.payment_received) || undefined,
     payment_made: normalizeStatus(item.payment_made_status || item.payment_made) || undefined,
@@ -261,7 +266,7 @@ export default function TeamSubmissionsPage() {
         }
       />
 
-      {rowsLoading ? <StatePanel padding={12}>Loading team submissions...</StatePanel> : null}
+      {rowsLoading ? <WorkspaceLoader variant="section" label="Loading team submissions..." /> : null}
       {rowsError ? <StatePanel tone="danger" padding={12}>{rowsError}</StatePanel> : null}
       {refreshing ? <p className="text-muted m-0 text-sm">Refreshing team data...</p> : null}
 
@@ -331,6 +336,7 @@ export default function TeamSubmissionsPage() {
                 emptyLabel="No mapped employee submissions found yet."
                 getActionLabel={() => 'View'}
                 viewer="team_lead"
+                viewerBusinessLine={user.business_line}
               />
             </SectionCard>
           </>

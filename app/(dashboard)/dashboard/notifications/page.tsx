@@ -3,6 +3,7 @@
 import { Check, ChevronRight, Inbox } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { isEmployeeRole } from '../../../../lib/client/dashboard-access';
 import {
@@ -457,9 +458,7 @@ export default function NotificationsPage() {
           ) : null}
 
           <div className="max-h-[calc(100vh-240px)] overflow-y-auto [scrollbar-color:rgba(255,255,255,0.9)_transparent] [scrollbar-width:thin]">
-            {pageLoading ? (
-              <div className="p-6 text-sm text-muted-foreground">Loading notifications...</div>
-            ) : null}
+            {pageLoading ? <WorkspaceLoader variant="section" label="Loading notifications..." /> : null}
 
             {error ? (
               <div className="p-6 text-sm text-destructive">{error}</div>

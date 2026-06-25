@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     // Gate 2 + 3: user must exist in public.users and be active.
     const { data: appUser, error: appUserError } = await svc
       .from('users')
-      .select('id, supabase_auth_id, email, role, status')
+      .select('id, supabase_auth_id, email, role, status, business_line')
       .eq('email', email)
       .single();
 
@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
           email: appUser.email,
           role: appUser.role,
           status: appUser.status,
+          business_line: appUser.business_line,
         },
       },
       { status: 200 }
