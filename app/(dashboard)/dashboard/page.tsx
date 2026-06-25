@@ -9,6 +9,8 @@ import { StatePanel } from '../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../components/dashboard/submission-drawer';
 import { type SubmissionRow } from '../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../components/layout/dashboard-session';
+import { WorkspaceLoader } from '../../../components/layout/workspace-loader';
+import { getLineRevenue, getRevenueSeries } from '../../../lib/client/admin-stats';
 import { getPiDisplayMeta } from '../../../lib/client/pi-display';
 import { canResubmitSubmission, canSubmitInvoice, getDrawerViewerRole, getInvoiceIntakePath, getOverviewTitle, isEmployeeRole, isTeamLeadRole } from '../../../lib/client/dashboard-access';
 
@@ -770,6 +772,20 @@ type TeamLeadOverviewApiRow = FinanceOverviewApiRow & {
   submitted_by_email?: string | null;
 };
 
+type AdminUserApiRow = {
+  id: string;
+  role: 'employee' | 'team_lead' | 'finance' | 'admin' | 'developer';
+  status: 'active' | 'inactive';
+  business_line: 'IM' | 'TM' | null;
+};
+
+type MasterDataSummary = {
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+};
+
 function mapTeamLeadOverviewRow(item: TeamLeadOverviewApiRow): SubmissionRow {
   return {
     id: String(item.id),
@@ -835,6 +851,10 @@ export default function DashboardHomePage() {
   const [teamMembers, setTeamMembers] = useState<TeamLeadMemberApiRow[]>([]);
   const [teamLoading, setTeamLoading] = useState(false);
   const [teamError, setTeamError] = useState('');
+  const [adminUsers, setAdminUsers] = useState<AdminUserApiRow[]>([]);
+  const [masterDataSummary, setMasterDataSummary] = useState<MasterDataSummary>({ total: 0, pending: 0, approved: 0, rejected: 0 });
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminError, setAdminError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -954,6 +974,54 @@ export default function DashboardHomePage() {
     };
   }, [user]);
 
+  useEffect(() => {
+    let active = true;
+    if (!user || user.role !== 'admin') {
+      setAdminUsers([]);
+      setMasterDataSummary({ total: 0, pending: 0, approved: 0, rejected: 0 });
+      setAdminLoading(false);
+      setAdminError('');
+      return;
+    }
+
+    setAdminLoading(true);
+    setAdminError('');
+
+    Promise.all([
+      fetch('/api/users', { method: 'GET', cache: 'no-store' }),
+      fetch('/api/master-data/reviews', { method: 'GET', cache: 'no-store' }),
+    ])
+      .then(async ([usersRes, reviewsRes]) => {
+        const usersJson = await usersRes.json().catch(() => ({}));
+        const reviewsJson = await reviewsRes.json().catch(() => ({}));
+
+        if (!usersRes.ok || !usersJson?.success) {
+          throw new Error(usersJson?.error || 'Failed to load admin users.');
+        }
+        if (!reviewsRes.ok || !reviewsJson?.success) {
+          throw new Error(reviewsJson?.error || 'Failed to load master data summary.');
+        }
+
+        if (!active) return;
+        setAdminUsers(Array.isArray(usersJson.users) ? usersJson.users : []);
+        setMasterDataSummary(
+          reviewsJson.summary ?? { total: 0, pending: 0, approved: 0, rejected: 0 }
+        );
+      })
+      .catch((error) => {
+        if (active) {
+          setAdminError(error instanceof Error ? error.message : 'Failed to load admin overview.');
+        }
+      })
+      .finally(() => {
+        if (active) setAdminLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
   const visibleRows = useMemo(() => [...rows].sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()), [rows]);
   const financeRecentRows = useMemo(() => visibleRows.slice(0, 6), [visibleRows]);
   const teamVisibleRows = useMemo(
@@ -969,10 +1037,13 @@ export default function DashboardHomePage() {
   if (loading || !user) return null;
   const isEmployee = isEmployeeRole(user.role);
   const isTeamLead = isTeamLeadRole(user.role);
+  const isAdmin = user.role === 'admin';
   const isDeveloper = user.role === 'developer';
 
-  if (rowsLoading || (isTeamLead && teamLoading)) return <StatePanel>Loading overview...</StatePanel>;
-  if (rowsError || (isTeamLead && teamError)) return <StatePanel tone="danger">{rowsError || teamError}</StatePanel>;
+  if (rowsLoading || (isTeamLead && teamLoading) || (isAdmin && adminLoading)) {
+    return <WorkspaceLoader variant="section" label="Loading overview..." />;
+  }
+  if (rowsError || (isTeamLead && teamError) || (isAdmin && adminError)) return <StatePanel tone="danger">{rowsError || teamError || adminError}</StatePanel>;
 
   if (isEmployee) {
     const submittedCount = visibleRows.filter((entry) => entry.intake_status === 'submitted').length;
@@ -1241,6 +1312,135 @@ export default function DashboardHomePage() {
             This role can inspect sync state and logs, but cannot approve finance submissions or edit finance payment fields.
           </p>
         </SectionCard>
+      </div>
+    );
+  }
+
+  if (isAdmin) {
+    const submissionsThisMonth = visibleRows.filter((entry) => {
+      const submittedAt = new Date(entry.submitted_at);
+      const now = new Date();
+      return submittedAt.getFullYear() === now.getFullYear() && submittedAt.getMonth() === now.getMonth();
+    }).length;
+    const closedThisMonthCount = visibleRows.filter((entry) => {
+      const date = new Date(entry.submitted_at);
+      const now = new Date();
+      return (
+        normalizeOverviewStatus(entry.closed_status) === 'closed' &&
+        date.getFullYear() === now.getFullYear() &&
+        date.getMonth() === now.getMonth()
+      );
+    }).length;
+    const pendingFinanceCount = visibleRows.filter((entry) => {
+      const paymentMade = normalizeOverviewStatus(entry.payment_made);
+      const closure = normalizeOverviewStatus(entry.closed_status);
+      return entry.intake_status === 'submitted' || (entry.intake_status === 'accepted' && closure !== 'closed' && paymentMade !== 'paid' && paymentMade !== 'full');
+    }).length;
+    const totalPiRevenue = getLineRevenue(visibleRows, null, 'pi');
+    const totalTiRevenue = getLineRevenue(visibleRows, null, 'ti');
+    const imPiRevenue = getLineRevenue(visibleRows, 'IM', 'pi');
+    const tmPiRevenue = getLineRevenue(visibleRows, 'TM', 'pi');
+    const imTiRevenue = getLineRevenue(visibleRows, 'IM', 'ti');
+    const tmTiRevenue = getLineRevenue(visibleRows, 'TM', 'ti');
+    const activeEmployees = adminUsers.filter((entry) => entry.role === 'employee' && entry.status === 'active').length;
+    const activeTeamLeads = adminUsers.filter((entry) => entry.role === 'team_lead' && entry.status === 'active').length;
+    const activeFinanceUsers = adminUsers.filter((entry) => entry.role === 'finance' && entry.status === 'active').length;
+    const revenueSeries = getRevenueSeries(visibleRows);
+
+    return (
+      <div style={{ display: 'grid', gap: 12 }}>
+        <PageHeader
+          title={getOverviewTitle(user.role)}
+          description="Monitor revenue, operations, master data, and user provisioning from one view."
+          className="gap-3 border-b-0 pb-2"
+        />
+
+        <section style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+          <KpiCard title="Total PI Revenue" value={formatMoneyCompact(totalPiRevenue)} hint="Proforma-linked revenue" compact />
+          <KpiCard title="Total TI Revenue" value={formatMoneyCompact(totalTiRevenue)} hint="Tax-invoice-linked revenue" compact />
+          <KpiCard title="IM PI Revenue" value={formatMoneyCompact(imPiRevenue)} hint="Influencer Marketing PI" compact />
+          <KpiCard title="TM PI Revenue" value={formatMoneyCompact(tmPiRevenue)} hint="Talent Management PI" compact />
+          <KpiCard title="IM TI Revenue" value={formatMoneyCompact(imTiRevenue)} hint="Influencer Marketing TI" compact />
+          <KpiCard title="TM TI Revenue" value={formatMoneyCompact(tmTiRevenue)} hint="Talent Management TI" compact />
+        </section>
+
+        <section style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+          <KpiCard title="Pending Finance Review" value={String(pendingFinanceCount)} hint="Awaiting finance action" compact />
+          <KpiCard title="Pending Master Data Review" value={String(masterDataSummary.pending)} hint="Awaiting approval" compact />
+          <KpiCard title="Closed This Month" value={String(closedThisMonthCount)} hint="Completed in current month" compact />
+          <KpiCard title="Submissions This Month" value={String(submissionsThisMonth)} hint="Latest intake activity" compact />
+        </section>
+
+        <section style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+          <KpiCard title="Active Employees" value={String(activeEmployees)} hint="Employee access active" compact />
+          <KpiCard title="Active Team Leads" value={String(activeTeamLeads)} hint="Mapped lead access active" compact />
+          <KpiCard title="Active Finance Users" value={String(activeFinanceUsers)} hint="Finance access active" compact />
+          <KpiCard title="Master Data Approved" value={String(masterDataSummary.approved)} hint="Reusable dropdown values" compact />
+        </section>
+
+        <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 3fr) minmax(320px, 2fr)' }}>
+          <PremiumOverviewCard title="Recent Activity" description="Latest company submissions.">
+            {financeRecentRows.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No recent activity yet.</div>
+            ) : (
+              <div className="max-h-80 overflow-y-auto pr-1">
+                {financeRecentRows.map((entry) => (
+                  <OverviewListRow
+                    key={`admin-recent-${entry.id}`}
+                    title={getOverviewPiMeta(entry).label}
+                    primaryChip={<StatusChip label={titleCaseStatus(entry.intake_status)} tone={overviewTone(entry.intake_status)} />}
+                    meta={
+                      <>
+                        {entry.owner_name || 'Unknown owner'} Â· {formatDateTime(entry.submitted_at)}
+                        {entry.invoice_status ? ` Â· ${titleCaseStatus(entry.invoice_status)}` : ''}
+                      </>
+                    }
+                    action={
+                      <Link className="btn" href={`/dashboard/finance?submission_id=${entry.id}`} style={{ textDecoration: 'none' }}>
+                        Open
+                      </Link>
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </PremiumOverviewCard>
+
+          <PremiumOverviewCard title="Revenue Trend" description="PI and TI totals across recent months.">
+            {revenueSeries.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No revenue data available yet.</div>
+            ) : (
+              <div className="grid gap-3">
+                <div className="grid gap-2">
+                  {revenueSeries.map((point) => (
+                    <div key={point.key} className="grid gap-1.5">
+                      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                        <span>{point.label}</span>
+                        <span>{formatMoneyCompact(point.pi + point.ti)}</span>
+                      </div>
+                      <div className="flex h-2 overflow-hidden rounded-full bg-muted/40">
+                        <div className="bg-sky-400" style={{ width: `${Math.max(0, Math.min(100, point.pi > 0 ? (point.pi / Math.max(point.pi + point.ti, 1)) * 100 : 0))}%` }} />
+                        <div className="bg-emerald-400" style={{ width: `${Math.max(0, Math.min(100, point.ti > 0 ? (point.ti / Math.max(point.pi + point.ti, 1)) * 100 : 0))}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                  <div className="rounded-xl border border-border/60 bg-card px-3 py-2">
+                    <div className="font-medium text-sky-600 dark:text-sky-300">PI</div>
+                    <div className="mt-1">{formatMoneyCompact(totalPiRevenue)}</div>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-card px-3 py-2">
+                    <div className="font-medium text-emerald-600 dark:text-emerald-300">TI</div>
+                    <div className="mt-1">{formatMoneyCompact(totalTiRevenue)}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </PremiumOverviewCard>
+        </section>
+
+        <SubmissionDrawer open={Boolean(row)} onClose={() => setOpenId(null)} row={row} viewer={getDrawerViewerRole(user.role)} />
       </div>
     );
   }
