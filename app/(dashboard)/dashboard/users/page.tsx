@@ -2,16 +2,18 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, CircleOff, Copy, RefreshCw, ShieldCheck, UserPlus, X } from 'lucide-react';
+import { CheckCircle2, CircleOff, Copy, RefreshCw, UserPlus, X } from 'lucide-react';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
+import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { canManageUsers, getDefaultDashboardPath } from '../../../../lib/client/dashboard-access';
 
 type AppRole = 'employee' | 'team_lead' | 'finance' | 'admin' | 'developer';
 type UserStatus = 'active' | 'inactive';
+type BusinessLine = 'IM' | 'TM';
 
 type ManagedUser = {
   id: string;
@@ -20,6 +22,7 @@ type ManagedUser = {
   role: AppRole;
   status: UserStatus;
   team_name: string | null;
+  business_line: BusinessLine | null;
   created_at: string;
   updated_at: string;
 };
@@ -36,6 +39,7 @@ type CreateFormState = {
   role: AppRole;
   team_name: string;
   status: UserStatus;
+  business_line: BusinessLine | '';
 };
 
 type EditFormState = {
@@ -43,6 +47,7 @@ type EditFormState = {
   role: AppRole;
   team_name: string;
   status: UserStatus;
+  business_line: BusinessLine | '';
 };
 
 const STATUS_OPTIONS: Array<{ value: UserStatus | 'all'; label: string }> = [
@@ -58,11 +63,24 @@ const ROLE_FILTERS: Array<{ value: AppRole | 'all'; label: string }> = [
   { value: 'admin', label: 'Admin' },
   { value: 'developer', label: 'Developer' },
 ];
+const BUSINESS_LINE_FILTERS: Array<{ value: BusinessLine | 'all'; label: string }> = [
+  { value: 'all', label: 'All Lines' },
+  { value: 'IM', label: 'IM' },
+  { value: 'TM', label: 'TM' },
+];
 
 function getCreatableRoles(role: AppRole) {
-  if (role === 'finance') return ['employee'] as AppRole[];
+  if (role === 'finance') return ['employee', 'team_lead'] as AppRole[];
   if (role === 'admin' || role === 'developer') {
     return ['employee', 'team_lead', 'finance', 'admin'] as AppRole[];
+  }
+  return [] as AppRole[];
+}
+
+function getEditableRoleOptions(actorRole: AppRole, targetRole: AppRole) {
+  if (actorRole === 'finance') return [] as AppRole[];
+  if (targetRole === 'employee' || targetRole === 'team_lead') {
+    return ['employee', 'team_lead'] as AppRole[];
   }
   return [] as AppRole[];
 }
@@ -70,6 +88,12 @@ function getCreatableRoles(role: AppRole) {
 function formatRoleLabel(role: AppRole) {
   if (role === 'team_lead') return 'Team Lead';
   return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+function formatBusinessLineLabel(line: BusinessLine | null | '', role?: AppRole) {
+  if (!line && (role === 'finance' || role === 'admin' || role === 'developer')) return 'Overall Access';
+  if (!line) return 'Unassigned';
+  return line;
 }
 
 function formatDate(value: string) {
@@ -104,6 +128,19 @@ function getRoleClass(role: AppRole) {
   return 'border-slate-200/70 bg-slate-50 text-slate-700 dark:border-slate-400/20 dark:bg-slate-400/12 dark:text-slate-200';
 }
 
+function getBusinessLineClass(line: BusinessLine | null | '', role?: AppRole) {
+  if (!line && (role === 'finance' || role === 'admin' || role === 'developer')) {
+    return 'border-violet-200/70 bg-violet-50 text-violet-700 dark:border-violet-400/20 dark:bg-violet-400/12 dark:text-violet-200';
+  }
+  if (line === 'IM') {
+    return 'border-cyan-200/70 bg-cyan-50 text-cyan-700 dark:border-cyan-400/20 dark:bg-cyan-400/12 dark:text-cyan-200';
+  }
+  if (line === 'TM') {
+    return 'border-indigo-200/70 bg-indigo-50 text-indigo-700 dark:border-indigo-400/20 dark:bg-indigo-400/12 dark:text-indigo-200';
+  }
+  return 'border-border bg-muted/30 text-muted-foreground';
+}
+
 function compactButtonClass(primary = false) {
   return primary
     ? 'inline-flex items-center justify-center rounded-lg bg-[linear-gradient(135deg,var(--primary-strong),var(--accent))] px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-all duration-150 hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60'
@@ -115,7 +152,7 @@ function destructiveButtonClass() {
 }
 
 function canEditUser(actorRole: AppRole, target: ManagedUser) {
-  if (actorRole === 'finance') return target.role === 'employee';
+  if (actorRole === 'finance') return target.role === 'employee' || target.role === 'team_lead';
   if (actorRole === 'admin' || actorRole === 'developer') return target.role !== 'developer';
   return false;
 }
@@ -127,12 +164,26 @@ function canToggleStatus(actorRole: AppRole, actorId: string, target: ManagedUse
 
 function canEditRole(actorRole: AppRole, actorId: string, target: ManagedUser) {
   if (target.id === actorId) return false;
-  return actorRole !== 'finance' && target.role !== 'developer';
+  return actorRole !== 'finance' && (target.role === 'employee' || target.role === 'team_lead');
+}
+
+function canEditBusinessLine(actorRole: AppRole, target: ManagedUser) {
+  if (actorRole === 'finance') return target.role === 'employee' || target.role === 'team_lead';
+  if (actorRole === 'admin' || actorRole === 'developer') return target.role !== 'developer';
+  return false;
+}
+
+function requiresBusinessLine(role: AppRole) {
+  return role === 'employee' || role === 'team_lead';
+}
+
+function isOverallRole(role: AppRole) {
+  return role === 'finance' || role === 'admin' || role === 'developer';
 }
 
 function canResetPasswordAction(actorRole: AppRole, actorId: string, target: ManagedUser) {
   if (target.id === actorId) return false;
-  if (actorRole === 'finance') return target.role === 'employee';
+  if (actorRole === 'finance') return target.role === 'employee' || target.role === 'team_lead';
   return actorRole === 'admin' || actorRole === 'developer' ? target.role !== 'developer' : false;
 }
 
@@ -145,6 +196,7 @@ export default function UsersManagementPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<AppRole | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<UserStatus | 'all'>('all');
+  const [businessLineFilter, setBusinessLineFilter] = useState<BusinessLine | 'all'>('all');
   const [pageLoading, setPageLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -162,12 +214,14 @@ export default function UsersManagementPage() {
     role: 'employee',
     team_name: '',
     status: 'active',
+    business_line: '',
   });
   const [editForm, setEditForm] = useState<EditFormState>({
     full_name: '',
     role: 'employee',
     team_name: '',
     status: 'active',
+    business_line: '',
   });
 
   useEffect(() => {
@@ -194,6 +248,7 @@ export default function UsersManagementPage() {
         if (search) params.set('search', search);
         if (roleFilter !== 'all') params.set('role', roleFilter);
         if (statusFilter !== 'all') params.set('status', statusFilter);
+        if (businessLineFilter !== 'all') params.set('business_line', businessLineFilter);
 
         const url = params.toString() ? `/api/users?${params.toString()}` : '/api/users';
         const res = await fetch(url, { cache: 'no-store' });
@@ -211,7 +266,7 @@ export default function UsersManagementPage() {
         else setPageLoading(false);
       }
     },
-    [roleFilter, search, statusFilter, user]
+    [businessLineFilter, roleFilter, search, statusFilter, user]
   );
 
   useEffect(() => {
@@ -246,6 +301,7 @@ export default function UsersManagementPage() {
       role: creatableRoles[0] ?? 'employee',
       team_name: '',
       status: 'active',
+      business_line: '',
     });
   }
 
@@ -263,6 +319,7 @@ export default function UsersManagementPage() {
       role: entry.role,
       team_name: entry.team_name ?? '',
       status: entry.status,
+      business_line: entry.business_line ?? '',
     });
   }
 
@@ -271,10 +328,15 @@ export default function UsersManagementPage() {
     setActionLoading(true);
 
     try {
+      const payload = {
+        ...createForm,
+        business_line: requiresBusinessLine(createForm.role) ? createForm.business_line : '',
+      };
+
       const res = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(createForm),
+        body: JSON.stringify(payload),
       });
       const json = (await res.json().catch(() => ({}))) as {
         success?: boolean;
@@ -314,6 +376,12 @@ export default function UsersManagementPage() {
         team_name: editForm.team_name,
         status: editForm.status,
       };
+
+      if (requiresBusinessLine(editForm.role) && editForm.business_line) {
+        payload.business_line = editForm.business_line;
+      } else {
+        payload.business_line = '';
+      }
 
       if (user && canEditRole(user.role, user.id, editUser)) {
         payload.role = editForm.role;
@@ -454,7 +522,7 @@ export default function UsersManagementPage() {
           description="Search, filter, provision, and maintain dashboard access safely."
           contentClassName="grid gap-4"
         >
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1.8fr)_220px_220px]">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.8fr)_220px_220px_180px]">
             <label className="grid gap-1.5 text-sm font-medium text-foreground">
               Search
               <input
@@ -494,6 +562,21 @@ export default function UsersManagementPage() {
                 ))}
               </select>
             </label>
+
+            <label className="grid gap-1.5 text-sm font-medium text-foreground">
+              Business Line
+              <select
+                value={businessLineFilter}
+                onChange={(event) => setBusinessLineFilter(event.target.value as BusinessLine | 'all')}
+                className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+              >
+                {BUSINESS_LINE_FILTERS.map((entry) => (
+                  <option key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           {actionError ? (
@@ -503,7 +586,7 @@ export default function UsersManagementPage() {
           ) : null}
 
           {pageLoading ? (
-            <StatePanel variant="loading" title="Loading users" description="Pulling the current dashboard user directory." icon={<ShieldCheck className="h-5 w-5" />} />
+            <WorkspaceLoader variant="section" label="Loading users..." description="Pulling the current dashboard user directory." />
           ) : error ? (
             <StatePanel variant="error" tone="danger" title="Unable to load users" description={error} />
           ) : users.length === 0 ? (
@@ -516,6 +599,7 @@ export default function UsersManagementPage() {
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3">Email</th>
                     <th className="px-4 py-3">Role</th>
+                    <th className="px-4 py-3">Business Line</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Team</th>
                     <th className="px-4 py-3">Created At</th>
@@ -544,6 +628,11 @@ export default function UsersManagementPage() {
                         <td className="px-4 py-3 align-top">
                           <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getRoleClass(entry.role)}`}>
                             {formatRoleLabel(entry.role)}
+                          </span>
+                        </td>
+                      <td className="px-4 py-3 align-top">
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getBusinessLineClass(entry.business_line, entry.role)}`}>
+                            {formatBusinessLineLabel(entry.business_line, entry.role)}
                           </span>
                         </td>
                         <td className="px-4 py-3 align-top">
@@ -648,7 +737,7 @@ export default function UsersManagementPage() {
                         {formatRoleLabel(role)}
                       </option>
                     ))}
-                  </select>
+                    </select>
                 </label>
 
                 <label className="grid gap-1.5 text-sm font-medium text-foreground">
@@ -662,6 +751,35 @@ export default function UsersManagementPage() {
                     <option value="inactive">Inactive</option>
                   </select>
                 </label>
+              </div>
+
+              <div className="grid gap-1.5 text-sm font-medium text-foreground">
+                <label className="flex items-center justify-between gap-3">
+                  <span>Business Line {requiresBusinessLine(createForm.role) ? <span className="text-danger">*</span> : null}</span>
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    {requiresBusinessLine(createForm.role) ? 'Required for employee/team lead' : 'Overall role'}
+                  </span>
+                </label>
+                <select
+                  value={createForm.business_line}
+                  onChange={(event) =>
+                    setCreateForm((current) => ({
+                      ...current,
+                      business_line: event.target.value as BusinessLine | '',
+                    }))
+                  }
+                  className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                  disabled={isOverallRole(createForm.role)}
+                >
+                  <option value="">{isOverallRole(createForm.role) ? 'Overall Access' : 'Unassigned'}</option>
+                  <option value="IM">IM</option>
+                  <option value="TM">TM</option>
+                </select>
+                <div className="text-xs text-muted-foreground">
+                  {createForm.role === 'employee' || createForm.role === 'team_lead'
+                    ? `${formatBusinessLineLabel(createForm.business_line, createForm.role)} ${formatRoleLabel(createForm.role)}`
+                    : 'Overall access across both IM and TM business lines.'}
+                </div>
               </div>
 
               <label className="grid gap-1.5 text-sm font-medium text-foreground">
@@ -682,7 +800,12 @@ export default function UsersManagementPage() {
                 type="button"
                 onClick={() => void handleCreateUser()}
                 className={compactButtonClass(true)}
-                disabled={actionLoading || !createForm.full_name.trim() || !createForm.email.trim()}
+                disabled={
+                  actionLoading ||
+                  !createForm.full_name.trim() ||
+                  !createForm.email.trim() ||
+                  (requiresBusinessLine(createForm.role) && !createForm.business_line)
+                }
               >
                 Create User
               </button>
@@ -729,20 +852,25 @@ export default function UsersManagementPage() {
                 </label>
 
                 {canEditRole(user.role, user.id, editUser) ? (
-                  <label className="grid gap-1.5 text-sm font-medium text-foreground">
-                    Role
-                    <select
-                      value={editForm.role}
-                      onChange={(event) => setEditForm((current) => ({ ...current, role: event.target.value as AppRole }))}
-                      className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                    >
-                      {getCreatableRoles(user.role).map((role) => (
-                        <option key={role} value={role}>
-                          {formatRoleLabel(role)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <div className="grid gap-1.5 text-sm font-medium text-foreground">
+                    <label className="grid gap-1.5">
+                      <span>Role</span>
+                      <select
+                        value={editForm.role}
+                        onChange={(event) => setEditForm((current) => ({ ...current, role: event.target.value as AppRole }))}
+                        className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                      >
+                        {getEditableRoleOptions(user.role, editUser.role).map((role) => (
+                          <option key={role} value={role}>
+                            {formatRoleLabel(role)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      Admin and developer can promote or demote between Employee and Team Lead only. Finance and Admin roles stay locked here.
+                    </p>
+                  </div>
                 ) : (
                   <div className="grid gap-1.5 text-sm font-medium text-foreground">
                     <span>Role</span>
@@ -752,6 +880,39 @@ export default function UsersManagementPage() {
                   </div>
                 )}
               </div>
+
+              {canEditBusinessLine(user.role, editUser) ? (
+                <div className="grid gap-1.5 text-sm font-medium text-foreground">
+                  <label className="flex items-center justify-between gap-3">
+                    <span>Business Line</span>
+                    <span className="text-[11px] font-medium text-muted-foreground">
+                      {requiresBusinessLine(editForm.role) ? 'Required for employee/team lead' : 'Overall role'}
+                    </span>
+                  </label>
+                  <select
+                    value={editForm.business_line}
+                    onChange={(event) =>
+                      setEditForm((current) => ({
+                        ...current,
+                        business_line: event.target.value as BusinessLine | '',
+                      }))
+                    }
+                    className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                    disabled={isOverallRole(editForm.role)}
+                  >
+                    <option value="">{isOverallRole(editForm.role) ? 'Overall Access' : 'Unassigned'}</option>
+                    <option value="IM">IM</option>
+                    <option value="TM">TM</option>
+                  </select>
+                </div>
+              ) : (
+                <div className="grid gap-1.5 text-sm font-medium text-foreground">
+                  <span>Business Line</span>
+                  <div className="flex h-10 items-center rounded-xl border border-border bg-muted/20 px-3 text-sm text-muted-foreground">
+                    {formatBusinessLineLabel(editUser.business_line, editUser.role)}
+                  </div>
+                </div>
+              )}
 
               <label className="grid gap-1.5 text-sm font-medium text-foreground">
                 Team Name
@@ -771,7 +932,11 @@ export default function UsersManagementPage() {
                 type="button"
                 onClick={() => void handleEditSubmit()}
                 className={compactButtonClass(true)}
-                disabled={actionLoading || !editForm.full_name.trim()}
+                disabled={
+                  actionLoading ||
+                  !editForm.full_name.trim() ||
+                  (requiresBusinessLine(editForm.role) && !editForm.business_line)
+                }
               >
                 Save Changes
               </button>
@@ -922,3 +1087,4 @@ export default function UsersManagementPage() {
     </>
   );
 }
+

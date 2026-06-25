@@ -2,7 +2,9 @@
 
 import { SessionUser } from '../../lib/client/session';
 import { NotificationBellIcon } from '../dashboard/notification-bell-icon';
+import { CompanyLogo } from './company-logo';
 import { ThemeToggle } from './theme-toggle';
+import { useThemeTransition } from './theme-transition-provider';
 
 function formatRole(role: SessionUser['role']) {
   if (role === 'team_lead') return 'Team Lead';
@@ -27,9 +29,14 @@ export function DashboardNavbar({
   showNotifications: boolean;
   onUnreadCountChange?: (count: number) => void;
 }) {
+  const { theme } = useThemeTransition();
+  const logoTone = theme === 'dark' ? 'light' : 'dark';
+
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-      <div className="flex h-14 items-center justify-end gap-3 px-5 pr-6 sm:gap-4 sm:px-6 sm:pr-7">
+      <div className="flex h-16 items-center justify-between px-5 sm:px-6">
+        <CompanyLogo tone={logoTone} showText size="md" />
+
         <div className="flex items-center gap-3 sm:gap-4">
           {showNotifications ? (
             <NotificationBellIcon onUnreadCountChange={onUnreadCountChange} variant="navbar" />

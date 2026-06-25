@@ -3,9 +3,11 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useMemo, useState } from 'react';
-import { Bell, BookOpen, BriefcaseBusiness, Database, FilePlus, Home, ListChecks, LogOut, Settings, Users } from 'lucide-react';
+import { BarChart3, Bell, BookOpen, BriefcaseBusiness, ClipboardList, Database, FilePlus, Home, ListChecks, LogOut, Settings, Users } from 'lucide-react';
 import {
   canAccessDashboardPath,
+  canManageDeliverables,
+  canViewAnalyticsPage,
   canViewNotifications,
   canViewTeamSubmissions,
   getDefaultDashboardPath,
@@ -14,6 +16,7 @@ import {
 } from '../../lib/client/dashboard-access';
 import { DashboardNavbar } from './dashboard-navbar';
 import { DashboardSessionProvider, useDashboardSession } from './dashboard-session';
+import { WorkspaceLoader } from './workspace-loader';
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   return (
@@ -40,16 +43,26 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
   const items = useMemo(() => {
     const role = user?.role;
     const base = [
-      { href: '/dashboard',                 label: 'Overview',             icon: Home,              group: 'workspace' },
-      { href: getInvoiceIntakePath(),        label: 'Submit Invoice',       icon: FilePlus,          group: 'workspace' },
-      { href: '/dashboard/submissions',      label: getSubmissionsLabel(role), icon: ListChecks,     group: 'workspace' },
-      { href: '/dashboard/team-submissions', label: 'Team Submissions',     icon: ListChecks,        group: 'workspace' },
-      { href: '/dashboard/notifications',    label: 'Notifications',        icon: Bell,              group: 'workspace', badge: unreadCount > 0 ? unreadCount : undefined },
-      { href: '/dashboard/guide',            label: 'Guide',                icon: BookOpen,          group: 'workspace' },
-      { href: '/dashboard/finance',          label: 'Finance Review',       icon: BriefcaseBusiness, group: 'operations' },
-      { href: '/dashboard/master-data',      label: 'Master Data',          icon: Database,          group: 'operations' },
-      { href: '/dashboard/users',            label: 'Users',                icon: Users,             group: 'admin' },
-      { href: '/dashboard/system',           label: 'System',                                        group: 'admin' },
+      { href: '/dashboard', label: 'Overview', icon: Home, group: 'workspace' },
+      ...(canViewAnalyticsPage(role ?? 'employee') ? [{ href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3, group: 'workspace' as const }] : []),
+      ...(role && (role === 'employee' || role === 'team_lead')
+        ? [{ href: getInvoiceIntakePath(), label: 'Submit Invoice', icon: FilePlus, group: 'workspace' as const }]
+        : []),
+      ...(role && (role === 'employee' || role === 'team_lead')
+        ? [{ href: '/dashboard/submissions', label: getSubmissionsLabel(role), icon: ListChecks, group: 'workspace' as const }]
+        : []),
+      ...(canViewTeamSubmissions(role ?? 'employee')
+        ? [{ href: '/dashboard/team-submissions', label: 'Team Submissions', icon: ListChecks, group: 'workspace' as const }]
+        : []),
+      { href: '/dashboard/notifications', label: 'Notifications', icon: Bell, group: 'workspace', badge: unreadCount > 0 ? unreadCount : undefined },
+      { href: '/dashboard/guide', label: 'Guide', icon: BookOpen, group: 'workspace' },
+      { href: '/dashboard/finance', label: 'Finance Review', icon: BriefcaseBusiness, group: 'operations' },
+      { href: '/dashboard/master-data', label: 'Master Data', icon: Database, group: 'operations' },
+      ...(canManageDeliverables(role ?? 'employee')
+        ? [{ href: '/dashboard/deliverables', label: 'Deliverables', icon: ClipboardList, group: 'operations' as const }]
+        : []),
+      { href: '/dashboard/users', label: 'Users', icon: Users, group: 'admin' },
+      ...(role === 'developer' ? [{ href: '/dashboard/system', label: 'System', group: 'admin' as const }] : []),
     ];
 
     return base.filter((i) => {
@@ -72,12 +85,11 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-app" style={{ display: 'grid', placeItems: 'center', padding: 24 }}>
-        <div className="surface" style={{ padding: 20, minWidth: 320 }}>
-          <h2 style={{ margin: 0 }}>Loading dashboard</h2>
-          <p className="text-muted" style={{ marginBottom: 0 }}>Checking your session and role access.</p>
-        </div>
-      </div>
+      <WorkspaceLoader
+        variant="fullscreen"
+        label="Preparing your workspace"
+        description="Checking session and loading dashboard access..."
+      />
     );
   }
 
@@ -86,26 +98,46 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
       className="min-h-screen bg-app"
       style={{
         display: 'grid',
-        gridTemplateColumns: collapsed ? '72px 1fr' : '260px 1fr',
-        transition: 'grid-template-columns 0.25s ease',
+        gridTemplateRows: '64px minmax(0, 1fr)',
+        overflow: 'hidden',
       }}
     >
+      <div style={{ gridColumn: '1 / -1', gridRow: '1' }}>
+        {user ? (
+          <DashboardNavbar
+            user={user}
+            showNotifications={canViewNotifications(user.role)}
+            onUnreadCountChange={setUnreadCount}
+          />
+        ) : null}
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: collapsed ? '72px 1fr' : '260px 1fr',
+          minHeight: 0,
+          overflow: 'hidden',
+          transition: 'grid-template-columns 0.25s ease',
+        }}
+      >
       <aside
         className={`sidebar ${collapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
-        style={{ display: 'flex', flexDirection: 'column', padding: '16px 10px', height: '100vh', position: 'sticky', top: 0 }}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '16px 10px',
+          height: 'calc(100vh - 64px)',
+          position: 'sticky',
+          top: 64,
+          overflowY: 'auto',
+          minHeight: 0,
+        }}
         onMouseEnter={() => setCollapsed(false)}
         onMouseLeave={() => setCollapsed(true)}
       >
-        <div className="sidebar-logo">
-          <div className="sidebar-logo-mark">C</div>
-          <div className="sidebar-copy" style={{ opacity: collapsed ? 0 : 1 }}>
-            <span className="sidebar-logo-text">Finance Ops</span>
-            <span className="sidebar-logo-subtext">Intake and approval workflow</span>
-          </div>
-        </div>
-
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 0, flex: 1, alignContent: 'start' }}>
-          {grouped.map((group, gi) => (
+          {grouped.map((group) => (
             <div key={group.key} className="sidebar-group">
 
               <span
@@ -181,18 +213,19 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <main className="min-w-0">
-        {user ? (
-          <DashboardNavbar
-            user={user}
-            showNotifications={canViewNotifications(user.role)}
-            onUnreadCountChange={setUnreadCount}
-          />
-        ) : null}
+      <main
+        className="min-w-0"
+        style={{
+          height: 'calc(100vh - 64px)',
+          overflowY: 'auto',
+          minHeight: 0,
+        }}
+      >
         <div className="p-5">
           {children}
         </div>
       </main>
+      </div>
     </div>
   );
 }

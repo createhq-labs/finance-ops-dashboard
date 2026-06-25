@@ -21,8 +21,8 @@ import {
   Wallet,
 } from 'lucide-react';
 import { PageHeader } from '../../../../components/dashboard/page-header';
-import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
+import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 
 type QuickCard = {
   title: string;
@@ -486,7 +486,7 @@ export default function GuidePage() {
     return user?.role === 'finance' || user?.role === 'admin' || user?.role === 'developer';
   }, [user?.role]);
 
-  if (loading) return <StatePanel>Loading guide...</StatePanel>;
+  if (loading) return <WorkspaceLoader variant="section" label="Loading guide..." />;
 
   const activeRole = isOperationalRole ? 'finance' : 'employee';
   const navItems = activeRole === 'employee'
