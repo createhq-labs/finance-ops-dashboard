@@ -1,95 +1,121 @@
-"use client";
+'use client';
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
+import { LoginExperience } from '@/components/auth/login-experience';
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setLoading(true);
-    setError(null);
+    setError('');
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ email, password }),
       });
 
-      const json = await res.json().catch(() => null);
-      setLoading(false);
+      const body = await response.json().catch(() => ({}));
 
-      if (!res.ok || !json?.success) {
-        setError(json?.error || 'Login failed');
-        return;
+      if (!response.ok) {
+        throw new Error(body?.error || 'Unable to sign in');
       }
 
-      const nextPath = new URLSearchParams(window.location.search).get('next');
+      const nextPath =
+        typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('next')
+          : null;
       const safeNext = nextPath && nextPath.startsWith('/dashboard') ? nextPath : '/dashboard';
+
       router.push(safeNext);
       router.refresh();
-    } catch {
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Unable to sign in');
+    } finally {
       setLoading(false);
-      setError('Unable to reach login service. Please try again.');
     }
   }
 
   return (
-    <main style={{
-      minHeight: '100vh',
-      display: 'grid',
-      placeItems: 'center',
-      padding: 20,
-      background: 'radial-gradient(ellipse at 30% 20%, rgba(99,102,241,0.15), transparent 50%), radial-gradient(ellipse at 80% 80%, rgba(139,92,246,0.12), transparent 50%), var(--bg)'
-    }}>
-      <section className="surface" style={{ width: '100%', maxWidth: 420, padding: '36px 32px' }}>
+    <LoginExperience>
+      <form className="space-y-4" onSubmit={handleSubmit}>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
-          <div className="sidebar-logo-mark" style={{ width: 40, height: 40, fontSize: 18 }}>C</div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>Finance Ops</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)' }}>CREATE · Internal</div>
+        <div className="space-y-1.5">
+          <label htmlFor="email" className="block text-xs font-semibold uppercase tracking-widest text-white/55">
+            Email
+          </label>
+          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 transition focus-within:border-sky-400/50 focus-within:bg-black/30">
+            <Mail size={15} className="shrink-0 text-white/40" />
+            <input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/35"
+              placeholder="you@create.wtf"
+            />
           </div>
         </div>
 
-        <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700 }}>Sign in</h1>
-        <p className="text-muted" style={{ marginTop: 0, marginBottom: 24, fontSize: 14 }}>
-          Use your provisioned <strong>@create.wtf</strong> account.
-        </p>
+        <div className="space-y-1.5">
+          <label htmlFor="password" className="block text-xs font-semibold uppercase tracking-widest text-white/55">
+            Password
+          </label>
+          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 transition focus-within:border-sky-400/50 focus-within:bg-black/30">
+            <Lock size={15} className="shrink-0 text-white/40" />
+            <input
+              id="password"
+              name="password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/35"
+              placeholder="Enter your password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              tabIndex={-1}
+              className="shrink-0 text-white/35 transition hover:text-white/70"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+          </div>
+        </div>
 
-        <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12 }}>
-          <input
-            placeholder="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="intake-input"
-          />
-          <input
-            placeholder="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="intake-input"
-          />
-          <button className="btn btn-primary" type="submit" disabled={loading} style={{ marginTop: 4, padding: '12px 0', fontSize: 15 }}>
-            {loading ? 'Signing in...' : 'Sign in'}
-          </button>
-          {error ? <p style={{ margin: 0, color: 'var(--danger)', fontSize: 14 }}>{error}</p> : null}
-        </form>
+        {error ? (
+          <p className="rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            {error}
+          </p>
+        ) : null}
 
-        <p className="text-muted" style={{ marginTop: 20, fontSize: 12, textAlign: 'center' }}>
-          No public signup. Contact admin to provision access.
-        </p>
-      </section>
-    </main>
+        <button
+          type="submit"
+          disabled={loading}
+          className="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-gradient-to-r from-cyan-400 to-violet-600 text-sm font-semibold text-white shadow-[0_8px_32px_-4px_rgba(99,102,241,0.5)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? 'Signing in...' : 'Sign in'}
+        </button>
+
+      </form>
+    </LoginExperience>
   );
 }
