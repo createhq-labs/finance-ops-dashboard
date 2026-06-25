@@ -2,12 +2,13 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Building2, CheckCircle2, CircleOff, Database, PencilLine, RefreshCw, Tag, TriangleAlert, UserRound, X } from 'lucide-react';
+import { Building2, CheckCircle2, CircleOff, PencilLine, RefreshCw, Tag, TriangleAlert, UserRound, X } from 'lucide-react';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
+import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { canViewMasterData, getDefaultDashboardPath } from '../../../../lib/client/dashboard-access';
 
 type ReviewStatus = 'pending' | 'approved' | 'rejected';
@@ -462,7 +463,7 @@ export default function MasterDataPage() {
             ) : null}
 
             {pageLoading ? (
-              <StatePanel variant="loading" title="Loading reviews" description="Pulling the current master data review queue." icon={<Database className="h-5 w-5" />} />
+              <WorkspaceLoader variant="section" label="Loading reviews..." description="Pulling the current master data review queue." />
             ) : error ? (
               <StatePanel variant="error" tone="danger" title="Unable to load reviews" description={error} />
             ) : filteredItems.length === 0 ? (
@@ -868,7 +869,5 @@ export default function MasterDataPage() {
     </>
   );
 }
-
-
 
 

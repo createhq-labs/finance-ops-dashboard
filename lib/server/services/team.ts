@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { BusinessLine } from '../types/submissions';
 
 type TeamLeadMemberRow = {
   id: string;
@@ -14,6 +15,7 @@ type TeamEmployeeRow = {
   email: string;
   role: string;
   status: string;
+  business_line: BusinessLine | null;
 };
 
 export type TeamMemberRecord = {
@@ -21,6 +23,7 @@ export type TeamMemberRecord = {
   full_name: string;
   email: string;
   status: string;
+  business_line: BusinessLine | null;
   created_at: string;
   created_by: string;
 };
@@ -30,9 +33,17 @@ export type TeamCandidateRecord = {
   full_name: string;
   email: string;
   status: string;
+  business_line: BusinessLine | null;
   team_lead_names: string[];
   is_current_team_member: boolean;
+  disabled_reason: string | null;
 };
+
+function normalizeBusinessLine(value: string | null | undefined) {
+  const next = String(value ?? '').trim().toUpperCase();
+  if (next === 'IM' || next === 'TM') return next as BusinessLine;
+  return null;
+}
 
 export async function listTeamLeadMembers(client: SupabaseClient, teamLeadId: string) {
   const { data, error } = await client
@@ -52,7 +63,7 @@ export async function listTeamLeadMembers(client: SupabaseClient, teamLeadId: st
 
   const { data: employees, error: employeesError } = await client
     .from('users')
-    .select('id, full_name, email, role, status')
+    .select('id, full_name, email, role, status, business_line')
     .in('id', employeeIds);
 
   if (employeesError) throw new Error(employeesError.message);
@@ -70,6 +81,7 @@ export async function listTeamLeadMembers(client: SupabaseClient, teamLeadId: st
         full_name: employee.full_name,
         email: employee.email,
         status: employee.status,
+        business_line: employee.business_line ?? null,
         created_at: mapping.created_at,
         created_by: mapping.created_by,
       } satisfies TeamMemberRecord;
@@ -80,7 +92,8 @@ export async function listTeamLeadMembers(client: SupabaseClient, teamLeadId: st
 export async function searchTeamLeadCandidates(
   client: SupabaseClient,
   teamLeadId: string,
-  search: string
+  search: string,
+  teamLeadBusinessLine: string | null
 ) {
   const normalizedSearch = search.trim().toLowerCase();
 
@@ -95,7 +108,7 @@ export async function searchTeamLeadCandidates(
 
   const { data, error } = await client
     .from('users')
-    .select('id, full_name, email, role, status')
+    .select('id, full_name, email, role, status, business_line')
     .eq('role', 'employee');
 
   if (error) throw new Error(error.message);
@@ -149,8 +162,15 @@ export async function searchTeamLeadCandidates(
       full_name: employee.full_name,
       email: employee.email,
       status: employee.status,
+      business_line: employee.business_line ?? null,
       team_lead_names: leadNamesByEmployee.get(employee.id) || [],
       is_current_team_member: currentTeamIds.has(employee.id),
+      disabled_reason:
+        !normalizeBusinessLine(teamLeadBusinessLine)
+          ? 'Assign business line first.'
+          : employee.business_line !== normalizeBusinessLine(teamLeadBusinessLine)
+            ? 'Different business line'
+            : null,
     }));
 }
 
@@ -158,7 +178,8 @@ export async function addTeamLeadMember(
   client: SupabaseClient,
   teamLeadId: string,
   employeeId: string,
-  createdBy: string
+  createdBy: string,
+  teamLeadBusinessLine: string | null
 ) {
   if (teamLeadId === employeeId) {
     throw new Error('You cannot add yourself as a team member.');
@@ -166,7 +187,7 @@ export async function addTeamLeadMember(
 
   const { data: employee, error: employeeError } = await client
     .from('users')
-    .select('id, role, status, full_name, email')
+    .select('id, role, status, full_name, email, business_line')
     .eq('id', employeeId)
     .maybeSingle();
 
@@ -174,6 +195,13 @@ export async function addTeamLeadMember(
   if (!employee) throw new Error('Employee not found.');
   if (employee.role !== 'employee') throw new Error('Only employee users can be added to a team.');
   if (employee.status !== 'active') throw new Error('Only active employees can be added to a team.');
+  const leadLine = normalizeBusinessLine(teamLeadBusinessLine);
+  if (!leadLine) {
+    throw new Error('Assign business line first.');
+  }
+  if (employee.business_line !== leadLine) {
+    throw new Error('Different business line.');
+  }
 
   const { data: existing, error: existingError } = await client
     .from('team_lead_members')
