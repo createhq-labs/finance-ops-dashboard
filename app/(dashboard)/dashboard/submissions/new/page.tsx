@@ -6,6 +6,7 @@ import { PageHeader } from '../../../../../components/dashboard/page-header';
 import { StatePanel } from '../../../../../components/dashboard/state-panel';
 import { InvoiceIntakeForm } from '../../../../../components/forms/invoice-intake-form';
 import { useDashboardSession } from '../../../../../components/layout/dashboard-session';
+import { WorkspaceLoader } from '../../../../../components/layout/workspace-loader';
 import type { InvoiceIntakeFormValues, InvoiceIntakeSubmissionPayload } from '../../../../../components/forms/types';
 import { getPiDisplayMeta } from '../../../../../lib/client/pi-display';
 import { canSubmitInvoice, getDefaultDashboardPath } from '../../../../../lib/client/dashboard-access';
@@ -259,17 +260,15 @@ export default function NewSubmissionPage() {
         className="intake-page-header-compact border-b-0"
       />
 
-      <section className="intake-callout">
-        <p className="intake-callout-title">Before You Submit</p>
-        <p className="intake-callout-copy">
+      <section className="intake-banner">
+        <p className="text-muted" style={{ margin: 0 }}>
           Review all fields carefully before final submit. Once submitted, finance will process this intake in the workflow.
         </p>
       </section>
 
       {resubmitId ? (
-        <section className="intake-callout">
-          <p className="intake-callout-title">Resubmission Mode</p>
-          <p className="intake-callout-copy" style={{ fontWeight: 600 }}>
+        <section className="intake-banner">
+          <p style={{ margin: 0, fontWeight: 600 }}>
             You are editing a previous submission. Submitting will create a new version.
           </p>
         </section>
@@ -329,7 +328,7 @@ export default function NewSubmissionPage() {
           onSubmit={handleCreateSubmit}
         />
       )}
-      {prefillLoading ? <StatePanel>Loading previous submission...</StatePanel> : null}
+      {prefillLoading ? <WorkspaceLoader variant="section" label="Loading previous submission..." /> : null}
       {prefillError ? <StatePanel tone="danger">{prefillError}</StatePanel> : null}
       {showResubmissionNote ? (
         <div

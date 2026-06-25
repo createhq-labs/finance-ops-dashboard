@@ -9,6 +9,7 @@ import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
+import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { PAYMENT_RECEIVED_STATUS_OPTIONS } from '../../../../lib/client/finance-status';
 import { canSubmitInvoice, getDrawerViewerRole, getSubmissionsLabel } from '../../../../lib/client/dashboard-access';
 import { getPiDisplayMeta } from '../../../../lib/client/pi-display';
@@ -141,6 +142,10 @@ export default function EmployeeSubmissionsPage() {
           previous_submission_id: item.previous_submission_id || null,
           finance_notes: item.finance_notes || null,
           finance_comment: item.finance_comment || undefined,
+          invoice_status_started: Boolean(String(item.invoice_status || '').trim() && String(item.invoice_status || '') !== '-'),
+          creator_invoice_received_started: Boolean(String(item.creator_invoice_status || '').trim()),
+          payment_received_started: Boolean(String(item.payment_received_status || item.payment_received || '').trim()),
+          payment_made_started: Boolean(String(item.payment_made_status || item.payment_made || '').trim()),
           creator_invoice_received: normalizeStatusValue(item.creator_invoice_status) || undefined,
           payment_received: normalizeStatusValue(item.payment_received_status || item.payment_received) || undefined,
           payment_made: normalizeStatusValue(item.payment_made_status || item.payment_made) || undefined,
@@ -303,7 +308,7 @@ export default function EmployeeSubmissionsPage() {
         </div>
       </SectionCard>
 
-      {rowsLoading ? <StatePanel padding={12}>Loading submissions...</StatePanel> : null}
+      {rowsLoading ? <WorkspaceLoader variant="section" label="Loading submissions..." /> : null}
       {rowsError ? <StatePanel tone="danger" padding={12}>{rowsError}</StatePanel> : null}
       {!rowsLoading && !rowsError ? (
         <SubmissionTable
@@ -319,6 +324,7 @@ export default function EmployeeSubmissionsPage() {
           emptyLabel="No submissions found yet."
           getActionLabel={(row) => user.role === 'employee' && row.intake_status === 'rejected' ? 'Resubmit' : 'View'}
           viewer={user.role}
+          viewerBusinessLine={user.business_line}
         />
       ) : null}
 

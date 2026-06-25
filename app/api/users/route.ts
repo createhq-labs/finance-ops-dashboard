@@ -9,6 +9,7 @@ import {
   listUsers,
 } from '@/lib/server/services/users';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '@/lib/server/supabase';
+import type { AppRole, BusinessLine } from '@/lib/server/types/submissions';
 
 function resolveToken(req: NextRequest) {
   try {
@@ -34,6 +35,7 @@ export async function GET(req: NextRequest) {
     const search = req.nextUrl.searchParams.get('search') || '';
     const roleParam = req.nextUrl.searchParams.get('role') || 'all';
     const statusParam = req.nextUrl.searchParams.get('status') || 'all';
+    const businessLineParam = req.nextUrl.searchParams.get('business_line') || 'all';
 
     if (roleParam !== 'all' && !isKnownRole(roleParam)) {
       return NextResponse.json({ success: false, error: 'Invalid role filter.' }, { status: 400 });
@@ -41,11 +43,15 @@ export async function GET(req: NextRequest) {
     if (statusParam !== 'all' && !isKnownStatus(statusParam)) {
       return NextResponse.json({ success: false, error: 'Invalid status filter.' }, { status: 400 });
     }
+    if (businessLineParam !== 'all' && businessLineParam !== 'IM' && businessLineParam !== 'TM') {
+      return NextResponse.json({ success: false, error: 'Invalid business line filter.' }, { status: 400 });
+    }
 
     const users = await listUsers(userClient, {
       search,
-      role: roleParam === 'all' ? 'all' : roleParam,
-      status: statusParam === 'all' ? 'all' : statusParam,
+      role: (roleParam === 'all' ? 'all' : roleParam) as 'all' | AppRole,
+      status: (statusParam === 'all' ? 'all' : statusParam) as 'all' | 'active' | 'inactive',
+      businessLine: (businessLineParam === 'all' ? 'all' : businessLineParam) as 'all' | BusinessLine,
     });
 
     return NextResponse.json({ success: true, users }, { status: 200 });

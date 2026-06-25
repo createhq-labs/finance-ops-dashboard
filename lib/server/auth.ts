@@ -17,7 +17,7 @@ export async function getCurrentAppUser(client: SupabaseClient, token: string): 
 
   const { data: user, error } = await client
     .from('users')
-    .select('id, supabase_auth_id, email, role, status')
+    .select('id, supabase_auth_id, email, role, status, business_line')
     .eq('supabase_auth_id', authData.user.id)
     .single();
 

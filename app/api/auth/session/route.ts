@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
 
     const { data: appUser, error: appUserError } = await anon
       .from('users')
-      .select('id, email, full_name, role, status')
+      .select('id, email, full_name, role, status, business_line')
       .eq('supabase_auth_id', data.user.id)
       .single();
 

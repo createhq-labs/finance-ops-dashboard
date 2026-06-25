@@ -1,14 +1,15 @@
-"use client";
+﻿"use client";
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
-import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
+import { SubmissionTable, type MasterDataCellKey, type MasterDataReviewSummary, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
+import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import {
   CLOSURE_STATUS_OPTIONS,
   CREATOR_INVOICE_STATUS_OPTIONS,
@@ -22,6 +23,7 @@ import {
   formatPaymentReceivedStatus,
 } from '../../../../lib/client/finance-status';
 import { canViewFinanceDashboard, getDefaultDashboardPath, getDrawerViewerRole, getFinanceDashboardTitle } from '../../../../lib/client/dashboard-access';
+import { getPiDisplayMeta } from '../../../../lib/client/pi-display';
 
 type FinanceApiRow = {
   id: string;
@@ -88,6 +90,20 @@ type FinanceAction =
   | 'update_payment_status'
   | 'close_submission';
 
+type MasterDataReviewApiRow = {
+  id: string;
+  type: 'agency' | 'brand' | 'creator';
+  status: 'pending' | 'approved' | 'rejected';
+  submitted_value: string;
+  submitted_trade_name?: string | null;
+  reviewed_by_name?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  created_from_submission_id?: string | null;
+};
+
+type MasterDataReviewMap = Record<string, Partial<Record<MasterDataCellKey, MasterDataReviewSummary>>>;
+
 type FinanceEditableField =
   | 'intake_status'
   | 'invoice_status'
@@ -108,6 +124,7 @@ const CREATOR_INVOICE_VALUES = CREATOR_INVOICE_STATUS_OPTIONS.map((option) => op
 
 function normalizeCreatorInvoice(value: string | null | undefined) {
   const normalized = normalizeStatusToken(value);
+  if (!normalized) return '';
   if (normalized === 'received') return 'received';
   if (normalized === 'part_payment_against_advance') return 'part_payment_against_advance';
   if (normalized === 'not_received') return 'not_received';
@@ -132,6 +149,7 @@ function normalizeBusinessLine(value: string | null | undefined): 'TM' | 'IM' | 
 
 function normalizePaymentReceived(value: string | null | undefined) {
   const normalized = normalizeStatusToken(value);
+  if (!normalized) return '';
   if (normalized === 'advance_received') return 'advance_received';
   if (normalized === 'gst_left') return 'gst_left';
   if (normalized === 'past_due') return 'past_due';
@@ -146,6 +164,7 @@ function normalizePaymentReceived(value: string | null | undefined) {
 
 function normalizePaymentMade(value: string | null | undefined) {
   const normalized = normalizeStatusToken(value);
+  if (!normalized) return '';
   if (normalized === 'part_payment_against_advance') return 'part_payment_against_advance';
   if (normalized === 'multiple_creators') return 'multiple_creators';
   if (normalized === 'gst_left') return 'gst_left';
@@ -157,6 +176,7 @@ function normalizePaymentMade(value: string | null | undefined) {
 
 function normalizeClosedStatus(value: string | null | undefined) {
   const normalized = normalizeStatusToken(value);
+  if (!normalized) return '';
   if (normalized === 'closed') return 'closed';
   if (normalized === 'issues') return 'issues';
   if (normalized === 'gst_left') return 'gst_left';
@@ -166,6 +186,7 @@ function normalizeClosedStatus(value: string | null | undefined) {
 
 function normalizeInvoiceStatus(value: string | null | undefined) {
   const normalized = normalizeStatusToken(value);
+  if (!normalized) return '';
   if (normalized === 'invoice_created') return 'invoice_created';
   if (normalized === 'po_created_estimate' || normalized === 'po_createdestimate') return 'po_created_estimate';
   if (normalized === 'invoice_cancelled') return 'invoice_cancelled';
@@ -222,6 +243,42 @@ function formatDateFilterInput(value: string) {
   if (!match) return value;
   const [, year, month, day] = match;
   return `${day}/${month}/${year}`;
+}
+
+
+function mapMasterDataReviews(items: MasterDataReviewApiRow[]): MasterDataReviewMap {
+  const next: MasterDataReviewMap = {};
+
+  for (const item of items) {
+    const submissionId = String(item.created_from_submission_id || '').trim();
+    if (!submissionId) continue;
+
+    const summary: MasterDataReviewSummary = {
+      id: String(item.id),
+      type: item.type,
+      status: item.status,
+      submitted_value: item.submitted_value,
+      submitted_trade_name: item.submitted_trade_name ?? null,
+      reviewed_by_name: item.reviewed_by_name ?? null,
+      reviewed_at: item.reviewed_at ?? null,
+      rejection_reason: item.rejection_reason ?? null,
+      created_from_submission_id: submissionId,
+    };
+
+    const bucket = next[submissionId] ?? {};
+    if (item.type === 'agency') {
+      bucket.agency_name ??= summary;
+      bucket.agency_trade_name ??= summary;
+    } else if (item.type === 'brand') {
+      bucket.brand_name ??= summary;
+      bucket.brand_trade_name ??= summary;
+    } else {
+      bucket.creator_name ??= summary;
+    }
+    next[submissionId] = bucket;
+  }
+
+  return next;
 }
 
 function TrackingRow({
@@ -327,6 +384,7 @@ export default function FinanceReviewPage() {
   const { user, loading } = useDashboardSession();
   const isMountedRef = useRef(true);
   const [rows, setRows] = useState<SubmissionRow[]>([]);
+  const [masterDataReviewsBySubmission, setMasterDataReviewsBySubmission] = useState<MasterDataReviewMap>({});
   const [rowsLoading, setRowsLoading] = useState(true);
   const [rowsError, setRowsError] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
@@ -348,11 +406,11 @@ export default function FinanceReviewPage() {
   const [rejectionNote, setRejectionNote] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [debitNoteNumber, setDebitNoteNumber] = useState('');
-  const [creatorInvoiceStatus, setCreatorInvoiceStatus] = useState<string>('pending');
-  const [invoiceStatusValue, setInvoiceStatusValue] = useState<string>('invoice_pending');
-  const [paymentReceivedStatus, setPaymentReceivedStatus] = useState<string>('pending');
-  const [paymentMadeStatus, setPaymentMadeStatus] = useState<string>('pending');
-  const [closureStatus, setClosureStatus] = useState<string>('open');
+  const [creatorInvoiceStatus, setCreatorInvoiceStatus] = useState<string>('');
+  const [invoiceStatusValue, setInvoiceStatusValue] = useState<string>('');
+  const [paymentReceivedStatus, setPaymentReceivedStatus] = useState<string>('');
+  const [paymentMadeStatus, setPaymentMadeStatus] = useState<string>('');
+  const [closureStatus, setClosureStatus] = useState<string>('');
   const [actionLoadingKey, setActionLoadingKey] = useState<FinanceAction | null>(null);
   const [actionSuccess, setActionSuccess] = useState('');
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -364,13 +422,25 @@ export default function FinanceReviewPage() {
     };
   }, []);
 
-  async function loadFinanceSubmissions() {
+  const loadMasterDataReviews = useCallback(async () => {
+    const res = await fetch('/api/master-data/reviews?status=all&type=all', { method: 'GET', cache: 'no-store' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json?.success) {
+      throw new Error(json?.error || 'Failed to load master data reviews.');
+    }
+    return mapMasterDataReviews((json.items ?? []) as MasterDataReviewApiRow[]);
+  }, []);
+
+  const loadFinanceSubmissions = useCallback(async () => {
     if (isMountedRef.current) {
       setRowsLoading(true);
       setRowsError('');
     }
 
-    const res = await fetch('/api/submissions/finance', { method: 'GET', cache: 'no-store' });
+    const [res, masterDataReviewMap] = await Promise.all([
+      fetch('/api/submissions/finance', { method: 'GET', cache: 'no-store' }),
+      loadMasterDataReviews().catch(() => ({} as MasterDataReviewMap)),
+    ]);
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json?.success) {
       throw new Error(json?.error || 'Failed to load finance submissions.');
@@ -420,6 +490,10 @@ export default function FinanceReviewPage() {
       reviewed_at: item.reviewed_at || null,
       reviewed_by_name: item.reviewed_by_name || null,
       intake_line_items: item.intake_line_items || [],
+      invoice_status_started: Boolean(String(item.invoice_status || '').trim() && String(item.invoice_status || '') !== '-'),
+      creator_invoice_received_started: Boolean(String(item.creator_invoice_status || item.invoice_via_creators_received || '').trim()),
+      payment_received_started: Boolean(String(item.payment_received_status || item.payment_received || '').trim()),
+      payment_made_started: Boolean(String(item.payment_made_status || item.payment_made || '').trim()),
       creator_invoice_received: normalizeCreatorInvoice(item.creator_invoice_status || item.invoice_via_creators_received),
       payment_received: normalizePaymentReceived(item.payment_received_status || item.payment_received),
       payment_made: normalizePaymentMade(item.payment_made_status || item.payment_made),
@@ -440,9 +514,10 @@ export default function FinanceReviewPage() {
 
     if (isMountedRef.current) {
       setRows(versioned);
+      setMasterDataReviewsBySubmission(masterDataReviewMap);
       setRowsLoading(false);
     }
-  }
+  }, [loadMasterDataReviews]);
 
   useEffect(() => {
     let active = true;
@@ -458,7 +533,7 @@ export default function FinanceReviewPage() {
     return () => {
       active = false;
     };
-  }, [user]);
+  }, [user, loadFinanceSubmissions]);
 
   useEffect(() => {
     if (loading || !user) return;
@@ -480,11 +555,11 @@ export default function FinanceReviewPage() {
   useEffect(() => {
     if (!row || editingField) return;
     setRejectionNote(row.rejection_note || '');
-    setCreatorInvoiceStatus(CREATOR_INVOICE_VALUES.includes(String(row.creator_invoice_received || 'pending')) ? String(row.creator_invoice_received || 'pending') : 'pending');
+    setCreatorInvoiceStatus(CREATOR_INVOICE_VALUES.includes(String(row.creator_invoice_received || '')) ? String(row.creator_invoice_received || '') : '');
     setInvoiceStatusValue(normalizeInvoiceStatus(row.invoice_status));
-    setPaymentReceivedStatus(PAYMENT_RECEIVED_VALUES.includes(String(row.payment_received || 'pending')) ? String(row.payment_received || 'pending') : 'pending');
-    setPaymentMadeStatus(PAYMENT_MADE_VALUES.includes(String(row.payment_made || 'pending')) ? String(row.payment_made || 'pending') : 'pending');
-    setClosureStatus(CLOSURE_VALUES.includes(String(row.closed_status || 'open')) ? String(row.closed_status || 'open') : 'open');
+    setPaymentReceivedStatus(PAYMENT_RECEIVED_VALUES.includes(String(row.payment_received || '')) ? String(row.payment_received || '') : '');
+    setPaymentMadeStatus(PAYMENT_MADE_VALUES.includes(String(row.payment_made || '')) ? String(row.payment_made || '') : '');
+    setClosureStatus(CLOSURE_VALUES.includes(String(row.closed_status || '')) ? String(row.closed_status || '') : '');
     setActionError('');
     setActionSuccess('');
   }, [row, editingField]);
@@ -518,6 +593,15 @@ export default function FinanceReviewPage() {
 
       const haystack = [
         entry.pi,
+        (() => {
+          const piMeta = getPiDisplayMeta({
+            pi: entry.pi,
+            submittedAt: entry.submitted_at,
+            invoiceType: entry.invoice_type,
+            lineItems: entry.intake_line_items,
+          });
+          return `${piMeta.label} ${piMeta.title}`;
+        })(),
         entry.entity,
         entry.owner_name,
         entry.submitter_email,
@@ -615,6 +699,51 @@ export default function FinanceReviewPage() {
       setActionSubmitting(false);
       setActionLoadingKey(null);
     }
+  }
+
+
+  async function handleMasterDataReviewAction(review: MasterDataReviewSummary, action: 'approve' | 'reject') {
+    const endpoint = `/api/master-data/reviews/${review.id}/${action === 'approve' ? 'approve' : 'reject'}`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: action === 'reject' ? JSON.stringify({ rejection_reason: 'Ignored by finance' }) : undefined,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body?.success) {
+      return { success: false, message: body?.error || 'Failed to update master data review.' };
+    }
+
+    const nextReview: MasterDataReviewSummary = {
+      ...review,
+      status: action === 'approve' ? 'approved' : 'rejected',
+      reviewed_by_name: user?.full_name || 'Finance Team',
+      reviewed_at: new Date().toISOString(),
+      rejection_reason: action === 'reject' ? 'Ignored by finance' : null,
+    };
+
+    setMasterDataReviewsBySubmission((current) => {
+      const submissionId = review.created_from_submission_id;
+      if (!submissionId) return current;
+      const bucket = { ...(current[submissionId] ?? {}) };
+      const applyReview = (key: MasterDataCellKey) => {
+        if (bucket[key]?.id === review.id) {
+          bucket[key] = nextReview;
+        }
+      };
+      if (review.type === 'agency') {
+        applyReview('agency_name');
+        applyReview('agency_trade_name');
+      } else if (review.type === 'brand') {
+        applyReview('brand_name');
+        applyReview('brand_trade_name');
+      } else {
+        applyReview('creator_name');
+      }
+      return { ...current, [submissionId]: bucket };
+    });
+
+    return { success: true, review: nextReview, message: body?.message || 'Master data review updated.' };
   }
 
   async function updateFinanceCell(targetRow: SubmissionRow, field: FinanceEditableField, value: string) {
@@ -779,7 +908,7 @@ export default function FinanceReviewPage() {
       <div style={{ display: 'grid', gap: 10 }}>
         <TrackingRow
           label="Invoice Status"
-          value={formatInvoiceStatus(row.invoice_status)}
+          value={row.invoice_status ? formatInvoiceStatus(row.invoice_status) : '—'}
           fieldKey="invoice_status"
           isEditing={editingField === 'invoice_status'}
           actionSubmitting={actionSubmitting}
@@ -791,6 +920,7 @@ export default function FinanceReviewPage() {
         >
           <div style={{ display: 'grid', gap: 10 }}>
             <select className="intake-input" value={invoiceStatusValue} onChange={(e) => setInvoiceStatusValue(e.target.value)}>
+                <option value="">—</option>
               {INVOICE_STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
@@ -803,18 +933,19 @@ export default function FinanceReviewPage() {
 
         <TrackingRow
           label="Creator Invoice"
-          value={formatCreatorInvoiceStatus(row.creator_invoice_received || 'pending')}
+          value={row.creator_invoice_received ? formatCreatorInvoiceStatus(row.creator_invoice_received) : '—'}
           fieldKey="creator_invoice_status"
           isEditing={editingField === 'creator_invoice_status'}
           actionSubmitting={actionSubmitting}
           onEdit={() => {
-            setCreatorInvoiceStatus(CREATOR_INVOICE_VALUES.includes(String(row.creator_invoice_received || 'pending')) ? String(row.creator_invoice_received || 'pending') : 'pending');
+            setCreatorInvoiceStatus(CREATOR_INVOICE_VALUES.includes(String(row.creator_invoice_received || '')) ? String(row.creator_invoice_received || '') : '');
             setEditingField('creator_invoice_status');
           }}
           onCancel={() => setEditingField(null)}
         >
           <div style={{ display: 'grid', gap: 10 }}>
             <select className="intake-input" value={creatorInvoiceStatus} onChange={(e) => setCreatorInvoiceStatus(e.target.value)}>
+                <option value="">—</option>
               {CREATOR_INVOICE_STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
@@ -832,18 +963,19 @@ export default function FinanceReviewPage() {
 
         <TrackingRow
           label="Payment Received"
-          value={formatPaymentReceivedStatus(row.payment_received || 'pending')}
+          value={row.payment_received ? formatPaymentReceivedStatus(row.payment_received) : '—'}
           fieldKey="payment_received_status"
           isEditing={editingField === 'payment_received_status'}
           actionSubmitting={actionSubmitting}
           onEdit={() => {
-            setPaymentReceivedStatus(PAYMENT_RECEIVED_VALUES.includes(String(row.payment_received || 'pending')) ? String(row.payment_received || 'pending') : 'pending');
+            setPaymentReceivedStatus(PAYMENT_RECEIVED_VALUES.includes(String(row.payment_received || '')) ? String(row.payment_received || '') : '');
             setEditingField('payment_received_status');
           }}
           onCancel={() => setEditingField(null)}
         >
           <div style={{ display: 'grid', gap: 10 }}>
             <select className="intake-input" value={paymentReceivedStatus} onChange={(e) => setPaymentReceivedStatus(e.target.value)}>
+                <option value="">—</option>
               {PAYMENT_RECEIVED_STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
@@ -861,18 +993,19 @@ export default function FinanceReviewPage() {
 
         <TrackingRow
           label="Payment Made"
-          value={formatPaymentMadeStatus(row.payment_made || 'pending')}
+          value={row.payment_made ? formatPaymentMadeStatus(row.payment_made) : '—'}
           fieldKey="payment_made_status"
           isEditing={editingField === 'payment_made_status'}
           actionSubmitting={actionSubmitting}
           onEdit={() => {
-            setPaymentMadeStatus(PAYMENT_MADE_VALUES.includes(String(row.payment_made || 'pending')) ? String(row.payment_made || 'pending') : 'pending');
+            setPaymentMadeStatus(PAYMENT_MADE_VALUES.includes(String(row.payment_made || '')) ? String(row.payment_made || '') : '');
             setEditingField('payment_made_status');
           }}
           onCancel={() => setEditingField(null)}
         >
           <div style={{ display: 'grid', gap: 10 }}>
             <select className="intake-input" value={paymentMadeStatus} onChange={(e) => setPaymentMadeStatus(e.target.value)}>
+                <option value="">—</option>
               {PAYMENT_MADE_STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
@@ -890,18 +1023,19 @@ export default function FinanceReviewPage() {
 
         <TrackingRow
           label="Closure Status"
-          value={formatClosureStatus(row.closed_status || 'open')}
+          value={row.closed_status ? formatClosureStatus(row.closed_status) : '—'}
           fieldKey="closure_status"
           isEditing={editingField === 'closure_status'}
           actionSubmitting={actionSubmitting}
           onEdit={() => {
-            setClosureStatus(CLOSURE_VALUES.includes(String(row.closed_status || 'open')) ? String(row.closed_status || 'open') : 'open');
+            setClosureStatus(CLOSURE_VALUES.includes(String(row.closed_status || '')) ? String(row.closed_status || '') : '');
             setEditingField('closure_status');
           }}
           onCancel={() => setEditingField(null)}
         >
           <div style={{ display: 'grid', gap: 10 }}>
             <select className="intake-input" value={closureStatus} onChange={(e) => setClosureStatus(e.target.value)}>
+                <option value="">—</option>
               {CLOSURE_STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
@@ -1094,7 +1228,7 @@ export default function FinanceReviewPage() {
         </div>
       </SectionCard>
 
-      {rowsLoading ? <StatePanel>Loading finance submissions...</StatePanel> : null}
+      {rowsLoading ? <WorkspaceLoader variant="section" label="Loading finance submissions..." /> : null}
       {rowsError ? <StatePanel tone="danger">{rowsError}</StatePanel> : null}
 
       {!rowsLoading && !rowsError ? (
@@ -1106,6 +1240,8 @@ export default function FinanceReviewPage() {
           viewer={user.role === 'admin' ? 'admin' : 'finance'}
           getActionLabel={() => 'View / Edit'}
           onFinanceUpdate={updateFinanceCell}
+          masterDataReviewsBySubmission={masterDataReviewsBySubmission}
+          onMasterDataReviewAction={handleMasterDataReviewAction}
         />
       ) : null}
 
@@ -1119,3 +1255,12 @@ export default function FinanceReviewPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+

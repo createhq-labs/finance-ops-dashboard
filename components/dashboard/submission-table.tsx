@@ -13,7 +13,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronLeft, ChevronRight, Pencil, X } from 'lucide-react';
+import { Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleX, Clock3, Pencil, X } from 'lucide-react';
 import { getPiDisplayMeta } from '../../lib/client/pi-display';
 import { formatSubmissionAmount, getCurrencyTitle } from '../../lib/shared/currency';
 import {
@@ -80,6 +80,10 @@ export type SubmissionRow = {
   reviewed_by?: string | null;
   reviewed_at?: string | null;
   reviewed_by_name?: string | null;
+  invoice_status_started?: boolean;
+  creator_invoice_received_started?: boolean;
+  payment_received_started?: boolean;
+  payment_made_started?: boolean;
   intake_line_items?: Array<{
     creator_name?: string | null;
     brand_name?: string | null;
@@ -87,6 +91,25 @@ export type SubmissionRow = {
     amount?: number | null;
     line_order?: number | null;
   }>;
+};
+
+export type MasterDataCellKey =
+  | 'agency_name'
+  | 'agency_trade_name'
+  | 'brand_name'
+  | 'brand_trade_name'
+  | 'creator_name';
+
+export type MasterDataReviewSummary = {
+  id: string;
+  type: 'agency' | 'brand' | 'creator';
+  status: 'pending' | 'approved' | 'rejected';
+  submitted_value: string;
+  submitted_trade_name?: string | null;
+  reviewed_by_name?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  created_from_submission_id?: string | null;
 };
 
 export type SubmissionTableColumn =
@@ -122,6 +145,12 @@ type FinanceUpdateResult = {
   message?: string;
   nextValue?: string;
   nextRowPatch?: Partial<SubmissionRow>;
+};
+
+type MasterDataActionResult = {
+  success: boolean;
+  message?: string;
+  review?: MasterDataReviewSummary;
 };
 
 type SheetColumnId =
@@ -276,9 +305,11 @@ const STATUS_AUDIT_FIELDS = new Set<StatusEditableField>([
   'closed_status',
 ]);
 
-const COLLAPSED_COLUMN_WIDTHS: Record<'invoice_number' | 'debit_note_number', number> = {
+const COLLAPSED_COLUMN_WIDTHS: Record<'invoice_number' | 'debit_note_number' | 'campaign_code' | 'campaign_name', number> = {
   invoice_number: 72,
   debit_note_number: 72,
+  campaign_code: 88,
+  campaign_name: 88,
 };
 
 const STATUS_PILL_BASE =
@@ -480,15 +511,25 @@ function getEditableOptions(field: StatusEditableField) {
 }
 
 function getEditableValue(row: SubmissionRow, field: StatusEditableField) {
-  if (field === 'invoice_status') return normalizeInvoiceStatusValue(row.invoice_status);
-  if (field === 'creator_invoice_received') return row.creator_invoice_received || 'pending';
-  if (field === 'payment_received') return row.payment_received || 'pending';
-  if (field === 'payment_made') return row.payment_made || 'pending';
+  if (field === 'invoice_status') return hasStatusStarted(row, field) ? normalizeInvoiceStatusValue(row.invoice_status) : '';
+  if (field === 'creator_invoice_received') return hasStatusStarted(row, field) ? row.creator_invoice_received || 'pending' : '';
+  if (field === 'payment_received') return hasStatusStarted(row, field) ? row.payment_received || 'pending' : '';
+  if (field === 'payment_made') return hasStatusStarted(row, field) ? row.payment_made || 'pending' : '';
   if (field === 'closed_status') return row.closed_status || 'open';
   return row.intake_status;
 }
 
 function renderStatusLabel(field: StatusEditableField, value: string | null | undefined) {
+  if (
+    (field === 'invoice_status' ||
+      field === 'creator_invoice_received' ||
+      field === 'payment_received' ||
+      field === 'payment_made' ||
+      field === 'closed_status') &&
+    !value
+  ) {
+    return '';
+  }
   if (field === 'invoice_status') return formatInvoiceStatus(value);
   if (field === 'creator_invoice_received') return formatCreatorInvoiceStatus(value);
   if (field === 'payment_received') return formatPaymentReceivedStatus(value);
@@ -534,6 +575,9 @@ function truncateStatusLabel(label: string) {
 
 function getStatusTone(field: StatusEditableField, value: string | null | undefined) {
   const normalized = normalizeText(value);
+  if ((field === 'invoice_status' || field === 'creator_invoice_received' || field === 'payment_received' || field === 'payment_made') && !normalized) {
+    return 'border-slate-300/80 bg-slate-100/80 text-slate-500 dark:border-slate-300/15 dark:bg-slate-300/10 dark:text-slate-300';
+  }
   if (field === 'intake_status' && normalized === 'submitted') {
     return 'border-amber-300/90 bg-amber-500/12 text-amber-900 dark:border-amber-300/35 dark:bg-amber-300/14 dark:text-amber-50';
   }
@@ -582,6 +626,14 @@ function isClosedRow(row: SubmissionRow) {
   return normalizeText(row.closed_status) === 'closed';
 }
 
+
+
+function getMasterDataStatusClasses(status: MasterDataReviewSummary['status']) {
+  if (status === 'approved') return 'border-emerald-300/70 bg-emerald-500/10 text-emerald-700 dark:border-emerald-300/30 dark:bg-emerald-300/12 dark:text-emerald-200';
+  if (status === 'rejected') return 'border-rose-300/70 bg-rose-500/10 text-rose-700 dark:border-rose-300/30 dark:bg-rose-300/12 dark:text-rose-200';
+  return 'border-amber-300/70 bg-amber-500/10 text-amber-700 dark:border-amber-300/30 dark:bg-amber-300/12 dark:text-amber-200';
+}
+
 function getEmployeeFeedback(row: SubmissionRow) {
   return row.finance_comment || row.rejection_note || '';
 }
@@ -590,7 +642,15 @@ function getFinanceNotes(row: SubmissionRow) {
   return row.finance_notes || '';
 }
 
-function getColumns(viewer: ViewerRole) {
+function hasStatusStarted(row: SubmissionRow, field: StatusEditableField) {
+  if (field === 'invoice_status') return Boolean(row.invoice_status_started);
+  if (field === 'creator_invoice_received') return Boolean(row.creator_invoice_received_started);
+  if (field === 'payment_received') return Boolean(row.payment_received_started);
+  if (field === 'payment_made') return Boolean(row.payment_made_started);
+  return true;
+}
+
+function getColumns(viewer: ViewerRole, viewerBusinessLine?: 'TM' | 'IM' | null, showImCampaignColumns = false) {
   const sharedEmployeeFields: SheetColumnId[] = [
     'email_address',
     'business_line',
@@ -626,6 +686,89 @@ function getColumns(viewer: ViewerRole) {
   if (viewer === 'employee' || viewer === 'team_lead') {
     const baseColumns: SheetColumnId[] = ['pi'];
     const teamLeadColumns: SheetColumnId[] = viewer === 'team_lead' ? ['owner_name'] : [];
+    if (viewer === 'employee' && viewerBusinessLine === 'TM') {
+      return [
+        ...baseColumns,
+        ...teamLeadColumns,
+        'intake_status',
+        'submitted_at',
+        'invoice_number',
+        'debit_note_number',
+        'rejection_note',
+        'invoice_status',
+        'payment_received',
+        'creator_invoice_received',
+        'payment_made',
+        'closed_status',
+        'email_address',
+        'business_line',
+        'entry_type',
+        'entity_type',
+        'client_type',
+        'agency_name',
+        'agency_trade_name',
+        'brand_name',
+        'brand_trade_name',
+        'gst_number',
+        'address',
+        'city',
+        'state',
+        'country',
+        'pincode',
+        'invoice_type',
+        'bill_due',
+        'creator_name',
+        'creator_brand',
+        'deliverables',
+        'line_amounts',
+        'product_reimbursement_upload',
+        'additional_agency_commission',
+        'additional_information',
+        'actions',
+      ] satisfies SheetColumnId[];
+    }
+
+    if ((viewer === 'employee' || viewer === 'team_lead') && viewerBusinessLine === 'IM') {
+      return [
+        ...baseColumns,
+        ...(showImCampaignColumns ? (['campaign_code', 'campaign_name'] as SheetColumnId[]) : []),
+        'intake_status',
+        ...teamLeadColumns,
+        'submitted_at',
+        'invoice_number',
+        'debit_note_number',
+        'rejection_note',
+        'invoice_status',
+        'payment_received',
+        'creator_invoice_received',
+        'payment_made',
+        'closed_status',
+        'email_address',
+        'business_line',
+        'entity_type',
+        'client_type',
+        'agency_name',
+        'agency_trade_name',
+        'brand_name',
+        'brand_trade_name',
+        'gst_number',
+        'address',
+        'city',
+        'state',
+        'country',
+        'pincode',
+        'invoice_type',
+        'bill_due',
+        'creator_brand',
+        'deliverables',
+        'line_amounts',
+        'product_reimbursement_upload',
+        'additional_agency_commission',
+        'additional_information',
+        'actions',
+      ] satisfies SheetColumnId[];
+    }
+
     return [
       ...baseColumns,
       ...teamLeadColumns,
@@ -682,9 +825,12 @@ function formatAuditDate(value: string | null | undefined) {
 
 function getColumnWidth(
   column: SheetColumnId,
-  collapsedColumns: Record<'invoice_number' | 'debit_note_number', boolean>
+  collapsedColumns: Record<'invoice_number' | 'debit_note_number' | 'campaign_code' | 'campaign_name', boolean>
 ) {
   if ((column === 'invoice_number' || column === 'debit_note_number') && collapsedColumns[column]) {
+    return COLLAPSED_COLUMN_WIDTHS[column];
+  }
+  if ((column === 'campaign_code' || column === 'campaign_name') && collapsedColumns[column]) {
     return COLLAPSED_COLUMN_WIDTHS[column];
   }
 
@@ -692,7 +838,7 @@ function getColumnWidth(
 }
 
 function getStickyLefts(
-  collapsedColumns: Record<'invoice_number' | 'debit_note_number', boolean>
+  collapsedColumns: Record<'invoice_number' | 'debit_note_number' | 'campaign_code' | 'campaign_name', boolean>
 ) {
   return {
     pi: 0,
@@ -795,7 +941,7 @@ function ExpandableText({
           className="absolute bottom-0 right-0 inline-flex h-6 w-6 items-center justify-center rounded-md text-[0.68rem] font-semibold text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground"
           aria-label={expanded ? 'Collapse cell' : 'Expand cell'}
         >
-          {expanded ? '▲' : '▼'}
+          {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>
       ) : null}
     </div>
@@ -836,20 +982,29 @@ function AuditPopover({
     field === 'closed_status' &&
     normalizeText(row.closed_status) === 'open' &&
     Boolean(getFinanceNotes(row).trim());
+  const statusStarted =
+    field === 'invoice_status' ||
+    field === 'creator_invoice_received' ||
+    field === 'payment_received' ||
+    field === 'payment_made'
+      ? hasStatusStarted(row, field)
+      : true;
 
-  const top = rect.bottom + 10;
-  const left = Math.max(12, rect.left - 70);
+    const top = rect.bottom + 10;
+    const left = Math.max(12, rect.left - 70);
+    const clampedTop = typeof window === 'undefined' ? top : Math.min(Math.max(12, top), Math.max(12, window.innerHeight - 292));
+    const clampedLeft = typeof window === 'undefined' ? left : Math.min(Math.max(12, left), Math.max(12, window.innerWidth - 256 - 12));
 
   return createPortal(
     <div
       data-audit-popover="true"
       className={[
-        'fixed z-[9999] w-64 rounded-2xl border p-4 text-left shadow-[0_28px_80px_-38px_rgba(15,74,145,0.45)]',
+          'fixed z-[9999] max-h-[calc(100vh-24px)] w-64 overflow-auto rounded-2xl border p-4 text-left shadow-[0_28px_80px_-38px_rgba(15,74,145,0.45)]',
         isReopenAudit
           ? 'border-rose-300/50 bg-white dark:border-rose-400/35 dark:bg-[#07111d]'
           : 'border-cyan-300/35 bg-white/98 dark:border-cyan-400/28 dark:bg-[#07111d]',
       ].join(' ')}
-      style={{ top, left }}
+        style={{ top: clampedTop, left: clampedLeft }}
     >
       <div
         className={[
@@ -857,17 +1012,35 @@ function AuditPopover({
           isReopenAudit ? 'text-rose-700 dark:text-rose-200' : 'text-cyan-700 dark:text-cyan-200',
         ].join(' ')}
       >
-        {isReopenAudit ? 'Reopen Audit' : 'Status Audit'}
+        {isReopenAudit ? 'Reopen Audit' : statusStarted ? 'Status Audit' : 'Status not started'}
       </div>
       <div className="mt-3 grid gap-3">
-        <div>
-          <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Updated By</div>
-          <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-50">{row.reviewed_by_name || 'Finance Team'}</div>
-        </div>
-        <div>
-          <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Updated At</div>
-          <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-50">{formatAuditDate(row.reviewed_at)}</div>
-        </div>
+        {!statusStarted ? (
+          <>
+            <div className="text-sm leading-5 text-slate-700 dark:text-slate-200">
+              Finance has not started operations on this submission yet.
+            </div>
+            <div>
+              <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Updated By</div>
+              <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-50">—</div>
+            </div>
+            <div>
+              <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Updated At</div>
+              <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-50">—</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Updated By</div>
+              <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-50">{row.reviewed_by_name || 'Finance Team'}</div>
+            </div>
+            <div>
+              <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Updated At</div>
+              <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-50">{formatAuditDate(row.reviewed_at)}</div>
+            </div>
+          </>
+        )}
         {isReopenAudit ? (
           <div>
             <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-rose-600 dark:text-rose-300">Reason</div>
@@ -875,6 +1048,118 @@ function AuditPopover({
           </div>
         ) : null}
       </div>
+    </div>,
+    document.body
+  );
+}
+
+function MasterDataReviewPopover({
+  rect,
+  review,
+  saving,
+  onClose,
+  onApprove,
+  onReject,
+}: {
+  rect: DOMRect;
+  review: MasterDataReviewSummary;
+  saving: boolean;
+  onClose: () => void;
+  onApprove?: () => void;
+  onReject?: () => void;
+}) {
+  useEffect(() => {
+    function handleClose(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.('[data-master-data-popover="true"]')) return;
+      onClose();
+    }
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('mousedown', handleClose);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClose);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [onClose]);
+
+  if (typeof document === 'undefined') return null;
+
+    const top = rect.bottom + 10;
+    const left = Math.max(12, rect.left - 40);
+    const clampedTop = typeof window === 'undefined' ? top : Math.min(Math.max(12, top), Math.max(12, window.innerHeight - 320));
+    const clampedLeft = typeof window === 'undefined' ? left : Math.min(Math.max(12, left), Math.max(12, window.innerWidth - 288 - 12));
+  const statusLabel = review.status === 'approved' ? 'Approved' : review.status === 'rejected' ? 'Ignored' : 'Pending Review';
+
+  return createPortal(
+    <div
+      data-master-data-popover="true"
+        className="fixed z-[9999] max-h-[calc(100vh-24px)] w-72 overflow-auto rounded-2xl border border-cyan-300/35 bg-white/98 p-4 text-left shadow-[0_28px_80px_-38px_rgba(15,74,145,0.45)] dark:border-cyan-400/28 dark:bg-[#07111d]"
+        style={{ top: clampedTop, left: clampedLeft }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-200">
+          Master Data Review
+        </div>
+        <span className={[
+          'inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold',
+          getMasterDataStatusClasses(review.status),
+        ].join(' ')}>
+          {statusLabel}
+        </span>
+      </div>
+      <div className="mt-3 grid gap-3">
+        <div>
+          <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Submitted Value</div>
+          <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-50">{review.submitted_value}</div>
+        </div>
+        {review.submitted_trade_name ? (
+          <div>
+            <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Trade Name</div>
+            <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-50">{review.submitted_trade_name}</div>
+          </div>
+        ) : null}
+        {review.status !== 'pending' ? (
+          <>
+            <div>
+              <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Reviewed By</div>
+              <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-50">{review.reviewed_by_name || 'Finance Team'}</div>
+            </div>
+            <div>
+              <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Reviewed At</div>
+              <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-50">{formatAuditDate(review.reviewed_at)}</div>
+            </div>
+          </>
+        ) : null}
+        {review.status === 'rejected' && review.rejection_reason ? (
+          <div>
+            <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-rose-600 dark:text-rose-300">Reason</div>
+            <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-50">{review.rejection_reason}</div>
+          </div>
+        ) : null}
+      </div>
+      {review.status === 'pending' ? (
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onReject}
+            disabled={saving}
+            className="inline-flex h-8 items-center rounded-lg border border-rose-300/60 px-3 text-sm font-medium text-rose-700 transition-none hover:bg-rose-500/10 disabled:opacity-60 dark:border-rose-300/30 dark:text-rose-200"
+          >
+            {saving ? 'Working...' : 'Ignore'}
+          </button>
+          <button
+            type="button"
+            onClick={onApprove}
+            disabled={saving}
+            className="inline-flex h-8 items-center rounded-lg bg-[linear-gradient(135deg,var(--primary-strong),var(--accent))] px-3 text-sm font-semibold text-primary-foreground transition-none hover:brightness-105 disabled:opacity-60"
+          >
+            {saving ? 'Working...' : 'Approve'}
+          </button>
+        </div>
+      ) : null}
     </div>,
     document.body
   );
@@ -1200,7 +1485,7 @@ function BadgeSelectCell({
           title={saving ? 'Saving...' : label}
         >
           <span className="truncate">{saving ? 'Saving...' : truncateStatusLabel(label)}</span>
-          {editable ? <span className="text-[10px] font-semibold opacity-70">v</span> : null}
+          {editable ? <span className="inline-flex h-4 w-4 items-center justify-center text-current opacity-70">{active ? <ChevronUp size={10} /> : <ChevronDown size={10} />}</span> : null}
         </button>
         {editable && active && menuRect && typeof document !== 'undefined'
           ? createPortal(
@@ -1226,7 +1511,7 @@ function BadgeSelectCell({
                   ].join(' ')}
                 >
                   <span className="truncate">{option.label}</span>
-                  {selected ? <span className="ml-2 text-[10px] text-primary">•</span> : null}
+                  {selected ? <Check size={10} className="ml-2 text-primary" /> : null}
                 </button>
               );
             })}
@@ -1246,7 +1531,7 @@ function BadgeSelectCell({
           aria-label="Unlock closed submission"
           title="Unlock closed submission"
         >
-          <span className="text-[11px] leading-none">🔒</span>
+          <span className="text-[11px] leading-none">ðŸ”’</span>
         </button>
       ) : null}
       {onOpenAudit ? (
@@ -1274,7 +1559,6 @@ function BadgeSelectCell({
 
 const MemoDataCell = memo(function MemoDataCell({
   rowRef,
-  rowIndex,
   columnIndex,
   sticky,
   rowClosed,
@@ -1291,7 +1575,6 @@ const MemoDataCell = memo(function MemoDataCell({
   renderContent,
 }: {
   rowRef: SubmissionRow;
-  rowIndex: number;
   columnIndex: number;
   sticky: boolean;
   rowClosed: boolean;
@@ -1302,22 +1585,22 @@ const MemoDataCell = memo(function MemoDataCell({
   flash: FlashState | null;
   isSaving: boolean;
   registerCellRef: (key: string, node: HTMLTableCellElement | null) => void;
-  onFocusCell: (rowIndex: number, columnIndex: number) => void;
-  onClickCell: (rowIndex: number, columnIndex: number) => void;
-  onKeyDownCell: (event: ReactKeyboardEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) => void;
+  onFocusCell: (rowId: string, columnIndex: number) => void;
+  onClickCell: (rowId: string, columnIndex: number) => void;
+  onKeyDownCell: (event: ReactKeyboardEvent<HTMLTableCellElement>, rowId: string, columnIndex: number) => void;
   renderContent: () => ReactNode;
 }) {
   return (
     <td
-      ref={(node) => registerCellRef(`${rowIndex}:${columnIndex}`, node)}
-      data-sheet-cell={`${rowIndex}:${columnIndex}`}
+      ref={(node) => registerCellRef(`${rowRef.id}:${columnIndex}`, node)}
+      data-sheet-cell={`${rowRef.id}:${columnIndex}`}
       data-row-id={rowRef.id}
       data-active-editor={isActiveEditor ? 'true' : undefined}
       data-copied={isCopied ? 'true' : undefined}
       tabIndex={0}
-      onFocus={() => onFocusCell(rowIndex, columnIndex)}
-      onClick={() => onClickCell(rowIndex, columnIndex)}
-      onKeyDown={(event) => onKeyDownCell(event, rowIndex, columnIndex)}
+      onFocus={() => onFocusCell(rowRef.id, columnIndex)}
+      onClick={() => onClickCell(rowRef.id, columnIndex)}
+      onKeyDown={(event) => onKeyDownCell(event, rowRef.id, columnIndex)}
       className={[
         'relative h-9 max-h-10 border-b border-r border-border/50 px-2.5 py-1 align-middle text-[12px] leading-4 text-foreground outline-none',
         isActiveEditor ? 'z-50 overflow-visible' : 'overflow-hidden',
@@ -1352,7 +1635,6 @@ const MemoDataCell = memo(function MemoDataCell({
   );
 }, (prev, next) =>
   prev.rowRef === next.rowRef &&
-  prev.rowIndex === next.rowIndex &&
   prev.columnIndex === next.columnIndex &&
   prev.sticky === next.sticky &&
   prev.rowClosed === next.rowClosed &&
@@ -1371,7 +1653,10 @@ export function SubmissionTable({
   emptyLabel,
   getActionLabel,
   viewer = 'employee',
+  viewerBusinessLine,
   onFinanceUpdate,
+  masterDataReviewsBySubmission,
+  onMasterDataReviewAction,
 }: {
   rows: SubmissionRow[];
   onOpen?: (id: string, row: SubmissionRow) => void;
@@ -1379,21 +1664,30 @@ export function SubmissionTable({
   emptyLabel?: string;
   getActionLabel?: (row: SubmissionRow) => string;
   viewer?: ViewerRole;
+  viewerBusinessLine?: 'TM' | 'IM' | null;
   onFinanceUpdate?: (row: SubmissionRow, field: FinanceEditableField, value: string) => Promise<FinanceUpdateResult>;
+  masterDataReviewsBySubmission?: Record<string, Partial<Record<MasterDataCellKey, MasterDataReviewSummary>>>;
+  onMasterDataReviewAction?: (review: MasterDataReviewSummary, action: 'approve' | 'reject') => Promise<MasterDataActionResult>;
 }) {
   void columns;
-  const activeColumns = useMemo(() => getColumns(viewer), [viewer]);
+  const [showImCampaignColumns, setShowImCampaignColumns] = useState(false);
+  const activeColumns = useMemo(() => getColumns(viewer, viewerBusinessLine, showImCampaignColumns), [viewer, viewerBusinessLine, showImCampaignColumns]);
   const isFinanceViewer = viewer === 'finance' || viewer === 'admin';
-  const [collapsedColumns, setCollapsedColumns] = useState<Record<'invoice_number' | 'debit_note_number', boolean>>({
+  const [collapsedColumns, setCollapsedColumns] = useState<Record<'invoice_number' | 'debit_note_number' | 'campaign_code' | 'campaign_name', boolean>>({
     invoice_number: false,
     debit_note_number: false,
+    campaign_code: false,
+    campaign_name: false,
   });
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [flash, setFlash] = useState<FlashState | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [auditPopover, setAuditPopover] = useState<{ key: string; rect: DOMRect; row: SubmissionRow; field: FinanceEditableField } | null>(null);
-  const [focusedCell, setFocusedCell] = useState<{ rowIndex: number; columnIndex: number } | null>(null);
-  const [activeEditor, setActiveEditor] = useState<{ rowIndex: number; columnIndex: number } | null>(null);
+  const [masterDataPopover, setMasterDataPopover] = useState<{ rect: DOMRect; review: MasterDataReviewSummary } | null>(null);
+  const [masterDataSavingId, setMasterDataSavingId] = useState<string | null>(null);
+  const [expandedPiGroups, setExpandedPiGroups] = useState<string[]>([]);
+  const [focusedCell, setFocusedCell] = useState<{ rowId: string; columnIndex: number } | null>(null);
+  const [activeEditor, setActiveEditor] = useState<{ rowId: string; columnIndex: number } | null>(null);
   const [reopenDialog, setReopenDialog] = useState<{ row: SubmissionRow; rowIndex: number; columnIndex: number } | null>(null);
   const [reopenReason, setReopenReason] = useState('');
   const [reopenError, setReopenError] = useState('');
@@ -1407,11 +1701,13 @@ export function SubmissionTable({
     try {
       const raw = window.localStorage.getItem('submission-table-collapsed-columns');
       if (!raw) return;
-      const parsed = JSON.parse(raw) as Partial<Record<'invoice_number' | 'debit_note_number', boolean>>;
-      setCollapsedColumns({
-        invoice_number: Boolean(parsed.invoice_number),
-        debit_note_number: Boolean(parsed.debit_note_number),
-      });
+        const parsed = JSON.parse(raw) as Partial<Record<'invoice_number' | 'debit_note_number' | 'campaign_code' | 'campaign_name', boolean>>;
+        setCollapsedColumns({
+          invoice_number: Boolean(parsed.invoice_number),
+          debit_note_number: Boolean(parsed.debit_note_number),
+          campaign_code: Boolean(parsed.campaign_code),
+          campaign_name: Boolean(parsed.campaign_name),
+        });
     } catch {
       // ignore invalid local preference state
     }
@@ -1436,11 +1732,138 @@ export function SubmissionTable({
 
   useEffect(() => {
     if (!activeEditor) return undefined;
-    const cell = cellRefs.current.get(`${activeEditor.rowIndex}:${activeEditor.columnIndex}`);
+    const cell = cellRefs.current.get(`${activeEditor.rowId}:${activeEditor.columnIndex}`);
     const target = cell?.querySelector<HTMLElement>('input, button, textarea, select');
     target?.focus();
     return undefined;
   }, [activeEditor]);
+
+  useEffect(() => {
+    if (!showImCampaignColumns) return undefined;
+    function handleOutside(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      if (viewportRef.current?.contains(target as Node)) return;
+      setShowImCampaignColumns(false);
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [showImCampaignColumns]);
+
+  useEffect(() => {
+    if (expandedPiGroups.length === 0) return undefined;
+    function handleOutside(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.('[data-pi-group-toggle="true"]')) return;
+      if (target?.closest?.('[data-pi-group-panel="true"]')) return;
+      setExpandedPiGroups([]);
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [expandedPiGroups]);
+
+  const groupedPiData = useMemo(() => {
+    const rowMap = new Map(rows.map((entry) => [entry.id, entry]));
+    const rootCache = new Map<string, string>();
+
+    const getRootId = (row: SubmissionRow) => {
+      const cached = rootCache.get(row.id);
+      if (cached) return cached;
+      let current = row;
+      const seen = new Set<string>([row.id]);
+      while (current.previous_submission_id && rowMap.has(current.previous_submission_id) && !seen.has(current.previous_submission_id)) {
+        const next = rowMap.get(current.previous_submission_id);
+        if (!next) break;
+        current = next;
+        seen.add(current.id);
+      }
+      rootCache.set(row.id, current.id);
+      return current.id;
+    };
+
+    const groups = new Map<string, Array<{ index: number; row: SubmissionRow }>>();
+    rows.forEach((row, index) => {
+      const rootId = getRootId(row);
+      const nextEntries = groups.get(rootId) ?? [];
+      nextEntries.push({ index, row });
+      groups.set(rootId, nextEntries);
+    });
+
+    const groupIdByRowId: Record<string, string> = {};
+    const expandableGroupIds = new Set<string>();
+    const sortedGroups = Array.from(groups.entries()).sort(
+      (a, b) => Math.min(...a[1].map((entry) => entry.index)) - Math.min(...b[1].map((entry) => entry.index))
+    );
+
+    const groupedRows = sortedGroups.map(([groupId, entries]) => {
+      const members = entries.map((entry) => entry.row);
+      const memberIds = new Set(members.map((entry) => entry.id));
+      const newerRefIds = new Set(
+        members
+          .map((entry) => entry.previous_submission_id)
+          .filter((entry): entry is string => Boolean(entry && memberIds.has(entry)))
+      );
+      const latest =
+        members.find((entry) => !newerRefIds.has(entry.id)) ??
+        [...members].sort((a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime())[0];
+      const history = [...members]
+        .filter((entry) => entry.id != latest.id)
+        .sort((a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime());
+      if (history.length > 0) {
+        expandableGroupIds.add(groupId);
+      }
+      groupIdByRowId[latest.id] = groupId;
+      for (const historyRow of history) {
+        groupIdByRowId[historyRow.id] = groupId;
+      }
+      return { groupId, latest, history };
+    });
+
+    return { groupedRows, groupIdByRowId, expandableGroupIds };
+  }, [rows]);
+
+  const expandedPiGroupSet = useMemo(() => new Set(expandedPiGroups), [expandedPiGroups]);
+
+  const { renderItems, visibleDataRows } = useMemo(() => {
+    const renderItems: Array<{ kind: 'data'; row: SubmissionRow; groupId: string; isHistory: boolean; rowIndex: number }> = [];
+    const visibleDataRows: SubmissionRow[] = [];
+    let rowIndex = 0;
+
+    for (const group of groupedPiData.groupedRows) {
+      visibleDataRows.push(group.latest);
+      renderItems.push({
+        kind: 'data',
+        row: group.latest,
+        groupId: group.groupId,
+        isHistory: false,
+        rowIndex,
+      });
+      rowIndex += 1;
+
+      if (expandedPiGroupSet.has(group.groupId)) {
+        for (const historyRow of group.history) {
+          visibleDataRows.push(historyRow);
+          renderItems.push({
+            kind: 'data',
+            row: historyRow,
+            groupId: group.groupId,
+            isHistory: true,
+            rowIndex,
+          });
+          rowIndex += 1;
+        }
+      }
+    }
+
+    return { renderItems, visibleDataRows };
+  }, [expandedPiGroupSet, groupedPiData]);
+
+  const visibleRowIndexById = useMemo(() => {
+    const map = new Map<string, number>();
+    visibleDataRows.forEach((row, index) => {
+      map.set(row.id, index);
+    });
+    return map;
+  }, [visibleDataRows]);
 
   const copyCell = useCallback(async (key: string, text: string) => {
     const value = text.trim();
@@ -1576,6 +1999,30 @@ export function SubmissionTable({
     setAuditPopover({ key: `${row.id}:${field}`, rect, row, field });
   }
 
+
+  function openMasterDataPopover(review: MasterDataReviewSummary, event: ReactMouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    setMasterDataPopover({ rect, review });
+  }
+
+  async function handleMasterDataPopoverAction(action: 'approve' | 'reject') {
+    if (!masterDataPopover || !onMasterDataReviewAction) return;
+    setMasterDataSavingId(masterDataPopover.review.id);
+    const result = await onMasterDataReviewAction(masterDataPopover.review, action);
+    setMasterDataSavingId(null);
+    if (result.success && result.review) {
+      setMasterDataPopover((current) => (current ? { ...current, review: result.review! } : current));
+    }
+  }
+
+  function togglePiGroup(groupId: string) {
+    if (!groupedPiData.expandableGroupIds.has(groupId)) return;
+    setExpandedPiGroups((current) =>
+      current.includes(groupId) ? current.filter((entry) => entry !== groupId) : [...current, groupId]
+    );
+  }
+
   async function handleReopenClosedRow() {
     if (!reopenDialog || !onFinanceUpdate) return;
     const note = reopenReason.trim();
@@ -1636,10 +2083,12 @@ export function SubmissionTable({
   }
 
   const focusCell = useCallback((rowIndex: number, columnIndex: number) => {
-    const nextRow = Math.max(0, Math.min(rows.length - 1, rowIndex));
+    const nextRow = Math.max(0, Math.min(visibleDataRows.length - 1, rowIndex));
     const nextColumn = Math.max(0, Math.min(activeColumns.length - 1, columnIndex));
-    setFocusedCell({ rowIndex: nextRow, columnIndex: nextColumn });
-    const cell = cellRefs.current.get(`${nextRow}:${nextColumn}`);
+    const targetRow = visibleDataRows[nextRow];
+    if (!targetRow) return;
+    setFocusedCell({ rowId: targetRow.id, columnIndex: nextColumn });
+    const cell = cellRefs.current.get(`${targetRow.id}:${nextColumn}`);
     const viewport = viewportRef.current;
     cell?.focus({ preventScroll: true });
     if (!cell || !viewport) return;
@@ -1662,32 +2111,34 @@ export function SubmissionTable({
     } else if (cellRect.bottom > viewportRect.bottom - 4) {
       viewport.scrollTop += cellRect.bottom - (viewportRect.bottom - 4);
     }
-  }, [activeColumns.length, collapsedColumns, rows.length]);
+  }, [activeColumns.length, collapsedColumns, visibleDataRows]);
 
   const registerCellRef = useCallback((key: string, node: HTMLTableCellElement | null) => {
     if (node) cellRefs.current.set(key, node);
     else cellRefs.current.delete(key);
   }, []);
 
-  const handleCellFocus = useCallback((rowIndex: number, columnIndex: number) => {
-    setFocusedCell({ rowIndex, columnIndex });
+  const handleCellFocus = useCallback((rowId: string, columnIndex: number) => {
+    setFocusedCell({ rowId, columnIndex });
   }, []);
 
-  const handleCellClick = useCallback((rowIndex: number, columnIndex: number) => {
-    setFocusedCell({ rowIndex, columnIndex });
+  const handleCellClick = useCallback((rowId: string, columnIndex: number) => {
+    setFocusedCell({ rowId, columnIndex });
     setActiveEditor((current) =>
-      current && (current.rowIndex !== rowIndex || current.columnIndex !== columnIndex) ? null : current
+      current && (current.rowId !== rowId || current.columnIndex !== columnIndex) ? null : current
     );
   }, []);
 
-  const requestEditorOpen = useCallback((row: SubmissionRow, rowIndex: number, columnIndex: number) => {
+  const requestEditorOpen = useCallback((row: SubmissionRow, columnIndex: number) => {
     if (isClosedRow(row)) return;
-    setActiveEditor({ rowIndex, columnIndex });
+    setActiveEditor({ rowId: row.id, columnIndex });
   }, []);
 
-  const handleCellKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTableCellElement>, rowIndex: number, columnIndex: number) => {
+  const handleCellKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTableCellElement>, rowId: string, columnIndex: number) => {
+    const rowIndex = visibleRowIndexById.get(rowId);
+    if (rowIndex == null) return;
     const column = activeColumns[columnIndex];
-    const row = rows[rowIndex];
+    const row = visibleDataRows[rowIndex];
     const isEditableStatusCell =
       isFinanceViewer &&
       (
@@ -1722,20 +2173,24 @@ export function SubmissionTable({
     } else if (event.key === 'Enter' && isEditableStatusCell) {
       event.preventDefault();
       if (row && !isClosedRow(row)) {
-        setActiveEditor({ rowIndex, columnIndex });
+        setActiveEditor({ rowId: row.id, columnIndex });
       }
     } else if (event.key === 'Escape') {
       event.preventDefault();
       setActiveEditor(null);
       focusCell(rowIndex, columnIndex);
     }
-  }, [activeColumns, focusCell, isFinanceViewer, rows]);
+  }, [activeColumns, focusCell, isFinanceViewer, visibleDataRows, visibleRowIndexById]);
 
-  const toggleColumnCollapse = useCallback((column: 'invoice_number' | 'debit_note_number') => {
+  const toggleColumnCollapse = useCallback((column: 'invoice_number' | 'debit_note_number' | 'campaign_code' | 'campaign_name') => {
     setCollapsedColumns((current) => ({
       ...current,
       [column]: !current[column],
     }));
+  }, []);
+
+  const toggleCampaignColumns = useCallback(() => {
+    setShowImCampaignColumns((current) => !current);
   }, []);
 
   const handleViewportKeyDownCapture = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -1754,15 +2209,17 @@ export function SubmissionTable({
       return;
     }
 
-    const row = rows[focusedCell.rowIndex];
+    const rowIndex = visibleRowIndexById.get(focusedCell.rowId);
+    if (rowIndex == null) return;
+    const row = visibleDataRows[rowIndex];
     const column = activeColumns[focusedCell.columnIndex];
     if (!row || !column) return;
 
     event.preventDefault();
     void copyCell(`${row.id}:${column}`, getCellCopyText(column, row));
-  }, [activeColumns, copyCell, focusedCell, getCellCopyText, rows]);
+  }, [activeColumns, copyCell, focusedCell, getCellCopyText, visibleDataRows, visibleRowIndexById]);
 
-  function renderCell(column: SheetColumnId, row: SubmissionRow, rowIndex: number, columnIndex: number) {
+  function renderCell(column: SheetColumnId, row: SubmissionRow, rowIndex: number, columnIndex: number, isHistoryRow = false) {
     const cellKey = `${row.id}:${column}`;
     const creatorData = getCreatorData(row);
     const isCopied = copiedKey === cellKey;
@@ -1775,23 +2232,50 @@ export function SubmissionTable({
       case 'pi':
         {
           const displayPi = formatPiNumber(row);
+          const piVersionState = row.version_status ?? (isHistoryRow ? 'superseded' : row.previous_submission_id ? 'resubmitted' : 'original');
           const piClasses =
-            row.version_status === 'superseded'
+            piVersionState === 'superseded'
               ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-100'
-              : row.version_status === 'resubmitted'
+              : piVersionState === 'resubmitted'
                 ? 'border-blue-200 bg-blue-100 text-blue-700 dark:border-blue-300/20 dark:bg-blue-300/12 dark:text-blue-100'
                 : displayPi === 'PI Not Required'
-                ? 'border-cyan-300/80 bg-cyan-50 text-cyan-800 dark:border-cyan-300/20 dark:bg-cyan-300/10 dark:text-cyan-100'
-                : 'border-slate-300/80 bg-slate-100 text-slate-700 dark:border-slate-300/12 dark:bg-slate-200/10 dark:text-slate-100';
-        return (
-          <div className="relative" onDoubleClick={() => void copyCell(cellKey, displayPi)} title={getPiTitle(row)}>
-            <CopyNotice active={isCopied} />
-            <span className={['inline-flex h-6 max-w-full items-center rounded-md border px-2 text-xs font-medium', piClasses].join(' ')}>
-              {displayPi}
-            </span>
-          </div>
-        );
-        }
+                  ? 'border-cyan-300/80 bg-cyan-50 text-cyan-800 dark:border-cyan-300/20 dark:bg-cyan-300/10 dark:text-cyan-100'
+                  : 'border-slate-300/80 bg-slate-100 text-slate-700 dark:border-slate-300/12 dark:bg-slate-200/10 dark:text-slate-100';
+          const groupId = groupedPiData.groupIdByRowId[row.id] || row.id;
+          const isExpanded = expandedPiGroupSet.has(groupId);
+          const canExpand = groupedPiData.expandableGroupIds.has(groupId);
+          return (
+              <div className="relative flex items-center gap-1.5" title={getPiTitle(row)}>
+                <CopyNotice active={isCopied} />
+                <button
+                  type="button"
+                  data-pi-group-toggle="true"
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (!canExpand) return;
+                    togglePiGroup(groupId);
+                  }}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    void copyCell(cellKey, displayPi);
+                  }}
+                  className={[
+                    'inline-flex h-6 max-w-full items-center gap-1 rounded-md border px-2 text-xs font-medium transition-none',
+                    piClasses,
+                    canExpand ? 'cursor-pointer hover:ring-1 hover:ring-primary/35' : 'cursor-default',
+                  ].join(' ')}
+                >
+                  <span className="truncate whitespace-nowrap">{displayPi}</span>
+                  {canExpand ? (
+                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm text-current">
+                      {isExpanded ? <ChevronLeft size={10} /> : <ChevronRight size={10} />}
+                    </span>
+                  ) : null}
+                </button>
+              </div>
+            );
+          }
       case 'submitted_at':
         return (
           <div
@@ -1816,12 +2300,31 @@ export function SubmissionTable({
         const label = renderStatusLabel(field, rawValue);
         const editable = isFinanceViewer && Boolean(onFinanceUpdate) && !isClosedRow(row);
         if (viewer === 'employee' || viewer === 'team_lead') {
+          const shouldShowAuditIcon =
+            field === 'invoice_status' ||
+            field === 'creator_invoice_received' ||
+            field === 'payment_received' ||
+            field === 'payment_made';
           return (
-            <div className="max-w-full" onDoubleClick={() => void copyCell(cellKey, label)} title={label}>
+            <div className="flex max-w-full items-center gap-1.5" onDoubleClick={() => void copyCell(cellKey, label || '-') } title={label || 'Status not started'}>
               <CopyNotice active={isCopied} />
               <span className={['block truncate text-sm font-medium', getStatusTextTone(field, rawValue, viewer)].join(' ')}>
-                {label}
+                {label || '—'}
               </span>
+              {shouldShowAuditIcon ? (
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => openAudit(row, field, event)}
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-md text-foreground transition-none hover:bg-muted/40"
+                  aria-label="Open audit details"
+                  title="Status audit"
+                >
+                  <span className="inline-flex h-3 w-3 items-center justify-center rounded-full border border-current text-[0.5rem] font-medium leading-none opacity-85">
+                    i
+                  </span>
+                </button>
+              ) : null}
             </div>
           );
         }
@@ -1835,10 +2338,10 @@ export function SubmissionTable({
             value={rawValue}
             saving={isSaving}
             copied={isCopied}
-            active={activeEditor?.rowIndex === rowIndex && activeEditor?.columnIndex === columnIndex}
+            active={activeEditor?.rowId === row.id && activeEditor?.columnIndex === columnIndex}
             onCopy={() => void copyCell(cellKey, label)}
             onChange={(value) => updateFinanceValue(row, field, value)}
-            onActivate={() => requestEditorOpen(row, rowIndex, columnIndex)}
+            onActivate={() => requestEditorOpen(row, columnIndex)}
             onClose={() => setActiveEditor(null)}
             locked={field === 'closed_status' && isFinanceViewer && isClosedRow(row)}
             onUnlock={
@@ -1864,14 +2367,90 @@ export function SubmissionTable({
         return commonText(fieldValue(row.entity_type));
       case 'client_type':
         return commonText(fieldValue(row.client_type));
-      case 'agency_name':
-        return commonText(fieldValue(row.agency_name));
-      case 'agency_trade_name':
-        return commonText(fieldValue(row.agency_trade_name));
-      case 'brand_name':
-        return commonText(fieldValue(row.brand_name));
-      case 'brand_trade_name':
-        return commonText(fieldValue(row.brand_trade_name));
+      case 'agency_name': {
+        const value = fieldValue(row.agency_name);
+        const review = masterDataReviewsBySubmission?.[row.id]?.['agency_name'];
+        return (
+          <div className="flex items-start gap-1.5">
+            <div className="min-w-0 flex-1">{commonText(value)}</div>
+            {review ? (
+              <button
+                type="button"
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => openMasterDataPopover(review, event)}
+                className={['inline-flex h-5 w-5 items-center justify-center rounded-md border transition-none hover:bg-muted/40', getMasterDataStatusClasses(review.status)].join(' ')}
+                aria-label="Open master data review"
+                title={review.status === 'pending' ? 'Pending master data review' : review.status === 'approved' ? 'Approved master data value' : 'Ignored master data value'}
+              >
+                {review.status === 'approved' ? <CheckCircle2 size={12} /> : review.status === 'rejected' ? <CircleX size={12} /> : <Clock3 size={12} />}
+              </button>
+            ) : null}
+          </div>
+        );
+      }
+      case 'agency_trade_name': {
+        const value = fieldValue(row.agency_trade_name);
+        const review = masterDataReviewsBySubmission?.[row.id]?.['agency_trade_name'];
+        return (
+          <div className="flex items-start gap-1.5">
+            <div className="min-w-0 flex-1">{commonText(value)}</div>
+            {review ? (
+              <button
+                type="button"
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => openMasterDataPopover(review, event)}
+                className={['inline-flex h-5 w-5 items-center justify-center rounded-md border transition-none hover:bg-muted/40', getMasterDataStatusClasses(review.status)].join(' ')}
+                aria-label="Open master data review"
+                title={review.status === 'pending' ? 'Pending master data review' : review.status === 'approved' ? 'Approved master data value' : 'Ignored master data value'}
+              >
+                {review.status === 'approved' ? <CheckCircle2 size={12} /> : review.status === 'rejected' ? <CircleX size={12} /> : <Clock3 size={12} />}
+              </button>
+            ) : null}
+          </div>
+        );
+      }
+      case 'brand_name': {
+        const value = fieldValue(row.brand_name);
+        const review = masterDataReviewsBySubmission?.[row.id]?.['brand_name'];
+        return (
+          <div className="flex items-start gap-1.5">
+            <div className="min-w-0 flex-1">{commonText(value)}</div>
+            {review ? (
+              <button
+                type="button"
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => openMasterDataPopover(review, event)}
+                className={['inline-flex h-5 w-5 items-center justify-center rounded-md border transition-none hover:bg-muted/40', getMasterDataStatusClasses(review.status)].join(' ')}
+                aria-label="Open master data review"
+                title={review.status === 'pending' ? 'Pending master data review' : review.status === 'approved' ? 'Approved master data value' : 'Ignored master data value'}
+              >
+                {review.status === 'approved' ? <CheckCircle2 size={12} /> : review.status === 'rejected' ? <CircleX size={12} /> : <Clock3 size={12} />}
+              </button>
+            ) : null}
+          </div>
+        );
+      }
+      case 'brand_trade_name': {
+        const value = fieldValue(row.brand_trade_name);
+        const review = masterDataReviewsBySubmission?.[row.id]?.['brand_trade_name'];
+        return (
+          <div className="flex items-start gap-1.5">
+            <div className="min-w-0 flex-1">{commonText(value)}</div>
+            {review ? (
+              <button
+                type="button"
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => openMasterDataPopover(review, event)}
+                className={['inline-flex h-5 w-5 items-center justify-center rounded-md border transition-none hover:bg-muted/40', getMasterDataStatusClasses(review.status)].join(' ')}
+                aria-label="Open master data review"
+                title={review.status === 'pending' ? 'Pending master data review' : review.status === 'approved' ? 'Approved master data value' : 'Ignored master data value'}
+              >
+                {review.status === 'approved' ? <CheckCircle2 size={12} /> : review.status === 'rejected' ? <CircleX size={12} /> : <Clock3 size={12} />}
+              </button>
+            ) : null}
+          </div>
+        );
+      }
       case 'gst_number':
         return commonText(fieldValue(row.gst_number));
       case 'address':
@@ -1888,8 +2467,30 @@ export function SubmissionTable({
         return commonText(fieldValue(row.invoice_type));
       case 'bill_due':
         return commonText(fieldValue(row.bill_due));
-      case 'creator_name':
-        return commonText(creatorData.creatorNames);
+      case 'creator_name': {
+        const value = creatorData.creatorNames;
+        const review = masterDataReviewsBySubmission?.[row.id]?.creator_name;
+        return (
+          <div className="flex items-start gap-1.5">
+            <div className="min-w-0 flex-1">{commonText(value)}</div>
+            {review ? (
+              <button
+                type="button"
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => openMasterDataPopover(review, event)}
+                className={[
+                  'inline-flex h-5 w-5 items-center justify-center rounded-md border transition-none hover:bg-muted/40',
+                  getMasterDataStatusClasses(review.status),
+                ].join(' ')}
+                aria-label="Open master data review"
+                title={review.status === 'pending' ? 'Pending master data review' : review.status === 'approved' ? 'Approved master data value' : 'Ignored master data value'}
+              >
+                {review.status === 'approved' ? <CheckCircle2 size={12} /> : review.status === 'rejected' ? <CircleX size={12} /> : <Clock3 size={12} />}
+              </button>
+            ) : null}
+          </div>
+        );
+      }
       case 'creator_brand':
         return commonText(creatorData.creatorBrands);
       case 'deliverables':
@@ -1928,8 +2529,8 @@ export function SubmissionTable({
             copied={isCopied}
             editable
             onCopy={() => void copyCell(cellKey, feedback)}
-            active={activeEditor?.rowIndex === rowIndex && activeEditor?.columnIndex === columnIndex}
-            onActivate={() => requestEditorOpen(row, rowIndex, columnIndex)}
+            active={activeEditor?.rowId === row.id && activeEditor?.columnIndex === columnIndex}
+            onActivate={() => requestEditorOpen(row, columnIndex)}
             onClose={() => setActiveEditor(null)}
           />
         ) : commonText(feedback);
@@ -1956,10 +2557,10 @@ export function SubmissionTable({
             value={fieldValue(row[field])}
             copied={isCopied}
             saving={isSaving}
-            active={!isClosedRow(row) && activeEditor?.rowIndex === rowIndex && activeEditor?.columnIndex === columnIndex}
+            active={!isClosedRow(row) && activeEditor?.rowId === row.id && activeEditor?.columnIndex === columnIndex}
             collapsed={collapsedColumns[field]}
             onCopy={() => void copyCell(cellKey, fieldValue(row[field]))}
-            onActivate={() => requestEditorOpen(row, rowIndex, columnIndex)}
+            onActivate={() => requestEditorOpen(row, columnIndex)}
             onCancel={() => setActiveEditor(null)}
             onSave={async (value) => {
               await updateFinanceValue(row, field, value);
@@ -1981,8 +2582,8 @@ export function SubmissionTable({
             copied={isCopied}
             editable
             onCopy={() => void copyCell(cellKey, getFinanceNotes(row))}
-            active={activeEditor?.rowIndex === rowIndex && activeEditor?.columnIndex === columnIndex}
-            onActivate={() => requestEditorOpen(row, rowIndex, columnIndex)}
+            active={activeEditor?.rowId === row.id && activeEditor?.columnIndex === columnIndex}
+            onActivate={() => requestEditorOpen(row, columnIndex)}
             onClose={() => setActiveEditor(null)}
           />
         ) : commonText(fieldValue(getFinanceNotes(row)));
@@ -2029,8 +2630,14 @@ export function SubmissionTable({
               {activeColumns.map((column) => (
                 (() => {
                   const columnWidth = getColumnWidth(column, collapsedColumns);
-                  const isCollapsed = (column === 'invoice_number' || column === 'debit_note_number') && collapsedColumns[column];
-                  const canCollapse = column === 'invoice_number' || column === 'debit_note_number';
+                    const isCollapsed =
+                      (column === 'invoice_number' || column === 'debit_note_number' || column === 'campaign_code' || column === 'campaign_name') &&
+                      collapsedColumns[column];
+                    const canCollapse =
+                      column === 'invoice_number' ||
+                      column === 'debit_note_number' ||
+                      column === 'campaign_code' ||
+                      column === 'campaign_name';
 
                   return (
                 <th
@@ -2050,16 +2657,26 @@ export function SubmissionTable({
                 >
                   <div className="flex items-center justify-between gap-1">
                     <span className="truncate leading-[1.05]">
-                      {isCollapsed && canCollapse ? (
-                        column === 'invoice_number' ? 'Inv' : 'Debit'
-                      ) : column === 'invoice_number' ? (
-                        <>Invoice<br />No.</>
-                      ) : column === 'debit_note_number' ? (
-                        <>Debit<br />No.</>
-                      ) : column === 'product_reimbursement_upload' ? (
-                        <>Product<br />Reimbursement</>
-                      ) : column === 'creator_invoice_received' ? (
-                        <>Creator<br />Invoice</>
+                        {isCollapsed && canCollapse ? (
+                          column === 'invoice_number'
+                            ? 'Inv'
+                            : column === 'debit_note_number'
+                              ? 'Debit'
+                              : column === 'campaign_code'
+                                ? 'Code'
+                                : 'Name'
+                        ) : column === 'invoice_number' ? (
+                          <>Invoice<br />No.</>
+                        ) : column === 'debit_note_number' ? (
+                          <>Debit<br />No.</>
+                        ) : column === 'campaign_code' ? (
+                          <>Campaign<br />Code</>
+                        ) : column === 'campaign_name' ? (
+                          <>Campaign<br />Name</>
+                        ) : column === 'product_reimbursement_upload' ? (
+                          <>Product<br />Reimbursement</>
+                        ) : column === 'creator_invoice_received' ? (
+                          <>Creator<br />Invoice</>
                       ) : column === 'payment_received' ? (
                         <>Payment<br />Received</>
                       ) : column === 'payment_made' ? (
@@ -2068,45 +2685,59 @@ export function SubmissionTable({
                         <>Resubmission<br />Note</>
                       ) : column === 'finance_notes' ? (
                         <>Finance<br />Notes</>
+                      ) : column === 'creator_brand' && viewer === 'employee' && viewerBusinessLine === 'IM' ? (
+                        <>Campaign<br />Brand</>
                       ) : (
                         COLUMN_TITLES[column]
                       )}
                     </span>
-                    {canCollapse ? (
-                      <button
-                        type="button"
-                        onClick={() => toggleColumnCollapse(column)}
-                        className="inline-flex h-4 w-4 items-center justify-center rounded-sm text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground"
-                        aria-label={isCollapsed ? 'Expand column' : 'Collapse column'}
-                      >
-                        {isCollapsed ? <ChevronRight size={11} /> : <ChevronLeft size={11} />}
-                      </button>
-                    ) : null}
-                  </div>
-                </th>
+                      {canCollapse ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleColumnCollapse(column)}
+                          className="inline-flex h-4 w-4 items-center justify-center rounded-sm text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground"
+                          aria-label={isCollapsed ? 'Expand column' : 'Collapse column'}
+                        >
+                          {isCollapsed ? <ChevronRight size={11} /> : <ChevronLeft size={11} />}
+                        </button>
+                      ) : null}
+                      {column === 'pi' && viewer === 'employee' && viewerBusinessLine === 'IM' ? (
+                        <button
+                          type="button"
+                          onClick={toggleCampaignColumns}
+                          className="inline-flex h-4 w-4 items-center justify-center rounded-sm text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground"
+                          aria-label={showImCampaignColumns ? 'Collapse campaign columns' : 'Expand campaign columns'}
+                          title={showImCampaignColumns ? 'Collapse campaign columns' : 'Expand campaign columns'}
+                        >
+                          {showImCampaignColumns ? <ChevronLeft size={11} /> : <ChevronRight size={11} />}
+                        </button>
+                      ) : null}
+                    </div>
+                  </th>
                   );
                 })()
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, rowIndex) => {
+            {renderItems.map((item) => {
+              const row = item.row;
+              const rowIndex = item.rowIndex;
               const rowClosed = isClosedRow(row);
               return (
-                <tr key={row.id} className="group">
+                <tr key={`${item.kind}:${row.id}:${item.isHistory ? 'history' : 'main'}`} className={[ 'group', item.isHistory ? 'bg-muted/10' : '' ].join(' ')} data-pi-group-panel={item.isHistory ? 'true' : undefined}>
                   {activeColumns.map((column, columnIndex) => {
                     const sticky =
                       column === 'pi' ||
                       column === 'intake_status';
                     const columnWidth = getColumnWidth(column, collapsedColumns);
-                    const isFocused = focusedCell?.rowIndex === rowIndex && focusedCell.columnIndex === columnIndex;
+                    const isFocused = focusedCell?.rowId === row.id && focusedCell.columnIndex === columnIndex;
                     const flashForCell = flash?.key === `${row.id}:${column}` ? flash : null;
 
                     return (
                       <MemoDataCell
-                        key={`${row.id}:${column}`}
+                        key={`${row.id}:${column}:${item.isHistory ? 'history' : 'main'}`}
                         rowRef={row}
-                        rowIndex={rowIndex}
                         columnIndex={columnIndex}
                         sticky={sticky}
                         cellStyle={{
@@ -2115,7 +2746,7 @@ export function SubmissionTable({
                           ...stickyStyle(column),
                         }}
                         isFocused={isFocused}
-                        isActiveEditor={activeEditor?.rowIndex === rowIndex && activeEditor?.columnIndex === columnIndex}
+                        isActiveEditor={activeEditor?.rowId === row.id && activeEditor?.columnIndex === columnIndex}
                         isCopied={copiedKey === `${row.id}:${column}`}
                         flash={flashForCell}
                         isSaving={savingKey === `${row.id}:${column}`}
@@ -2123,7 +2754,7 @@ export function SubmissionTable({
                         onFocusCell={handleCellFocus}
                         onClickCell={handleCellClick}
                         onKeyDownCell={handleCellKeyDown}
-                        renderContent={() => renderCell(column, row, rowIndex, columnIndex)}
+                        renderContent={() => renderCell(column, row, rowIndex, columnIndex, item.isHistory)}
                         rowClosed={rowClosed}
                       />
                     );
@@ -2131,7 +2762,7 @@ export function SubmissionTable({
                 </tr>
               );
             })}
-            {rows.length === 0 ? (
+            {visibleDataRows.length === 0 ? (
               <tr>
                 <td
                   colSpan={activeColumns.length}
@@ -2150,6 +2781,16 @@ export function SubmissionTable({
           row={auditPopover.row}
           field={auditPopover.field}
           onClose={() => setAuditPopover(null)}
+        />
+      ) : null}
+      {masterDataPopover ? (
+        <MasterDataReviewPopover
+          rect={masterDataPopover.rect}
+          review={masterDataPopover.review}
+          saving={masterDataSavingId === masterDataPopover.review.id}
+          onClose={() => setMasterDataPopover(null)}
+          onApprove={masterDataPopover.review.status === 'pending' ? () => void handleMasterDataPopoverAction('approve') : undefined}
+          onReject={masterDataPopover.review.status === 'pending' ? () => void handleMasterDataPopoverAction('reject') : undefined}
         />
       ) : null}
       {reopenDialog && typeof document !== 'undefined'
@@ -2204,3 +2845,12 @@ export function SubmissionTable({
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
