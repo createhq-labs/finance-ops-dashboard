@@ -1,4 +1,4 @@
-import { MultiCreatorRows, SingleCreatorRows } from "../invoice-line-items";
+import { MultiCreatorRows, ProductReimbursementField, SingleCreatorRows } from "../invoice-line-items";
 import { SearchableSelect } from "../searchable-select";
 import type { InvoiceIntakeFormValues } from "../types";
 import { CURRENCY_OPTIONS } from "../../../lib/shared/currency";
@@ -202,25 +202,13 @@ export function CreatorDeliverablesSection({
               {errors.campaignDeliverable ? <p className="text-danger intake-inline-error">{errors.campaignDeliverable}</p> : null}
             </div>
             {values.campaignDeliverable === "Product Reimbursement" ? (
-              <div className="grid gap-1" style={{ marginTop: 6, maxWidth: 320 }}>
-                <input
-                  className="intake-input"
-                  type="file"
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,image/*"
-                  style={{ width: "fit-content", maxWidth: 280, minWidth: 220 }}
-                  onChange={(e) => onProductReimbursementFileChange("campaign-0", e.target.files?.[0] ?? null)}
+              <div style={{ marginTop: 6 }}>
+                <ProductReimbursementField
+                  fieldKey="campaign-0"
+                  file={getProductReimbursementFile("campaign-0")}
+                  error={getProductReimbursementError("campaign-0")}
+                  onChange={onProductReimbursementFileChange}
                 />
-                <p className="text-muted intake-section-copy" style={{ margin: 0 }}>
-                  PDF, image, document, or spreadsheet. Max 10 MB.
-                </p>
-                <div style={{ minHeight: 16 }}>
-                  {getProductReimbursementError("campaign-0") ? <p className="text-danger intake-inline-error">{getProductReimbursementError("campaign-0")}</p> : null}
-                </div>
-                {getProductReimbursementFile("campaign-0") ? (
-                  <p className="text-muted intake-section-copy" style={{ margin: 0 }}>
-                    {getProductReimbursementFile("campaign-0")?.name}
-                  </p>
-                ) : null}
               </div>
             ) : null}
           </label>
@@ -247,26 +235,12 @@ export function CreatorDeliverablesSection({
                   Remove
                 </button>
                 {deliverable === "Product Reimbursement" ? (
-                  <div className="grid gap-1" style={{ maxWidth: 320 }}>
-                    <input
-                      className="intake-input"
-                      type="file"
-                      accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,image/*"
-                      style={{ width: "fit-content", maxWidth: 280, minWidth: 220 }}
-                      onChange={(e) => onProductReimbursementFileChange(`campaign-${index + 1}`, e.target.files?.[0] ?? null)}
-                    />
-                    <p className="text-muted intake-section-copy" style={{ margin: 0 }}>
-                      PDF, image, document, or spreadsheet. Max 10 MB.
-                    </p>
-                    <div style={{ minHeight: 16 }}>
-                      {getProductReimbursementError(`campaign-${index + 1}`) ? <p className="text-danger intake-inline-error">{getProductReimbursementError(`campaign-${index + 1}`)}</p> : null}
-                    </div>
-                    {getProductReimbursementFile(`campaign-${index + 1}`) ? (
-                      <p className="text-muted intake-section-copy" style={{ margin: 0 }}>
-                        {getProductReimbursementFile(`campaign-${index + 1}`)?.name}
-                      </p>
-                    ) : null}
-                  </div>
+                  <ProductReimbursementField
+                    fieldKey={`campaign-${index + 1}`}
+                    file={getProductReimbursementFile(`campaign-${index + 1}`)}
+                    error={getProductReimbursementError(`campaign-${index + 1}`)}
+                    onChange={onProductReimbursementFileChange}
+                  />
                 ) : null}
               </div>
             ))}

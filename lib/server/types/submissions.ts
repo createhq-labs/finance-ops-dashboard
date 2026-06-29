@@ -1,3 +1,5 @@
+import type { SubmissionAttachmentSummary } from '../../shared/submission-attachments';
+
 export type AppRole = 'employee' | 'team_lead' | 'finance' | 'admin' | 'developer';
 export type SubmissionCurrency = 'INR' | 'USD' | 'EUR' | 'GBP' | 'AED';
 export type BusinessLine = 'IM' | 'TM';
@@ -84,14 +86,14 @@ export type SanitizedSubmissionPayload = {
   brand_trade_name: string | null;
   intake_status: 'submitted';
   sync_status: 'pending_sheet_sync';
-  invoice_status: 'Invoice Pending' | 'Invoice created' | 'Po Created/Estimate' | 'Invoice Cancelled' | 'Debit Note' | 'Invoice + Debit Note';
+  invoice_status: string | null;
   invoice_number: null;
   debit_note_number: null;
   payment_received: null;
-  payment_received_status: 'pending';
+  payment_received_status: null;
   invoice_via_creators_received: null;
   payment_made: null;
-  payment_made_status: 'pending';
+  payment_made_status: null;
   closed: null;
   closure_status: 'open';
   reviewed_by: null;
@@ -109,4 +111,12 @@ export type SanitizedLineItemPayload = {
   deliverable_name: string | null;
   amount: number;
   line_order: number;
+};
+
+
+export type SubmissionAttachmentRecord = SubmissionAttachmentSummary & {
+  submission_id: string;
+  file_path: string;
+  uploaded_by: string;
+  uploaded_at: string;
 };

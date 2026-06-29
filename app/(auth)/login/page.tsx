@@ -53,7 +53,7 @@ export default function LoginPage() {
       <form className="space-y-4" onSubmit={handleSubmit}>
 
         <div className="space-y-1.5">
-          <label htmlFor="email" className="block text-xs font-semibold uppercase tracking-widest text-white/55">
+          <label htmlFor="email" className="block text-xs font-semibold uppercase tracking-widest text-white/75 mx-2">
             Email
           </label>
           <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 transition focus-within:border-sky-400/50 focus-within:bg-black/30">
@@ -73,8 +73,8 @@ export default function LoginPage() {
         </div>
 
         <div className="space-y-1.5">
-          <label htmlFor="password" className="block text-xs font-semibold uppercase tracking-widest text-white/55">
-            Password
+          <label htmlFor="password" className="block text-xs font-semibold uppercase tracking-widest text-white/75 mx-2">
+              Password
           </label>
           <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 transition focus-within:border-sky-400/50 focus-within:bg-black/30">
             <Lock size={15} className="shrink-0 text-white/40" />
@@ -93,10 +93,10 @@ export default function LoginPage() {
               type="button"
               onClick={() => setShowPassword((v) => !v)}
               tabIndex={-1}
-              className="shrink-0 text-white/35 transition hover:text-white/70"
+              className="shrink-0 text-white/85 transition hover:text-white/80"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
-              {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
         </div>

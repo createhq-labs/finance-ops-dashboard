@@ -46,13 +46,13 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
       { href: '/dashboard', label: 'Overview', icon: Home, group: 'workspace' },
       ...(canViewAnalyticsPage(role ?? 'employee') ? [{ href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3, group: 'workspace' as const }] : []),
       ...(role && (role === 'employee' || role === 'team_lead')
-        ? [{ href: getInvoiceIntakePath(), label: 'Submit Invoice', icon: FilePlus, group: 'workspace' as const }]
+        ? [{ href: getInvoiceIntakePath(), label: 'Submit Invoice', icon: FilePlus, group: 'operations' as const }]
         : []),
       ...(role && (role === 'employee' || role === 'team_lead')
-        ? [{ href: '/dashboard/submissions', label: getSubmissionsLabel(role), icon: ListChecks, group: 'workspace' as const }]
+        ? [{ href: '/dashboard/submissions', label: getSubmissionsLabel(role), icon: ListChecks, group: 'operations' as const }]
         : []),
       ...(canViewTeamSubmissions(role ?? 'employee')
-        ? [{ href: '/dashboard/team-submissions', label: 'Team Submissions', icon: ListChecks, group: 'workspace' as const }]
+        ? [{ href: '/dashboard/team-submissions', label: 'Team Submissions', icon: ListChecks, group: 'operations' as const }]
         : []),
       { href: '/dashboard/notifications', label: 'Notifications', icon: Bell, group: 'workspace', badge: unreadCount > 0 ? unreadCount : undefined },
       { href: '/dashboard/guide', label: 'Guide', icon: BookOpen, group: 'workspace' },

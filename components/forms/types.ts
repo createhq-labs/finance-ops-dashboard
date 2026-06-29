@@ -121,3 +121,11 @@ export type InvoiceIntakeSubmissionPayload = {
     line_order: number;
   }>;
 };
+
+
+export type InvoiceIntakeFormSubmitInput = {
+  payload: InvoiceIntakeSubmissionPayload;
+  files?: {
+    productReimbursementFile?: File | null;
+  };
+};

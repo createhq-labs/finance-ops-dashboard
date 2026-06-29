@@ -1,4 +1,4 @@
-﻿import type { SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AppRole, AppUser } from '../types/submissions';
 
 type NotificationType =
@@ -8,6 +8,7 @@ type NotificationType =
   | 'finance_action_pending'
   | 'submission_rejected'
   | 'resubmission_requested'
+  | 'submission_reopened'
   | 'invoice_updated';
 
 type NotificationInsert = {
@@ -44,15 +45,45 @@ async function getActiveUsersByRoles(adminClient: SupabaseClient, roles: AppRole
   return (data ?? []).filter((row) => !excludeUserIds.includes(String(row.id)));
 }
 
+async function getActiveMappedTeamLeadIdsForEmployee(adminClient: SupabaseClient, employeeId: string) {
+  if (!employeeId) return [] as string[];
+
+  const { data: mappings, error: mappingsError } = await adminClient
+    .from('team_lead_members')
+    .select('team_lead_id')
+    .eq('employee_id', employeeId);
+
+  if (mappingsError) throw new Error(mappingsError.message);
+
+  const leadIds = uniqueStrings((mappings ?? []).map((mapping) => String(mapping.team_lead_id ?? '')));
+  if (leadIds.length === 0) return [] as string[];
+
+  const { data: leads, error: leadsError } = await adminClient
+    .from('users')
+    .select('id')
+    .in('id', leadIds)
+    .eq('role', 'team_lead')
+    .eq('status', 'active');
+
+  if (leadsError) throw new Error(leadsError.message);
+
+  return uniqueStrings((leads ?? []).map((lead) => String(lead.id ?? '')));
+}
+
 export async function createNotifications(adminClient: SupabaseClient, inserts: NotificationInsert[]) {
   if (inserts.length === 0) return { success: true as const, created: 0 };
 
-  const { error } = await adminClient.from('notifications').insert(inserts);
+  const deduped = inserts.filter((insert, index, all) => {
+    const key = [insert.user_id, insert.type, insert.related_submission_id ?? '', insert.related_review_id ?? '', insert.target_path].join('::');
+    return all.findIndex((candidate) => [candidate.user_id, candidate.type, candidate.related_submission_id ?? '', candidate.related_review_id ?? '', candidate.target_path].join('::') === key) === index;
+  });
+
+  const { error } = await adminClient.from('notifications').insert(deduped);
   if (error) {
     return { success: false as const, created: 0, error: error.message };
   }
 
-  return { success: true as const, created: inserts.length };
+  return { success: true as const, created: deduped.length };
 }
 
 export async function createFinanceAndAdminSubmissionNotifications(params: {
@@ -65,12 +96,10 @@ export async function createFinanceAndAdminSubmissionNotifications(params: {
 }) {
   const { adminClient, appUser, submissionId, piNumber, entityName, isResubmission } = params;
   const recipients = await getActiveUsersByRoles(adminClient, ['finance', 'admin'], [appUser.id]);
-  if (recipients.length === 0) return { success: true as const, created: 0 };
-
-  const targetPath = `/dashboard/finance?submission_id=${submissionId}${isResubmission ? '&context=resubmission' : '&context=new_submission'}`;
+  const targetPath = '/dashboard/finance?submission_id=' + submissionId + (isResubmission ? '&context=resubmission' : '&context=new_submission');
   const primaryType: NotificationType = isResubmission ? 'resubmitted_form' : 'new_submission';
   const primaryTitle = isResubmission ? 'Resubmitted submission received' : 'New submission received';
-  const primaryMessage = `${piNumber} for ${entityName} was submitted by ${appUser.email}.`;
+  const primaryMessage = piNumber + ' for ' + entityName + ' was submitted by ' + appUser.email + '.';
 
   const inserts: NotificationInsert[] = [];
   for (const recipient of recipients) {
@@ -90,10 +119,24 @@ export async function createFinanceAndAdminSubmissionNotifications(params: {
       role_target: roleTarget,
       type: 'finance_action_pending',
       title: 'Finance action pending',
-      message: `Review is pending for ${piNumber}.`,
+      message: 'Review is pending for ' + piNumber + '.',
       related_submission_id: submissionId,
       related_review_id: null,
       target_path: targetPath,
+    });
+  }
+
+  const teamLeadIds = await getActiveMappedTeamLeadIdsForEmployee(adminClient, appUser.id);
+  for (const teamLeadId of teamLeadIds) {
+    inserts.push({
+      user_id: teamLeadId,
+      role_target: 'team_lead',
+      type: primaryType,
+      title: primaryTitle,
+      message: primaryMessage,
+      related_submission_id: submissionId,
+      related_review_id: null,
+      target_path: '/dashboard/team-submissions?submission_id=' + submissionId,
     });
   }
 
@@ -114,9 +157,9 @@ export async function createPendingMasterReviewNotifications(params: {
 
   const inserts: NotificationInsert[] = [];
   for (const review of createdReviews) {
-    const targetPath = `/dashboard/master-data?review_id=${review.id}`;
-    const title = `${review.type[0].toUpperCase()}${review.type.slice(1)} master review pending`;
-    const message = `"${review.submitted_value}" needs finance/admin approval before it becomes a reusable dropdown value.`;
+    const targetPath = '/dashboard/master-data?review_id=' + review.id;
+    const title = review.type[0].toUpperCase() + review.type.slice(1) + ' master review pending';
+    const message = '"' + review.submitted_value + '" needs finance/admin approval before it becomes a reusable dropdown value.';
 
     for (const recipient of recipients) {
       inserts.push({
@@ -138,13 +181,15 @@ export async function createPendingMasterReviewNotifications(params: {
 export async function createEmployeeNotification(params: {
   adminClient: SupabaseClient;
   submittedBy: string;
-  type: Extract<NotificationType, 'submission_rejected' | 'resubmission_requested' | 'invoice_updated'>;
+  type: Extract<NotificationType, 'submission_rejected' | 'resubmission_requested' | 'submission_reopened' | 'invoice_updated'>;
   title: string;
   message: string;
   relatedSubmissionId: string;
 }) {
   const { adminClient, submittedBy, type, title, message, relatedSubmissionId } = params;
-  return createNotifications(adminClient, [
+  const teamLeadIds = await getActiveMappedTeamLeadIdsForEmployee(adminClient, submittedBy);
+
+  const inserts: NotificationInsert[] = [
     {
       user_id: submittedBy,
       role_target: 'employee',
@@ -153,12 +198,79 @@ export async function createEmployeeNotification(params: {
       message,
       related_submission_id: relatedSubmissionId,
       related_review_id: null,
-      target_path: `/dashboard/submissions?submission_id=${relatedSubmissionId}`,
+      target_path: '/dashboard/submissions?submission_id=' + relatedSubmissionId,
     },
-  ]);
+  ];
+
+  for (const teamLeadId of teamLeadIds) {
+    inserts.push({
+      user_id: teamLeadId,
+      role_target: 'team_lead',
+      type,
+      title,
+      message,
+      related_submission_id: relatedSubmissionId,
+      related_review_id: null,
+      target_path: '/dashboard/team-submissions?submission_id=' + relatedSubmissionId,
+    });
+  }
+
+  return createNotifications(adminClient, inserts);
+}
+
+export async function createSubmissionReopenedNotifications(params: {
+  adminClient: SupabaseClient;
+  actorUserId: string;
+  submittedBy: string;
+  title: string;
+  message: string;
+  relatedSubmissionId: string;
+}) {
+  const { adminClient, actorUserId, submittedBy, title, message, relatedSubmissionId } = params;
+  const inserts: NotificationInsert[] = [];
+
+  const dashboardRecipients = await getActiveUsersByRoles(adminClient, ['finance', 'admin'], [actorUserId]);
+  for (const recipient of dashboardRecipients) {
+    inserts.push({
+      user_id: String(recipient.id),
+      role_target: recipient.role as AppRole,
+      type: 'invoice_updated',
+      title,
+      message,
+      related_submission_id: relatedSubmissionId,
+      related_review_id: null,
+      target_path: '/dashboard/finance?submission_id=' + relatedSubmissionId,
+    });
+  }
+
+  inserts.push({
+    user_id: submittedBy,
+    role_target: 'employee',
+    type: 'submission_reopened',
+    title,
+    message,
+    related_submission_id: relatedSubmissionId,
+    related_review_id: null,
+    target_path: '/dashboard/submissions?submission_id=' + relatedSubmissionId,
+  });
+
+  const teamLeadIds = await getActiveMappedTeamLeadIdsForEmployee(adminClient, submittedBy);
+  for (const teamLeadId of teamLeadIds) {
+    inserts.push({
+      user_id: teamLeadId,
+      role_target: 'team_lead',
+      type: 'invoice_updated',
+      title,
+      message,
+      related_submission_id: relatedSubmissionId,
+      related_review_id: null,
+      target_path: '/dashboard/team-submissions?submission_id=' + relatedSubmissionId,
+    });
+  }
+
+  return createNotifications(adminClient, inserts);
 }
 
 export function summarizeCreatedReviews(createdReviews: MasterReviewSummary[]) {
-  return uniqueStrings(createdReviews.map((review) => `${review.type}:${review.submitted_value}`));
+  return uniqueStrings(createdReviews.map((review) => review.type + ':' + review.submitted_value));
 }
-

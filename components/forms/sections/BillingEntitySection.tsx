@@ -34,7 +34,7 @@ export function BillingEntitySection({
   const gstInputRef = useRef<HTMLInputElement | null>(null);
   const gst = (values.gstNumber || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const isIndianClient = values.clientType === "Indian";
-  const gstValid = !isIndianClient || !gst ? true : /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gst);
+  const gstValid = !isIndianClient || !gst ? true : gst === 'NA' || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gst);
   const pincodeValid = !isIndianClient || !values.pincode ? true : /^\d{6}$/.test(values.pincode.trim());
   const pincodePrefix = values.pincode.trim().slice(0, 2);
   const pincodeStateMap: Record<string, string> = {
@@ -288,11 +288,11 @@ export function BillingEntitySection({
           />
           <div style={{ display: "grid", gap: 2, minHeight: isIndianClient ? 30 : 16 }}>
             {isIndianClient ? (
-              <p className="text-muted intake-inline-note">(Format: state code + PAN + entity + Z + checksum)</p>
+              <p className="text-muted intake-inline-note">(Format: state code + PAN + entity + Z + checksum. Type NA if no GST number.)</p>
             ) : null}
             {errors.gstNumber ? <p className="text-danger intake-inline-error">{errors.gstNumber}</p> : null}
             {gstTouched && !gstValid && isIndianClient && !errors.gstNumber ? (
-              <p className="text-danger intake-inline-error">Enter a valid 15-character GST number. Example: 07AAIFI5054J1Z7</p>
+              <p className="text-danger intake-inline-error">Enter a valid 15-character GST number or NA. Example: 07AAIFI5054J1Z7</p>
             ) : null}
           </div>
         </label>

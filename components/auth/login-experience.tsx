@@ -9,9 +9,9 @@ import { CompanyLogo } from '../layout/company-logo';
 const EASE = [0.16, 1, 0.3, 1] as const;
 
 const FEATURES = [
-  { icon: FilePlus,          label: 'Invoice Intake',    bg: 'bg-sky-400/15',     border: 'border-sky-400/35',     text: 'text-sky-200',     iconCls: 'text-sky-400'     },
-  { icon: BriefcaseBusiness, label: 'Finance Review',    bg: 'bg-violet-400/15',  border: 'border-violet-400/35',  text: 'text-violet-200',  iconCls: 'text-violet-400'  },
-  { icon: ListChecks,        label: 'Approval Tracking', bg: 'bg-emerald-400/15', border: 'border-emerald-400/35', text: 'text-emerald-200', iconCls: 'text-emerald-400' },
+  { icon: FilePlus,          label: 'Invoice Intake',    bg: 'bg-sky-600/20',     border: 'border-sky-400/65',     text: 'text-sky-100',     iconCls: 'text-sky-400'     },
+  { icon: BriefcaseBusiness, label: 'Finance Review',    bg: 'bg-violet-400/20',  border: 'border-violet-400/95',  text: 'text-violet-100',  iconCls: 'text-violet-400'  },
+  { icon: ListChecks,        label: 'Approval Tracking', bg: 'bg-emerald-400/20', border: 'border-emerald-400/95', text: 'text-emerald-50', iconCls: 'text-emerald-400' },
 ];
 
 export function LoginExperience({ children }: { children: ReactNode }) {
@@ -114,8 +114,8 @@ export function LoginExperience({ children }: { children: ReactNode }) {
               <div
                 className="login-card relative w-full overflow-hidden rounded-[28px] border border-white/[0.18] p-7 backdrop-blur-2xl sm:p-8"
                 style={{
-                  background: 'linear-gradient(145deg, rgba(124,48,228,0.32) 0%, rgba(67,44,190,0.22) 42%, rgba(10,18,76,0.42) 100%)',
-                  boxShadow: '0 32px 80px -20px rgba(4,10,40,0.85), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 0 40px rgba(120,80,255,0.06)',
+                  background: 'linear-gradient(145deg, rgba(0, 13, 255, 0.32) 0%, rgba(46, 21, 167, 0.22) 42%, rgba(80, 21, 198, 0.42) 100%)',
+                  boxShadow: '0 32px 80px -20px rgba(6, 27, 131, 0.85), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 0 40px rgba(120,80,255,0.06)',
                 }}
               >
                 {/* Glass top-rim light catch */}
@@ -139,7 +139,7 @@ export function LoginExperience({ children }: { children: ReactNode }) {
                   >
                     Welcome back
                   </h2>
-                  <p className="mt-2 max-w-sm text-sm leading-6 text-white/65">
+                  <p className="mt-2 max-w-sm text-sm leading-6 text-white/85">
                     Use your provisioned <strong>@create.wtf</strong> account to continue.
                   </p>
                 </div>
@@ -148,7 +148,7 @@ export function LoginExperience({ children }: { children: ReactNode }) {
                   {children}
                 </div>
 
-                <p className="relative mt-5 text-center text-xs leading-5 text-white/50">
+                <p className="relative mt-5 text-center text-xs leading-5 text-white/80">
                   No public signup. Contact admin to provision access.
                 </p>
               </div>

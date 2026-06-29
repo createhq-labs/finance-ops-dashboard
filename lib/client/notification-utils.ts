@@ -39,16 +39,23 @@ export function getNotificationCategoryLabel(category: NotificationCategory) {
   return 'Updates';
 }
 
+export function isClosedSubmissionReopenedNotification(notification: Pick<NotificationRow, 'title' | 'message' | 'type'>) {
+  return notification.type === 'submission_reopened' || notification.title === 'Submission reopened';
+}
+
 export function getNotificationDisplayType(type: string, role?: string | null) {
   if (role === 'employee' && type === 'submission_rejected') {
     return 'Correction Requested';
+  }
+  if (type === 'submission_reopened') {
+    return 'Submission Reopened';
   }
 
   return formatNotificationType(type);
 }
 
 export function getNotificationTone(type: string): NotificationTone {
-  if (type === 'submission_rejected') return 'danger';
+  if (type === 'submission_rejected' || type === 'submission_reopened') return 'danger';
   if (type === 'resubmission_requested' || type === 'resubmitted_form') return 'warning';
   if (type === 'finance_action_pending') return 'action';
   if (type === 'new_submission') return 'success';

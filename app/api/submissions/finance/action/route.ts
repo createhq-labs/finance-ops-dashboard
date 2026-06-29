@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../../lib/server/auth';
 import { logSubmissionAction } from '../../../../../lib/server/services/activityLog';
 import { getAccessTokenFromCookieHeader } from '../../../../../lib/server/services/authCookies';
-import { createEmployeeNotification } from '../../../../../lib/server/services/notifications';
+import { createEmployeeNotification, createSubmissionReopenedNotifications } from '../../../../../lib/server/services/notifications';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../../lib/server/supabase';
 
 type FinanceActionRequest = {
@@ -24,6 +24,7 @@ type FinanceActionRequest = {
   payment_made_status?: 'pending' | 'full' | 'paid' | 'part_payment_against_advance' | 'not_paid' | 'multiple_creators' | 'gst_left';
   closure_status?: 'open' | 'closed' | 'issues' | 'cancelled' | 'gst_left';
   finance_notes?: string;
+  finance_external_notes?: string;
   finance_comment?: string;
 };
 
@@ -80,6 +81,16 @@ function toLegacyClosed(status: FinanceActionRequest['closure_status']) {
   return 'Open';
 }
 
+function normalizeClosureStatus(value: string | null | undefined) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized || normalized == 'open' || normalized == 'no') return 'open';
+  if (normalized == 'closed' || normalized == 'yes') return 'closed';
+  if (normalized == 'issues') return 'issues';
+  if (normalized == 'cancelled') return 'cancelled';
+  if (normalized == 'gst_left' || normalized == 'gst left') return 'gst_left';
+  return normalized;
+}
+
 function submissionPiLabel(piNumber: string | null | undefined) {
   const value = String(piNumber || '').trim();
   return value || 'No PI Required';
@@ -120,7 +131,7 @@ export async function POST(req: NextRequest) {
 
     const { data: submission, error: submissionError } = await userClient
       .from('intake_submissions')
-      .select('id, submitted_by, proforma_invoice, agency_brand_name, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, rejection_note')
+      .select('id, submitted_by, proforma_invoice, agency_brand_name, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closed, closure_status, rejection_note')
       .eq('id', body.submission_id)
       .single();
 
@@ -135,7 +146,7 @@ export async function POST(req: NextRequest) {
     let activityAction: string = body.action;
     let notificationTitle = '';
     let notificationMessage = '';
-    let notificationType: 'submission_rejected' | 'resubmission_requested' | 'invoice_updated' | null = null;
+    let notificationType: 'submission_rejected' | 'resubmission_requested' | 'submission_reopened' | 'invoice_updated' | null = null;
     let changed = false;
 
     function noChange(message: string) {
@@ -153,7 +164,7 @@ export async function POST(req: NextRequest) {
           creator_invoice_status: currentSubmission.creator_invoice_status,
           payment_received_status: currentSubmission.payment_received_status,
           payment_made_status: currentSubmission.payment_made_status,
-          closure_status: currentSubmission.closure_status,
+          closure_status: currentSubmission.closure_status ?? currentSubmission.closed,
           rejection_note: currentSubmission.rejection_note,
         },
       });
@@ -215,8 +226,8 @@ export async function POST(req: NextRequest) {
 
     if (body.action === 'mark_invoice_created') {
       const nextInvoiceStatus = body.invoice_status ? toDbInvoiceStatus(body.invoice_status) : currentSubmission.invoice_status;
-      const nextInvoiceNumber = body.invoice_number?.trim() || currentSubmission.invoice_number || null;
-      const nextDebitNoteNumber = body.debit_note_number?.trim() || currentSubmission.debit_note_number || null;
+      const nextInvoiceNumber = body.invoice_number !== undefined ? body.invoice_number.trim() || null : currentSubmission.invoice_number || null;
+      const nextDebitNoteNumber = body.debit_note_number !== undefined ? body.debit_note_number.trim() || null : currentSubmission.debit_note_number || null;
       if (
         currentSubmission.invoice_status === nextInvoiceStatus &&
         (currentSubmission.invoice_number || null) === nextInvoiceNumber &&
@@ -227,8 +238,8 @@ export async function POST(req: NextRequest) {
       if (body.invoice_status && nextInvoiceStatus) patch.invoice_status = nextInvoiceStatus;
       patch.reviewed_by = appUser.id;
       patch.reviewed_at = now;
-      if (body.invoice_number?.trim()) patch.invoice_number = body.invoice_number.trim();
-      if (body.debit_note_number?.trim()) patch.debit_note_number = body.debit_note_number.trim();
+      if (body.invoice_number !== undefined) patch.invoice_number = body.invoice_number.trim() || null;
+      if (body.debit_note_number !== undefined) patch.debit_note_number = body.debit_note_number.trim() || null;
       activityAction = 'invoice_created';
       notificationType = 'invoice_updated';
       notificationTitle = 'Invoice status updated';
@@ -263,18 +274,26 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.action === 'update_payment_status') {
-      if (!body.creator_invoice_status && !body.payment_received_status && !body.payment_made_status && body.finance_notes === undefined) {
+      if (
+        !body.creator_invoice_status &&
+        !body.payment_received_status &&
+        !body.payment_made_status &&
+        body.finance_notes === undefined &&
+        body.finance_external_notes === undefined
+      ) {
         throw new Error('At least one finance status is required');
       }
       const nextCreatorInvoice = body.creator_invoice_status ?? currentSubmission.creator_invoice_status ?? 'pending';
       const nextReceived = body.payment_received_status ?? currentSubmission.payment_received_status ?? 'pending';
       const nextMade = body.payment_made_status ?? currentSubmission.payment_made_status ?? 'pending';
       const nextFinanceNotes = body.finance_notes !== undefined ? body.finance_notes.trim() || null : currentSubmission.finance_notes ?? null;
+      const nextFinanceExternalNotes = body.finance_external_notes !== undefined ? body.finance_external_notes.trim() || null : currentSubmission.finance_external_notes ?? null;
       if (
         (currentSubmission.creator_invoice_status ?? 'pending') === nextCreatorInvoice &&
         (currentSubmission.payment_received_status ?? 'pending') === nextReceived &&
         (currentSubmission.payment_made_status ?? 'pending') === nextMade &&
-        (currentSubmission.finance_notes ?? null) === nextFinanceNotes
+        (currentSubmission.finance_notes ?? null) === nextFinanceNotes &&
+        (currentSubmission.finance_external_notes ?? null) === nextFinanceExternalNotes
       ) {
         return noChange('Finance statuses are already up to date.');
       }
@@ -293,6 +312,9 @@ export async function POST(req: NextRequest) {
       if (body.finance_notes !== undefined) {
         patch.finance_notes = nextFinanceNotes;
       }
+      if (body.finance_external_notes !== undefined) {
+        patch.finance_external_notes = nextFinanceExternalNotes;
+      }
       patch.reviewed_by = appUser.id;
       patch.reviewed_at = now;
       activityAction = 'payment_status_updated';
@@ -304,17 +326,25 @@ export async function POST(req: NextRequest) {
 
     if (body.action === 'close_submission') {
       const closureStatus = body.closure_status ?? 'closed';
-      if ((currentSubmission.closure_status ?? 'open') === closureStatus) {
+      const currentClosureStatus = normalizeClosureStatus(currentSubmission.closure_status ?? currentSubmission.closed);
+      if (currentClosureStatus === closureStatus) {
         return noChange(`Submission is already ${closureStatus}.`);
       }
       patch.closure_status = closureStatus;
       patch.closed = toLegacyClosed(closureStatus);
       patch.reviewed_by = appUser.id;
       patch.reviewed_at = now;
-      activityAction = 'submission_closed';
-      notificationType = 'invoice_updated';
-      notificationTitle = closureStatus === 'cancelled' ? 'Submission cancelled' : 'Submission closed';
-      notificationMessage = `${submissionLabel} is now ${closureStatus}.`;
+      const reopeningClosedSubmission = currentClosureStatus === 'closed' && closureStatus === 'open';
+      activityAction = reopeningClosedSubmission ? 'submission_reopened' : 'submission_closed';
+      notificationType = reopeningClosedSubmission ? 'submission_reopened' : 'invoice_updated';
+      notificationTitle = reopeningClosedSubmission
+        ? 'Submission reopened'
+        : closureStatus === 'cancelled'
+          ? 'Submission cancelled'
+          : 'Submission closed';
+      notificationMessage = reopeningClosedSubmission
+        ? `${submissionLabel} was reopened by finance.`
+        : `${submissionLabel} is now ${closureStatus}.`;
       changed = true;
     }
 
@@ -326,38 +356,50 @@ export async function POST(req: NextRequest) {
       .from('intake_submissions')
       .update(patch)
       .eq('id', body.submission_id)
-      .select('id, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, rejection_note, reviewed_at')
+      .select('id, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, rejection_note, reviewed_at')
       .single();
 
     if (updateError || !updated) {
       throw new Error(updateError?.message ?? 'Failed to update submission');
     }
 
-    await logSubmissionAction(userClient, appUser.id, body.submission_id, activityAction, {
-      actor_role: appUser.role,
-      previous: {
-        intake_status: submission.intake_status,
-        invoice_status: submission.invoice_status,
-        invoice_number: submission.invoice_number,
-        debit_note_number: submission.debit_note_number,
-        payment_received_status: submission.payment_received_status,
-        payment_made_status: submission.payment_made_status,
-        closure_status: submission.closure_status,
-        rejection_note: submission.rejection_note,
-      },
-      next: patch,
-    });
-
-    if (notificationType) {
-      await createEmployeeNotification({
-        adminClient,
-        submittedBy: String(currentSubmission.submitted_by),
-        type: notificationType,
-        title: notificationTitle,
-        message: notificationMessage,
-        relatedSubmissionId: body.submission_id,
-      });
-    }
+    await Promise.all([
+      logSubmissionAction(userClient, appUser.id, body.submission_id, activityAction, {
+        actor_role: appUser.role,
+        previous: {
+          intake_status: submission.intake_status,
+          invoice_status: submission.invoice_status,
+          invoice_number: submission.invoice_number,
+          debit_note_number: submission.debit_note_number,
+          payment_received_status: submission.payment_received_status,
+          payment_made_status: submission.payment_made_status,
+          closure_status: submission.closure_status,
+          rejection_note: submission.rejection_note,
+          finance_notes: submission.finance_notes,
+          finance_external_notes: submission.finance_external_notes,
+        },
+        next: patch,
+      }),
+      notificationType
+        ? notificationType === 'submission_reopened'
+          ? createSubmissionReopenedNotifications({
+              adminClient,
+              actorUserId: appUser.id,
+              submittedBy: String(currentSubmission.submitted_by),
+              title: notificationTitle,
+              message: notificationMessage,
+              relatedSubmissionId: body.submission_id,
+            })
+          : createEmployeeNotification({
+              adminClient,
+              submittedBy: String(currentSubmission.submitted_by),
+              type: notificationType,
+              title: notificationTitle,
+              message: notificationMessage,
+              relatedSubmissionId: body.submission_id,
+            })
+        : Promise.resolve({ success: true, created: 0 }),
+    ]);
 
     return NextResponse.json({ success: true, changed: true, submission: updated }, { status: 200 });
   } catch (error) {

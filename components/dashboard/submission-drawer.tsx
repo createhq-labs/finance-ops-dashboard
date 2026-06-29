@@ -159,6 +159,7 @@ export function SubmissionDrawer({
   const imCampaignBrand = row.campaign_brand || row.brand_name || lineItems.find((item) => item.brand_name)?.brand_name || '';
   const resubmissionNote = row.finance_comment || row.rejection_note || '';
   const internalFinanceNotes = row.finance_notes || '';
+  const externalFinanceNotes = row.finance_external_notes || '';
   const piDisplay = getPiDisplayMeta({
     pi: row.pi,
     submittedAt: row.submitted_at,
@@ -290,17 +291,18 @@ export function SubmissionDrawer({
 
           {resubmissionNote ? (
             <DetailSection title="Resubmission Note">
-              <DetailItem label="Finance Feedback / Reason" value={resubmissionNote} />
+              <DetailItem label="Resubmission Note" value={resubmissionNote} />
             </DetailSection>
           ) : null}
           {shouldShowFinanceStatus ? (
             <DetailSection title="Finance Status">
               <DetailItem label="Invoice Status" value={formatInvoiceStatus(row.invoice_status)} alwaysShow />
-              <DetailItem label="Creator Invoice" value={formatCreatorInvoiceStatus(row.creator_invoice_received || 'pending')} />
-              <DetailItem label="Payment Received" value={formatPaymentReceivedStatus(row.payment_received || 'pending')} />
-              <DetailItem label="Payment Made" value={formatPaymentMadeStatus(row.payment_made || 'pending')} />
+              <DetailItem label="Creator Invoice" value={row.creator_invoice_received ? formatCreatorInvoiceStatus(row.creator_invoice_received) : '-'} />
+              <DetailItem label="Payment Received" value={row.payment_received ? formatPaymentReceivedStatus(row.payment_received) : '-'} />
+              <DetailItem label="Payment Made" value={row.payment_made ? formatPaymentMadeStatus(row.payment_made) : '-'} />
               <DetailItem label="Closure Status" value={formatClosureStatus(row.closed_status || 'open')} />
-              {canSeeFinanceFields && internalFinanceNotes ? <DetailItem label="Finance Notes" value={internalFinanceNotes} /> : null}
+              {externalFinanceNotes ? <DetailItem label={canSeeFinanceFields ? "Finance External Notes" : "Finance Notes"} value={externalFinanceNotes} /> : null}
+              {canSeeFinanceFields && internalFinanceNotes ? <DetailItem label="Finance Internal Notes" value={internalFinanceNotes} /> : null}
             </DetailSection>
           ) : null}
           {canSeeSystemFields ? (

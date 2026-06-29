@@ -9,6 +9,7 @@ import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
+import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { canViewMasterData, getDefaultDashboardPath } from '../../../../lib/client/dashboard-access';
 
 type ReviewStatus = 'pending' | 'approved' | 'rejected';
@@ -155,10 +156,20 @@ function getEditorLabel(item: MasterDataReviewItem) {
   return item.last_edited_by_name || item.last_edited_by_email || item.last_edited_by || '—';
 }
 
+function summarizeItems(items: MasterDataReviewItem[]) {
+  return {
+    total: items.length,
+    pending: items.filter((item) => item.status === 'pending').length,
+    approved: items.filter((item) => item.status === 'approved').length,
+    rejected: items.filter((item) => item.status === 'rejected').length,
+  };
+}
+
 export default function MasterDataPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const reviewId = searchParams.get('review_id');
+  const deepLinkMode = searchParams.get('mode');
   const { user, loading } = useDashboardSession();
 
   const [items, setItems] = useState<MasterDataReviewItem[]>([]);
@@ -183,6 +194,7 @@ export default function MasterDataPage() {
     edit_reason: '',
   });
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
+  const lastHighlightedReviewIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (loading || !user) return;
@@ -204,12 +216,13 @@ export default function MasterDataPage() {
         throw new Error(json.error || 'Failed to load master data reviews.');
       }
 
-      setItems(Array.isArray(json.items) ? json.items : []);
-      if (json.summary) {
-        setSummary(json.summary);
-      }
+      const nextItems = Array.isArray(json.items) ? json.items : [];
+      setItems(nextItems);
+      setSummary(json.summary ?? summarizeItems(nextItems));
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Failed to load master data reviews.');
+      const nextMessage = nextError instanceof Error ? nextError.message : 'Failed to load master data reviews.';
+      if (handleAuthTokenRecoveryMessage(nextMessage)) return;
+      setError(nextMessage);
     } finally {
       if (showRefresh) setRefreshing(false);
       else setPageLoading(false);
@@ -234,6 +247,14 @@ export default function MasterDataPage() {
     return new Set(pool.map((item) => item.type));
   }, [items, statusFilter]);
 
+  const applyItemUpdate = useCallback((nextItem: MasterDataReviewItem) => {
+    setItems((current) => {
+      const next = current.map((item) => (item.id === nextItem.id ? { ...item, ...nextItem } : item));
+      setSummary(summarizeItems(next));
+      return next;
+    });
+  }, []);
+
   const viewItem = useMemo(
     () => (viewItemId ? items.find((item) => item.id === viewItemId) ?? null : null),
     [items, viewItemId]
@@ -250,16 +271,50 @@ export default function MasterDataPage() {
   );
 
   useEffect(() => {
-    if (!reviewId || filteredItems.length === 0) return;
+    if (!reviewId) {
+      lastHighlightedReviewIdRef.current = null;
+      return;
+    }
+    if (filteredItems.length === 0) return;
     const match = filteredItems.find((item) => item.id === reviewId);
     if (!match) return;
+    if (lastHighlightedReviewIdRef.current === reviewId) return;
 
     setHighlightedId(reviewId);
     const row = rowRefs.current[reviewId];
     if (row) {
-      row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      lastHighlightedReviewIdRef.current = reviewId;
+      row.scrollIntoView({ block: 'center' });
+      const timer = window.setTimeout(() => {
+        if (lastHighlightedReviewIdRef.current === reviewId) {
+          lastHighlightedReviewIdRef.current = null;
+        }
+      }, 2200);
+      return () => window.clearTimeout(timer);
     }
   }, [filteredItems, reviewId]);
+
+  useEffect(() => {
+    if (!reviewId || deepLinkMode !== 'edit' || items.length === 0) return;
+    const match = items.find((item) => item.id === reviewId);
+    if (!match || match.status !== 'approved') return;
+
+    setHighlightedId(reviewId);
+    setViewItemId(null);
+    setConfirmApproveId(null);
+    setConfirmIgnoreId(null);
+    setConfirmEditId(null);
+    setEditItemId(match.id);
+    setEditForm({
+      submitted_value: match.submitted_value,
+      submitted_trade_name: match.submitted_trade_name ?? '',
+      edit_reason: '',
+    });
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('mode');
+    router.replace('/dashboard/master-data?' + params.toString(), { scroll: false });
+  }, [deepLinkMode, items, reviewId, router, searchParams]);
 
   async function handleApprove(id: string) {
     setActionError('');
@@ -270,15 +325,17 @@ export default function MasterDataPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
-      const json = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
-      if (!res.ok || !json.success) {
+      const json = (await res.json().catch(() => ({}))) as { success?: boolean; review?: MasterDataReviewItem; error?: string };
+      if (!res.ok || !json.success || !json.review) {
         throw new Error(json.error || 'Failed to approve review.');
       }
 
       setConfirmApproveId(null);
-      await loadReviews(true);
+      applyItemUpdate(json.review);
     } catch (nextError) {
-      setActionError(nextError instanceof Error ? nextError.message : 'Failed to approve review.');
+      const nextMessage = nextError instanceof Error ? nextError.message : 'Failed to approve review.';
+      if (handleAuthTokenRecoveryMessage(nextMessage)) return;
+      setActionError(nextMessage);
     } finally {
       setActionLoadingId(null);
     }
@@ -294,16 +351,18 @@ export default function MasterDataPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rejection_reason: ignoreReasons[id] || '' }),
       });
-      const json = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
-      if (!res.ok || !json.success) {
+      const json = (await res.json().catch(() => ({}))) as { success?: boolean; review?: MasterDataReviewItem; error?: string };
+      if (!res.ok || !json.success || !json.review) {
         throw new Error(json.error || 'Failed to ignore review.');
       }
 
       setConfirmIgnoreId(null);
       setIgnoreReasons((current) => ({ ...current, [id]: '' }));
-      await loadReviews(true);
+      applyItemUpdate(json.review);
     } catch (nextError) {
-      setActionError(nextError instanceof Error ? nextError.message : 'Failed to ignore review.');
+      const nextMessage = nextError instanceof Error ? nextError.message : 'Failed to ignore review.';
+      if (handleAuthTokenRecoveryMessage(nextMessage)) return;
+      setActionError(nextMessage);
     } finally {
       setActionLoadingId(null);
     }
@@ -349,15 +408,17 @@ export default function MasterDataPage() {
           edit_reason: editForm.edit_reason,
         }),
       });
-      const json = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
-      if (!res.ok || !json.success) {
+      const json = (await res.json().catch(() => ({}))) as { success?: boolean; review?: MasterDataReviewItem; error?: string };
+      if (!res.ok || !json.success || !json.review) {
         throw new Error(json.error || 'Failed to save master data edit.');
       }
 
       setEditItemId(null);
-      await loadReviews(true);
+      applyItemUpdate(json.review);
     } catch (nextError) {
-      setActionError(nextError instanceof Error ? nextError.message : 'Failed to save master data edit.');
+      const nextMessage = nextError instanceof Error ? nextError.message : 'Failed to save master data edit.';
+      if (handleAuthTokenRecoveryMessage(nextMessage)) return;
+      setActionError(nextMessage);
     } finally {
       setActionLoadingId(null);
     }
