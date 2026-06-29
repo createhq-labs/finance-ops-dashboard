@@ -13,6 +13,7 @@ type SearchableSelectProps = {
   required?: boolean;
   className?: string;
   panelMaxHeight?: number;
+  searchTextByOption?: Record<string, string>;
 };
 
 export function SearchableSelect({
@@ -26,6 +27,7 @@ export function SearchableSelect({
   required = false,
   className,
   panelMaxHeight = 160,
+  searchTextByOption,
 }: SearchableSelectProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -51,8 +53,11 @@ export function SearchableSelect({
     // When the current selected value is focused again, show full list so users can overwrite directly.
     if (open && needle === value.trim().toLowerCase()) return normalizedOptions;
     if (!needle) return normalizedOptions;
-    return normalizedOptions.filter((opt) => opt.toLowerCase().includes(needle));
-  }, [normalizedOptions, open, query, value]);
+    return normalizedOptions.filter((opt) => {
+      const extraSearch = searchTextByOption?.[opt] ?? '';
+      return `${opt} ${extraSearch}`.toLowerCase().includes(needle);
+    });
+  }, [normalizedOptions, open, query, searchTextByOption, value]);
 
   useEffect(() => {
     if (!open) setQuery(value);
@@ -94,7 +99,7 @@ export function SearchableSelect({
   }
 
   return (
-    <div ref={rootRef} className={`intake-searchable-root${className ? ` ${className}` : ""}`} style={{ position: "relative" }}>
+    <div ref={rootRef} className={`intake-searchable-root${className ? ` ${className}` : ""}`} style={{ position: "relative", zIndex: open ? 90 : undefined }}>
       <input
         ref={inputRef}
         className="intake-input intake-searchable-input"
@@ -194,7 +199,7 @@ export function SearchableSelect({
           className="intake-searchable-panel"
           style={{
             position: "absolute",
-            zIndex: 50,
+            zIndex: 140,
             top: "calc(100% + 6px)",
             left: 0,
             right: 0,

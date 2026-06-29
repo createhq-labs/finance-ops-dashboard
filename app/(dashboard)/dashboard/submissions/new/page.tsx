@@ -7,8 +7,10 @@ import { StatePanel } from '../../../../../components/dashboard/state-panel';
 import { InvoiceIntakeForm } from '../../../../../components/forms/invoice-intake-form';
 import { useDashboardSession } from '../../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../../components/layout/workspace-loader';
-import type { InvoiceIntakeFormValues, InvoiceIntakeSubmissionPayload } from '../../../../../components/forms/types';
+import type { InvoiceIntakeFormSubmitInput, InvoiceIntakeFormValues } from '../../../../../components/forms/types';
 import { getPiDisplayMeta } from '../../../../../lib/client/pi-display';
+import { pickProductReimbursementAttachment } from '../../../../../lib/shared/submission-attachments';
+import { handleAuthTokenRecoveryMessage } from '../../../../../lib/client/auth-recovery';
 import { canSubmitInvoice, getDefaultDashboardPath } from '../../../../../lib/client/dashboard-access';
 
 function cleanPrefillAddress(address: string, parts: Array<string | null | undefined>) {
@@ -53,6 +55,7 @@ export default function NewSubmissionPage() {
   const [prefillError, setPrefillError] = useState('');
   const [resubmissionNote, setResubmissionNote] = useState('');
   const [showResubmissionNote, setShowResubmissionNote] = useState(false);
+  const [existingReimbursementAttachmentName, setExistingReimbursementAttachmentName] = useState('');
 
   useEffect(() => {
     if (loading || !user) return;
@@ -65,6 +68,7 @@ export default function NewSubmissionPage() {
     setPrefillLoading(true);
     setPrefillError('');
     setResubmissionNote('');
+    setExistingReimbursementAttachmentName('');
     try {
       const res = await fetch('/api/submissions/my', { method: 'GET', cache: 'no-store' });
       const body = await res.json().catch(() => ({}));
@@ -98,6 +102,14 @@ export default function NewSubmissionPage() {
             campaign_notes?: string | null;
             finance_comment?: string | null;
             rejection_note?: string | null;
+            submission_attachments?: Array<{
+              id: string;
+              document_type: string;
+              file_name: string;
+              file_size_bytes: number;
+              mime_type: string;
+              uploaded_at?: string | null;
+            }>;
             intake_line_items?: Array<{
               creator_name?: string | null;
               brand_name?: string | null;
@@ -108,6 +120,7 @@ export default function NewSubmissionPage() {
         | undefined;
       if (!found) throw new Error('Submission not found for resubmit.');
       setResubmissionNote(String(found.finance_comment ?? found.rejection_note ?? '').trim());
+      setExistingReimbursementAttachmentName(pickProductReimbursementAttachment(found.submission_attachments)?.file_name ?? '');
 
       const lineItems = Array.isArray(found.intake_line_items) ? found.intake_line_items : [];
       const addressParts = String(found.address ?? '')
@@ -212,21 +225,29 @@ export default function NewSubmissionPage() {
     void loadResubmitDraft(resubmitId);
   }, [prefillError, prefillLoading, prefillValues, resubmitId, user]);
 
-  async function handleCreateSubmit(payload: InvoiceIntakeSubmissionPayload) {
+  async function handleCreateSubmit(submission: InvoiceIntakeFormSubmitInput) {
+    const { payload, files } = submission;
     setSubmitMessage('');
     setSubmitSuccess(false);
 
+    const formData = new FormData();
+    formData.append('payload', JSON.stringify(payload));
+    if (files?.productReimbursementFile) {
+      formData.append('product_reimbursement_file', files.productReimbursementFile);
+    }
+
     const res = await fetch('/api/submissions/create', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: formData,
     });
 
     const body = await res.json().catch(() => ({}));
     if (!res.ok || !body?.success) {
       const detail = body?.error || body?.message || 'Submission failed.';
       const stage = body?.stage ? ` (${body.stage})` : '';
-      throw new Error(`${detail}${stage}`);
+      const nextMessage = `${detail}${stage}`;
+      if (handleAuthTokenRecoveryMessage(nextMessage)) return;
+      throw new Error(nextMessage);
     }
 
     setSubmitPi(
@@ -268,9 +289,16 @@ export default function NewSubmissionPage() {
 
       {resubmitId ? (
         <section className="intake-banner">
-          <p style={{ margin: 0, fontWeight: 600 }}>
-            You are editing a previous submission. Submitting will create a new version.
-          </p>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <p style={{ margin: 0, fontWeight: 600 }}>
+              You are editing a previous submission. Submitting will create a new version.
+            </p>
+            {existingReimbursementAttachmentName ? (
+              <p className="text-muted" style={{ margin: 0 }}>
+                Previous product reimbursement file: {existingReimbursementAttachmentName}. Upload a new one if this resubmission updates the document.
+              </p>
+            ) : null}
+          </div>
         </section>
       ) : null}
 
@@ -299,6 +327,8 @@ export default function NewSubmissionPage() {
       ) : resubmitId ? (
         <>
           <InvoiceIntakeForm
+          currentUserRole={user.role}
+          currentUserBusinessLine={user.business_line ?? null}
             submitterName={user.full_name || ''}
             submitterEmail={user.email || ''}
             initialValues={prefillValues}
@@ -320,6 +350,8 @@ export default function NewSubmissionPage() {
         </>
       ) : (
         <InvoiceIntakeForm
+          currentUserRole={user.role}
+          currentUserBusinessLine={user.business_line ?? null}
           submitterName={user.full_name || ''}
           submitterEmail={user.email || ''}
           initialValues={prefillValues}

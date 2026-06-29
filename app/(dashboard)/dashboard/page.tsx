@@ -1087,19 +1087,28 @@ export default function DashboardHomePage() {
           <CompactMetricCard title="My Paid" value={String(paidCount)} hint="Payment complete" />
         </section>
 
-        <PremiumOverviewCard title="Items Needing Action" description="Submissions returned by finance for correction.">
+        <PremiumOverviewCard
+          title="Items Needing Action"
+          description="Submissions returned by finance for correction."
+          headerAction={employeeActionRows.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <span className="inline-flex rounded-full border border-rose-200/80 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/12 dark:text-rose-200">
+                {employeeActionRows.length} item{employeeActionRows.length > 1 ? 's' : ''} need attention
+              </span>
+              <button
+                className="inline-flex h-6 items-center rounded-md border border-border/60 px-1.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                type="button"
+                onClick={() => setShowAllEmployeeActions((current) => !current)}
+              >
+                {showAllEmployeeActions ? 'Collapse' : 'Expand'}
+              </button>
+            </div>
+          ) : null}
+        >
           {employeeActionRows.length === 0 ? (
             <div className="text-sm text-muted-foreground">No correction requests right now.</div>
           ) : (
             <div>
-              <div className="mb-1.5 flex items-center justify-between gap-3 border-b border-border/50 pb-1.5">
-                <span className="text-xs text-muted-foreground">
-                  {employeeActionRows.length} item{employeeActionRows.length > 1 ? 's' : ''} need attention
-                </span>
-                <button className="btn" type="button" onClick={() => setShowAllEmployeeActions((current) => !current)}>
-                  {showAllEmployeeActions ? 'Collapse' : 'Expand'}
-                </button>
-              </div>
               <div className="max-h-72 overflow-y-auto pr-1">
                 {(showAllEmployeeActions ? employeeActionRows : employeeActionRows.slice(0, 1)).map((entry) => (
                   <OverviewListRow

@@ -6,8 +6,49 @@ import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/
 import { createPendingMasterDataReviews } from '../../../../lib/server/services/masterDataReviews';
 import { createFinanceAndAdminSubmissionNotifications, createPendingMasterReviewNotifications } from '../../../../lib/server/services/notifications';
 import { createSubmissionWithLineItems } from '../../../../lib/server/services/submissions';
+import { uploadProductReimbursementAttachment, validateProductReimbursementFile } from '../../../../lib/server/services/submissionAttachments';
 import type { CreateSubmissionInput } from '../../../../lib/server/types/submissions';
+
+type FormUploadFile = File & {
+  name: string;
+  size: number;
+  type: string;
+  arrayBuffer: () => Promise<ArrayBuffer>;
+};
+
+function isFormUploadFile(value: FormDataEntryValue | null): value is FormUploadFile {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    'arrayBuffer' in value &&
+    'name' in value &&
+    'size' in value &&
+    'type' in value
+  );
+}
 import { sanitizeLineItems, sanitizeSubmissionInput } from '../../../../lib/server/validators/submissions';
+
+
+function normalizeDeliverableName(value: string | null | undefined) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function requiresProductReimbursementDocument(lineItems: Array<{ deliverable_name?: string | null }>) {
+  return lineItems.some((item) => normalizeDeliverableName(item.deliverable_name) === 'product reimbursement');
+}
+
+async function cleanupFailedSubmission(adminClient: ReturnType<typeof createServiceClient>, submissionId: string, previousSubmissionId?: string | null) {
+  await adminClient.from('intake_submissions').delete().eq('id', submissionId);
+  if (previousSubmissionId) {
+    await adminClient
+      .from('intake_submissions')
+      .update({
+        is_latest_version: true,
+        superseded_at: null,
+      })
+      .eq('id', previousSubmissionId);
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,10 +66,40 @@ export async function POST(req: NextRequest) {
     const adminClient = createServiceClient();
 
     const appUser = await getCurrentAppUser(userClient, token);
-    const body = (await req.json()) as CreateSubmissionInput;
+
+    let body: CreateSubmissionInput;
+    let productReimbursementFile: File | null = null;
+    const contentType = req.headers.get('content-type') || '';
+
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await req.formData();
+      const payloadEntry = formData.get('payload');
+      body = JSON.parse(String(payloadEntry || '{}')) as CreateSubmissionInput;
+      const fileEntry = formData.get('product_reimbursement_file');
+      const hasAttachmentField = formData.has('product_reimbursement_file');
+      productReimbursementFile = isFormUploadFile(fileEntry) ? fileEntry : null;
+      if (hasAttachmentField && fileEntry && !productReimbursementFile) {
+        throw new Error('Uploaded product reimbursement file could not be read on the server.');
+      }
+    } else {
+      body = (await req.json()) as CreateSubmissionInput;
+    }
 
     const submissionPayload = sanitizeSubmissionInput(body);
+    if (appUser.role === 'employee') {
+      if (!appUser.business_line) {
+        throw new Error('Your business line is not assigned. Please contact finance or admin.');
+      }
+      if (submissionPayload.business_line !== appUser.business_line) {
+        throw new Error('Employee submissions must use your assigned business line.');
+      }
+    }
     const lineItemsPayload = sanitizeLineItems(body.line_items);
+    const needsProductReimbursementDocument = requiresProductReimbursementDocument(lineItemsPayload);
+
+    if (productReimbursementFile) {
+      validateProductReimbursementFile(productReimbursementFile);
+    }
 
     const result = await createSubmissionWithLineItems({
       userClient,
@@ -48,6 +119,29 @@ export async function POST(req: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    if (needsProductReimbursementDocument && productReimbursementFile) {
+      try {
+        await uploadProductReimbursementAttachment({
+          adminClient,
+          submissionId: result.submission.id,
+          uploadedBy: appUser.id,
+          file: productReimbursementFile,
+        });
+      } catch (attachmentError) {
+        await cleanupFailedSubmission(adminClient, result.submission.id, submissionPayload.previous_submission_id);
+        const message = attachmentError instanceof Error ? attachmentError.message : 'Failed to upload reimbursement attachment.';
+        return NextResponse.json(
+          {
+            success: false,
+            stage: 'upload_attachment',
+            error: message,
+            sync_status: { supabase: 'failed', sheets: 'pending_sheet_sync' },
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const masterReviewResult = await createPendingMasterDataReviews({

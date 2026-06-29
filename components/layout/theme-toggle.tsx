@@ -10,7 +10,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   if (compact) {
     return (
       <button
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-[linear-gradient(135deg,rgba(34,211,238,0.16),rgba(37,99,235,0.14))] hover:text-sky-700 dark:hover:text-sky-200"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-[linear-gradient(135deg,rgba(34,211,238,0.16),rgba(37,99,235,0.14))] hover:text-sky-800 dark:hover:text-sky-200"
         type="button"
         onClick={toggleTheme}
         title={dark ? 'Switch to light mode' : 'Switch to dark mode'}

@@ -1233,9 +1233,9 @@ h3 {
 
 /* ── WorkspaceLoader comet spinner ────────────────────────────────── */
 :root {
-  --ws-dot: #302a5f;
-  --ws-trail-mid: hsl(210, 80%, 55%);
-  --ws-trail-dark: hsl(210, 85%, 22%);
+  --ws-dot: #1802c2;
+  --ws-trail-mid: hsl(210, 93%, 49%);
+  --ws-trail-dark: hsl(210, 85%, 72%);
 }
 .dark {
   --ws-dot: #e0f2fe;

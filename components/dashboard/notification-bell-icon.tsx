@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Bell, Check, ExternalLink, X } from 'lucide-react';
+import { AlertTriangle, Bell, Check, ExternalLink, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDashboardSession } from '../layout/dashboard-session';
 import { isEmployeeRole } from '../../lib/client/dashboard-access';
@@ -12,6 +12,7 @@ import {
   getNotificationCategory,
   getNotificationCategoryLabel,
   sortNotificationsLatestFirst,
+  isClosedSubmissionReopenedNotification,
   type NotificationCategory,
   type NotificationRow,
 } from '../../lib/client/notification-utils';
@@ -64,24 +65,30 @@ export function NotificationBellIcon({ onUnreadCountChange, variant = 'default' 
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [apiUnreadCount, setApiUnreadCount] = useState(0);
   const [showAllUpdates, setShowAllUpdates] = useState(false);
+  const [showReopenedOnly, setShowReopenedOnly] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const isEmployeeView = !!user && isEmployeeRole(user.role);
 
   const unreadCount = apiUnreadCount;
 
+  const visibleNotifications = useMemo(
+    () => showReopenedOnly ? notifications.filter((item) => isClosedSubmissionReopenedNotification(item)) : notifications,
+    [notifications, showReopenedOnly]
+  );
+
   const grouped = useMemo(
     () =>
       CATEGORY_ORDER.map((category) => ({
         category,
-        items: notifications.filter((item) => getNotificationCategory(item.type) === category),
+        items: visibleNotifications.filter((item) => getNotificationCategory(item.type) === category),
       })),
-    [notifications]
+    [visibleNotifications]
   );
 
   const loadNotifications = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/notifications/my?limit=50', {
+      const res = await fetch('/api/notifications/my?limit=100', {
         method: 'GET',
         cache: 'no-store',
       });
@@ -142,17 +149,6 @@ export function NotificationBellIcon({ onUnreadCountChange, variant = 'default' 
     });
   }
 
-  async function markAllRead() {
-    await fetch('/api/notifications/read', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mark_all: true }),
-    });
-
-    setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true })));
-    setApiUnreadCount(0);
-    onUnreadCountChange?.(0);
-  }
 
   return (
     <div ref={ref} className="relative">
@@ -180,24 +176,40 @@ export function NotificationBellIcon({ onUnreadCountChange, variant = 'default' 
           <div className="surface fixed right-4 top-14 z-50 flex max-h-[420px] w-[360px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-lg">
           <div className="flex items-center justify-between border-b border-border/70 bg-popover px-4 py-3">
             <div>
-              <h3 className="text-sm font-semibold">Notifications</h3>
-              <p className="text-xs text-muted-foreground">{unreadCount} unread</p>
+              <h3 className="text-sm font-semibold">{showReopenedOnly ? 'Reopened Alerts' : 'Notifications'}</h3>
+              <p className="text-xs text-muted-foreground">{showReopenedOnly ? 'Closed submissions reopened by finance' : `${unreadCount} unread`}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground"
-              aria-label="Close notifications"
-            >
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setShowReopenedOnly((current) => !current)}
+                className={[
+                  'rounded-md p-1 transition-colors',
+                  showReopenedOnly
+                    ? 'bg-rose-500/12 text-rose-700 hover:bg-rose-500/18 dark:bg-rose-400/12 dark:text-rose-200 dark:hover:bg-rose-400/18'
+                    : 'text-muted-foreground hover:bg-muted/20 hover:text-foreground',
+                ].join(' ')}
+                aria-label={showReopenedOnly ? 'Show all notifications' : 'Show reopened submission alerts'}
+                title={showReopenedOnly ? 'Show all notifications' : 'Show reopened submission alerts'}
+              >
+                <AlertTriangle size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground"
+                aria-label="Close notifications"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {loading && notifications.length === 0 ? (
+            {loading && visibleNotifications.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-muted-foreground">Loading notifications...</div>
-            ) : notifications.length === 0 ? (
-              <div className="px-4 py-6 text-center text-sm text-muted-foreground">No notifications</div>
+            ) : visibleNotifications.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-muted-foreground">{showReopenedOnly ? 'No reopened submission alerts' : 'No notifications'}</div>
             ) : (
               grouped.map(({ category, items }) => {
                 if (items.length === 0) return null;
@@ -217,54 +229,63 @@ export function NotificationBellIcon({ onUnreadCountChange, variant = 'default' 
                     </div>
 
                     <div className="divide-y divide-border/60">
-                      {visibleItems.map((item) => (
-                        <article
-                          key={item.id}
-                          className={[
-                            'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-2 transition-colors hover:bg-muted/15',
-                            item.is_read ? 'bg-popover' : 'border-l-2 border-l-[rgba(34,211,238,0.65)] bg-[linear-gradient(90deg,rgba(34,211,238,0.10),transparent)]',
-                          ].join(' ')}
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              {!item.is_read ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-destructive" /> : null}
-                              <p
-                                className={`truncate text-sm ${item.is_read ? 'font-medium' : 'font-semibold'} ${getToneTextClass(item.type, isEmployeeView)}`}
-                              >
-                                {item.title}
-                              </p>
+                      {visibleItems.map((item) => {
+                        const isReopenedAlert = isClosedSubmissionReopenedNotification(item);
+                        return (
+                          <article
+                            key={item.id}
+                            className={[
+                              'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-2 transition-colors hover:bg-muted/15',
+                              isReopenedAlert
+                                ? item.is_read
+                                  ? 'bg-rose-50/55 dark:bg-rose-500/10'
+                                  : 'border-l-2 border-l-rose-500/75 bg-[linear-gradient(90deg,rgba(244,63,94,0.12),transparent)] dark:bg-[linear-gradient(90deg,rgba(244,63,94,0.16),transparent)]'
+                                : item.is_read
+                                  ? 'bg-popover'
+                                  : 'border-l-2 border-l-[rgba(34,211,238,0.65)] bg-[linear-gradient(90deg,rgba(34,211,238,0.10),transparent)]',
+                            ].join(' ')}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                {!item.is_read ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-destructive" /> : null}
+                                <p
+                                  className={`truncate text-sm ${item.is_read ? 'font-medium' : 'font-semibold'} ${isReopenedAlert ? 'text-rose-700 dark:text-rose-200' : getToneTextClass(item.type, isEmployeeView)}`}
+                                >
+                                  {item.title}
+                                </p>
+                              </div>
+                              <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{item.message}</p>
+                              <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                                <span className={isReopenedAlert ? 'text-rose-700 dark:text-rose-200' : getToneTextClass(item.type, isEmployeeView)}>{getNotificationDisplayType(item.type, user?.role)}</span>
+                                <span>&middot;</span>
+                                <span>{formatRelativeTime(item.created_at)}</span>
+                              </div>
                             </div>
-                            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{item.message}</p>
-                            <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-                              <span className={getToneTextClass(item.type, isEmployeeView)}>{getNotificationDisplayType(item.type, user?.role)}</span>
-                              <span>&middot;</span>
-                              <span>{formatRelativeTime(item.created_at)}</span>
-                            </div>
-                          </div>
 
-                          <div className="row-span-2 flex items-center gap-1">
-                            {!item.is_read ? (
-                              <button
-                                type="button"
-                                onClick={() => void markRead(item.id)}
-                                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground"
-                                title="Mark as read"
+                            <div className="row-span-2 flex items-center gap-1">
+                              {!item.is_read ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void markRead(item.id)}
+                                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/20 hover:text-foreground"
+                                  title="Mark as read"
+                                >
+                                  <Check size={13} />
+                                </button>
+                              ) : null}
+                              <Link
+                                href={item.target_path}
+                                onClick={() => {
+                                  setOpen(false);
+                                }}
+                                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/20"
                               >
-                                <Check size={13} />
-                              </button>
-                            ) : null}
-                            <Link
-                              href={item.target_path}
-                              onClick={() => {
-                                setOpen(false);
-                              }}
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-muted/20"
-                            >
-                              Open <ExternalLink size={12} />
-                            </Link>
-                          </div>
-                        </article>
-                      ))}
+                                Open <ExternalLink size={12} />
+                              </Link>
+                            </div>
+                          </article>
+                        );
+                      })}
                     </div>
 
                     {category === 'updates' && items.length > 2 && !showAllUpdates ? (
@@ -282,23 +303,14 @@ export function NotificationBellIcon({ onUnreadCountChange, variant = 'default' 
             )}
           </div>
 
-          <div className="flex gap-2 border-t border-border p-3">
+          <div className="border-t border-border p-3">
             <Link
               href="/dashboard/notifications"
               onClick={() => setOpen(false)}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium transition-colors hover:bg-muted/20"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium transition-colors hover:bg-muted/20"
             >
               View All <ExternalLink size={13} />
             </Link>
-
-            <button
-              type="button"
-              onClick={() => void markAllRead()}
-              disabled={unreadCount === 0}
-              className="inline-flex flex-1 items-center justify-center rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Mark All Read
-            </button>
           </div>
         </div>
       ) : null}

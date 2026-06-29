@@ -7,6 +7,8 @@ import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
+import { SearchableSelect } from '../../../../components/forms/searchable-select';
+import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { SubmissionTable, type MasterDataCellKey, type MasterDataReviewSummary, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
@@ -23,7 +25,16 @@ import {
   formatPaymentReceivedStatus,
 } from '../../../../lib/client/finance-status';
 import { canViewFinanceDashboard, getDefaultDashboardPath, getDrawerViewerRole, getFinanceDashboardTitle } from '../../../../lib/client/dashboard-access';
-import { getPiDisplayMeta } from '../../../../lib/client/pi-display';
+import { pickProductReimbursementAttachment } from '../../../../lib/shared/submission-attachments';
+
+type SubmissionAttachmentApiRow = {
+  id: string;
+  document_type: string;
+  file_name: string;
+  file_size_bytes: number;
+  mime_type: string;
+  uploaded_at?: string | null;
+};
 
 type FinanceApiRow = {
   id: string;
@@ -49,6 +60,8 @@ type FinanceApiRow = {
   reimbursement_receipts: string | null;
   additional_information: string | null;
   previous_submission_id: string | null;
+  previous_submission_pi?: string | null;
+  version_status?: 'original' | 'resubmitted' | 'superseded';
   business_line?: 'TM' | 'IM' | null;
   entry_type?: 'SC' | 'MC' | null;
   entity_type?: 'Agency' | 'Brand' | null;
@@ -57,6 +70,7 @@ type FinanceApiRow = {
   agency_trade_name?: string | null;
   brand_trade_name?: string | null;
   finance_notes?: string | null;
+  finance_external_notes?: string | null;
   finance_comment?: string | null;
   intake_line_items: SubmissionRow['intake_line_items'];
   intake_status: SubmissionRow['intake_status'];
@@ -79,6 +93,7 @@ type FinanceApiRow = {
   closure_status?: string | null;
   invoice_number?: string | null;
   debit_note_number?: string | null;
+  submission_attachments?: SubmissionAttachmentApiRow[];
 };
 
 type FinanceAction =
@@ -113,6 +128,7 @@ type FinanceEditableField =
   | 'closed_status'
   | 'rejection_note'
   | 'finance_notes'
+  | 'finance_external_notes'
   | 'finance_comment'
   | 'invoice_number'
   | 'debit_note_number';
@@ -184,6 +200,11 @@ function normalizeClosedStatus(value: string | null | undefined) {
   return 'open';
 }
 
+function hasStartedLifecycleStatus(value: string | null | undefined) {
+  const normalized = normalizeStatusToken(value);
+  return Boolean(normalized && normalized !== 'pending');
+}
+
 function normalizeInvoiceStatus(value: string | null | undefined) {
   const normalized = normalizeStatusToken(value);
   if (!normalized) return '';
@@ -246,6 +267,76 @@ function formatDateFilterInput(value: string) {
 }
 
 
+function mergeSubmissionRows(current: SubmissionRow[], incoming: SubmissionRow[]) {
+  const merged = new Map<string, SubmissionRow>();
+  for (const row of current) merged.set(row.id, row);
+  for (const row of incoming) merged.set(row.id, row);
+  return Array.from(merged.values()).sort((left, right) => {
+    const leftTime = new Date(left.submitted_at || '').getTime();
+    const rightTime = new Date(right.submitted_at || '').getTime();
+    return rightTime - leftTime;
+  });
+}
+
+function mapFinanceSubmissionRow(item: FinanceApiRow): SubmissionRow {
+  return {
+    id: String(item.id),
+    pi: item.proforma_invoice ?? '',
+    entity: item.agency_brand_name || '-',
+    amount: Number(item.commercials ?? 0),
+    currency: item.currency || 'INR',
+    owner_name: item.submitted_by_name || undefined,
+    submitter_email: item.submitted_by_email || item.email_address || undefined,
+    intake_status: item.intake_status,
+    invoice_status: item.invoice_status || '-',
+    sync_status: item.sync_status || 'pending_sheet_sync',
+    submitted_at: item.submitted_at || new Date().toISOString(),
+    rejection_note: item.rejection_note || null,
+    trade_name: item.agency_brand_trade_name || null,
+    gst_number: item.gst_number || null,
+    address: item.address || null,
+    bill_due: item.bill_due || null,
+    invoice_type: item.invoice_type || null,
+    creator_creators_name: item.creator_creators_name || null,
+    brand_name: item.brand_name || null,
+    campaign_code: item.campaign_code || null,
+    campaign_name: item.campaign_name || null,
+    campaign_brand: item.campaign_brand || null,
+    campaign_notes: item.campaign_notes || null,
+    deliverables: item.deliverables || null,
+    invoice_number: item.invoice_number || null,
+    debit_note_number: item.debit_note_number || null,
+    additional_agency_commission: Number(item.additional_agency_commission ?? 0),
+    reimbursement_amount: Number(item.reimbursement_amount ?? 0),
+    reimbursement_receipts: item.reimbursement_receipts || null,
+    additional_information: item.additional_information || null,
+    previous_submission_id: item.previous_submission_id || null,
+    previous_submission_pi: item.previous_submission_pi || null,
+    version_status: item.version_status || 'original',
+    business_line: normalizeBusinessLine(item.business_line),
+    entry_type: item.entry_type || null,
+    entity_type: item.entity_type || null,
+    client_type: item.client_type || null,
+    agency_name: item.agency_name || null,
+    agency_trade_name: item.agency_trade_name || null,
+    brand_trade_name: item.brand_trade_name || null,
+    finance_notes: item.finance_notes || null,
+    finance_external_notes: item.finance_external_notes || null,
+    finance_comment: item.finance_comment || undefined,
+    reviewed_at: item.reviewed_at || null,
+    reviewed_by_name: item.reviewed_by_name || null,
+    intake_line_items: item.intake_line_items || [],
+    product_reimbursement_attachment: pickProductReimbursementAttachment(item.submission_attachments),
+    invoice_status_started: Boolean(String(item.invoice_status || '').trim() && String(item.invoice_status || '') !== '-'),
+    creator_invoice_received_started: hasStartedLifecycleStatus(item.creator_invoice_status || item.invoice_via_creators_received),
+    payment_received_started: hasStartedLifecycleStatus(item.payment_received_status || item.payment_received),
+    payment_made_started: hasStartedLifecycleStatus(item.payment_made_status || item.payment_made),
+    creator_invoice_received: normalizeCreatorInvoice(item.creator_invoice_status || item.invoice_via_creators_received),
+    payment_received: normalizePaymentReceived(item.payment_received_status || item.payment_received),
+    payment_made: normalizePaymentMade(item.payment_made_status || item.payment_made),
+    closed_status: normalizeClosedStatus(item.closure_status || item.closed),
+  };
+}
 function mapMasterDataReviews(items: MasterDataReviewApiRow[]): MasterDataReviewMap {
   const next: MasterDataReviewMap = {};
 
@@ -383,9 +474,14 @@ export default function FinanceReviewPage() {
   const searchParams = useSearchParams();
   const { user, loading } = useDashboardSession();
   const isMountedRef = useRef(true);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
   const [rows, setRows] = useState<SubmissionRow[]>([]);
   const [masterDataReviewsBySubmission, setMasterDataReviewsBySubmission] = useState<MasterDataReviewMap>({});
   const [rowsLoading, setRowsLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [rowsError, setRowsError] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -414,6 +510,10 @@ export default function FinanceReviewPage() {
   const [actionLoadingKey, setActionLoadingKey] = useState<FinanceAction | null>(null);
   const [actionSuccess, setActionSuccess] = useState('');
   const [editingField, setEditingField] = useState<string | null>(null);
+  const [highlightedSubmissionId, setHighlightedSubmissionId] = useState<string | null>(null);
+  const [deepLinkNotice, setDeepLinkNotice] = useState('');
+  const handledSubmissionIdRef = useRef<string | null>(null);
+  const loadingSubmissionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -431,101 +531,91 @@ export default function FinanceReviewPage() {
     return mapMasterDataReviews((json.items ?? []) as MasterDataReviewApiRow[]);
   }, []);
 
-  const loadFinanceSubmissions = useCallback(async () => {
+  const loadFinanceSubmissions = useCallback(async (offset = 0, append = false) => {
+    if (!user) return;
+
     if (isMountedRef.current) {
-      setRowsLoading(true);
-      setRowsError('');
+      if (append) {
+        if (loadingMoreRef.current) return;
+        loadingMoreRef.current = true;
+        setLoadingMore(true);
+      } else {
+        setRowsLoading(true);
+        setRowsError('');
+      }
     }
 
+    const params = new URLSearchParams({
+      limit: '50',
+      offset: String(offset),
+    });
+    if (query.trim()) params.set('query', query.trim());
+    if (businessLineFilter !== 'all') params.set('business_line', businessLineFilter);
+    if (intakeStatusFilter !== 'all') params.set('intake_status', intakeStatusFilter);
+    if (employeeFilter !== 'all') params.set('employee', employeeFilter);
+    if (invoiceStatusFilter !== 'all') params.set('invoice_status', invoiceStatusFilter);
+    if (creatorInvoiceReceivedFilter !== 'all') params.set('creator_invoice_received', creatorInvoiceReceivedFilter);
+    if (paymentReceivedFilter !== 'all') params.set('payment_received', paymentReceivedFilter);
+    if (paymentMadeFilter !== 'all') params.set('payment_made', paymentMadeFilter);
+    if (closedStatusFilter !== 'all') params.set('closed_status', closedStatusFilter);
+    if (versionStatusFilter !== 'all') params.set('version_status', versionStatusFilter);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+
     const [res, masterDataReviewMap] = await Promise.all([
-      fetch('/api/submissions/finance', { method: 'GET', cache: 'no-store' }),
-      loadMasterDataReviews().catch(() => ({} as MasterDataReviewMap)),
+      fetch('/api/submissions/finance?' + params.toString(), { method: 'GET', cache: 'no-store' }),
+      append ? Promise.resolve(null) : loadMasterDataReviews().catch(() => ({} as MasterDataReviewMap)),
     ]);
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json?.success) {
       throw new Error(json?.error || 'Failed to load finance submissions.');
     }
 
-    const mapped = ((json.submissions ?? []) as FinanceApiRow[]).map((item): SubmissionRow => ({
-      id: String(item.id),
-      pi: item.proforma_invoice ?? '',
-      entity: item.agency_brand_name || '-',
-      amount: Number(item.commercials ?? 0),
-      currency: item.currency || 'INR',
-      owner_name: item.submitted_by_name || undefined,
-      submitter_email: item.submitted_by_email || item.email_address || undefined,
-      intake_status: item.intake_status,
-      invoice_status: item.invoice_status || '-',
-      sync_status: item.sync_status || 'pending_sheet_sync',
-      submitted_at: item.submitted_at || new Date().toISOString(),
-      rejection_note: item.rejection_note || null,
-      trade_name: item.agency_brand_trade_name || null,
-      gst_number: item.gst_number || null,
-      address: item.address || null,
-      bill_due: item.bill_due || null,
-      invoice_type: item.invoice_type || null,
-      creator_creators_name: item.creator_creators_name || null,
-      brand_name: item.brand_name || null,
-      campaign_code: item.campaign_code || null,
-      campaign_name: item.campaign_name || null,
-      campaign_brand: item.campaign_brand || null,
-      campaign_notes: item.campaign_notes || null,
-      deliverables: item.deliverables || null,
-      invoice_number: item.invoice_number || null,
-      debit_note_number: item.debit_note_number || null,
-      additional_agency_commission: Number(item.additional_agency_commission ?? 0),
-      reimbursement_amount: Number(item.reimbursement_amount ?? 0),
-      reimbursement_receipts: item.reimbursement_receipts || null,
-      additional_information: item.additional_information || null,
-      previous_submission_id: item.previous_submission_id || null,
-      business_line: normalizeBusinessLine(item.business_line),
-      entry_type: item.entry_type || null,
-      entity_type: item.entity_type || null,
-      client_type: item.client_type || null,
-      agency_name: item.agency_name || null,
-      agency_trade_name: item.agency_trade_name || null,
-      brand_trade_name: item.brand_trade_name || null,
-      finance_notes: item.finance_notes || null,
-      finance_comment: item.finance_comment || undefined,
-      reviewed_at: item.reviewed_at || null,
-      reviewed_by_name: item.reviewed_by_name || null,
-      intake_line_items: item.intake_line_items || [],
-      invoice_status_started: Boolean(String(item.invoice_status || '').trim() && String(item.invoice_status || '') !== '-'),
-      creator_invoice_received_started: Boolean(String(item.creator_invoice_status || item.invoice_via_creators_received || '').trim()),
-      payment_received_started: Boolean(String(item.payment_received_status || item.payment_received || '').trim()),
-      payment_made_started: Boolean(String(item.payment_made_status || item.payment_made || '').trim()),
-      creator_invoice_received: normalizeCreatorInvoice(item.creator_invoice_status || item.invoice_via_creators_received),
-      payment_received: normalizePaymentReceived(item.payment_received_status || item.payment_received),
-      payment_made: normalizePaymentMade(item.payment_made_status || item.payment_made),
-      closed_status: normalizeClosedStatus(item.closure_status || item.closed),
-    }));
-
-    const piById = new Map(mapped.map((entry) => [entry.id, entry.pi]));
-    const newerByPreviousId = new Set(mapped.map((entry) => entry.previous_submission_id).filter(Boolean));
-    const versioned = mapped.map((entry) => ({
-      ...entry,
-      previous_submission_pi: entry.previous_submission_id ? piById.get(entry.previous_submission_id) || null : null,
-      version_status: entry.previous_submission_id
-        ? 'resubmitted'
-        : newerByPreviousId.has(entry.id)
-          ? 'superseded'
-          : 'original',
-    })) satisfies SubmissionRow[];
+    const mapped = ((json.submissions ?? []) as FinanceApiRow[]).map(mapFinanceSubmissionRow);
 
     if (isMountedRef.current) {
-      setRows(versioned);
-      setMasterDataReviewsBySubmission(masterDataReviewMap);
+      setRows((current) => (append ? mergeSubmissionRows(current, mapped) : mapped));
+      setHasMore(Boolean(json.has_more));
+      setNextOffset(typeof json.next_offset === 'number' ? json.next_offset : null);
+      if (!append && masterDataReviewMap) {
+        setMasterDataReviewsBySubmission(masterDataReviewMap);
+      }
+    }
+    if (append) {
+      loadingMoreRef.current = false;
+      if (isMountedRef.current) setLoadingMore(false);
+    } else if (isMountedRef.current) {
       setRowsLoading(false);
     }
-  }, [loadMasterDataReviews]);
+  }, [
+    businessLineFilter,
+    closedStatusFilter,
+    creatorInvoiceReceivedFilter,
+    dateFrom,
+    dateTo,
+    employeeFilter,
+    intakeStatusFilter,
+    invoiceStatusFilter,
+    loadMasterDataReviews,
+    paymentMadeFilter,
+    paymentReceivedFilter,
+    query,
+    user,
+    versionStatusFilter,
+  ]);
 
   useEffect(() => {
     let active = true;
     if (!user) return;
     if (!canViewFinanceDashboard(user.role)) return;
-    void loadFinanceSubmissions().catch((error) => {
+    setRows([]);
+    setHasMore(false);
+    setNextOffset(null);
+    void loadFinanceSubmissions(0, false).catch((error) => {
       if (active) {
-        setRowsError(error instanceof Error ? error.message : 'Failed to load finance submissions.');
+        const nextMessage = error instanceof Error ? error.message : 'Failed to load finance submissions.';
+        if (handleAuthTokenRecoveryMessage(nextMessage)) return;
+        setRowsError(nextMessage);
         setRowsLoading(false);
       }
     });
@@ -543,12 +633,98 @@ export default function FinanceReviewPage() {
   }, [loading, router, user]);
 
   useEffect(() => {
-    const submissionId = searchParams.get('submission_id');
-    if (!submissionId) return;
-    if (rows.some((entry) => entry.id === submissionId)) {
-      setOpenId(submissionId);
+    if (!hasMore || loadingMore || loadingMoreRef.current) return undefined;
+    const target = loadMoreRef.current;
+    if (!target || typeof IntersectionObserver === 'undefined') return undefined;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && nextOffset !== null && !loadingMoreRef.current) {
+          observer.disconnect();
+          void loadFinanceSubmissions(nextOffset, true).catch((error) => {
+            loadingMoreRef.current = false;
+            const nextMessage = error instanceof Error ? error.message : 'Failed to load finance submissions.';
+        if (handleAuthTokenRecoveryMessage(nextMessage)) return;
+        setRowsError(nextMessage);
+            setLoadingMore(false);
+          });
+        }
+      },
+      { rootMargin: '180px 0px' }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMore, loadFinanceSubmissions, loadingMore, nextOffset]);
+
+  useEffect(() => {
+    if (!highlightedSubmissionId) return undefined;
+    const timer = window.setTimeout(() => {
+      setHighlightedSubmissionId((current) => (current === highlightedSubmissionId ? null : current));
+    }, 2200);
+    return () => window.clearTimeout(timer);
+  }, [highlightedSubmissionId]);
+
+  useEffect(() => {
+    const submissionId = searchParams.get('submission_id')?.trim();
+    if (!submissionId) {
+      handledSubmissionIdRef.current = null;
+      loadingSubmissionIdRef.current = null;
+      setDeepLinkNotice('');
+      return;
     }
-  }, [rows, searchParams]);
+
+    if (rows.some((entry) => entry.id === submissionId)) {
+      if (handledSubmissionIdRef.current !== submissionId) {
+        handledSubmissionIdRef.current = submissionId;
+        setDeepLinkNotice('');
+        setHighlightedSubmissionId(submissionId);
+      }
+      return;
+    }
+
+    if (!user || handledSubmissionIdRef.current === submissionId || loadingSubmissionIdRef.current === submissionId) {
+      return;
+    }
+
+    loadingSubmissionIdRef.current = submissionId;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const params = new URLSearchParams({ submission_id: submissionId, limit: '1', offset: '0' });
+        const res = await fetch('/api/submissions/finance?' + params.toString(), { method: 'GET', cache: 'no-store' });
+        const json = (await res.json().catch(() => ({}))) as { success?: boolean; submissions?: FinanceApiRow[]; error?: string };
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.error || 'Failed to locate submission.');
+        }
+
+        const item = json.submissions?.[0];
+        if (!item) {
+          if (!cancelled) setDeepLinkNotice('Submission not found in current view.');
+          return;
+        }
+
+        if (!cancelled) {
+          setRows((current) => mergeSubmissionRows(current, [mapFinanceSubmissionRow(item)]));
+          setDeepLinkNotice('');
+          setHighlightedSubmissionId(submissionId);
+          handledSubmissionIdRef.current = submissionId;
+        }
+      } catch {
+        if (!cancelled) setDeepLinkNotice('Submission not found in current view.');
+      } finally {
+        if (!cancelled) {
+          handledSubmissionIdRef.current = submissionId;
+          loadingSubmissionIdRef.current = null;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rows, searchParams, user, highlightedSubmissionId]);
 
   const row = useMemo(() => rows.find((entry) => entry.id === openId) || null, [rows, openId]);
 
@@ -564,79 +740,25 @@ export default function FinanceReviewPage() {
     setActionSuccess('');
   }, [row, editingField]);
 
+  const employeeDirectory = useMemo(() => {
+    const next: Record<string, string> = {};
+    rows.forEach((entry) => {
+      const email = String(entry.submitter_email || '').trim();
+      if (!email) return;
+      const ownerName = String(entry.owner_name || '').trim();
+      next[email] = ownerName;
+    });
+    return next;
+  }, [rows]);
+
   const employeeOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(rows.flatMap((entry) => [entry.owner_name, entry.submitter_email]).filter(Boolean))
-      ) as string[],
-    [rows]
+    () => Object.keys(employeeDirectory).sort((left, right) => left.localeCompare(right)),
+    [employeeDirectory]
   );
   const invoiceStatusOptions = useMemo(
     () => Array.from(new Set(rows.map((entry) => entry.invoice_status).filter((status) => Boolean(status && status !== '-')))),
     [rows]
   );
-
-  const filteredRows = useMemo(() => {
-    return rows.filter((entry) => {
-      const effectiveBusinessLine = normalizeBusinessLine(entry.business_line || null);
-      if (businessLineFilter !== 'all' && effectiveBusinessLine !== businessLineFilter) return false;
-      if (intakeStatusFilter !== 'all' && entry.intake_status !== intakeStatusFilter) return false;
-      if (employeeFilter !== 'all' && entry.owner_name !== employeeFilter && entry.submitter_email !== employeeFilter) return false;
-      if (invoiceStatusFilter !== 'all' && entry.invoice_status !== invoiceStatusFilter) return false;
-      if (creatorInvoiceReceivedFilter !== 'all' && entry.creator_invoice_received !== creatorInvoiceReceivedFilter) return false;
-      if (paymentReceivedFilter !== 'all' && entry.payment_received !== paymentReceivedFilter) return false;
-      if (paymentMadeFilter !== 'all' && entry.payment_made !== paymentMadeFilter) return false;
-      if (closedStatusFilter !== 'all' && entry.closed_status !== closedStatusFilter) return false;
-      if (versionStatusFilter !== 'all' && (entry.version_status || 'original') !== versionStatusFilter) return false;
-      if (dateFrom && new Date(entry.submitted_at) < new Date(`${dateFrom}T00:00:00`)) return false;
-      if (dateTo && new Date(entry.submitted_at) > new Date(`${dateTo}T23:59:59`)) return false;
-
-      const haystack = [
-        entry.pi,
-        (() => {
-          const piMeta = getPiDisplayMeta({
-            pi: entry.pi,
-            submittedAt: entry.submitted_at,
-            invoiceType: entry.invoice_type,
-            lineItems: entry.intake_line_items,
-          });
-          return `${piMeta.label} ${piMeta.title}`;
-        })(),
-        entry.entity,
-        entry.owner_name,
-        entry.submitter_email,
-        entry.creator_creators_name,
-        entry.brand_name,
-        entry.agency_name,
-        entry.agency_trade_name,
-        entry.brand_trade_name,
-        entry.campaign_code,
-        entry.campaign_name,
-        entry.campaign_brand,
-        ...(entry.intake_line_items ?? []).flatMap((item) => [item.creator_name, item.brand_name, item.deliverable_name]),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-
-      if (query.trim() && !haystack.includes(query.trim().toLowerCase())) return false;
-      return true;
-    });
-  }, [
-    rows,
-    businessLineFilter,
-    intakeStatusFilter,
-    employeeFilter,
-    invoiceStatusFilter,
-    creatorInvoiceReceivedFilter,
-    paymentReceivedFilter,
-    paymentMadeFilter,
-    closedStatusFilter,
-    versionStatusFilter,
-    dateFrom,
-    dateTo,
-    query,
-  ]);
 
   function getActionLabel(action: FinanceAction) {
     if (actionLoadingKey !== action) {
@@ -656,6 +778,57 @@ export default function FinanceReviewPage() {
     if (action === 'add_debit_note') return 'Saving...';
     if (action === 'update_payment_status') return 'Updating...';
     return 'Saving...';
+  }
+
+  function applyUpdatedSubmission(targetRow: SubmissionRow, updated: Record<string, string | null | undefined>) {
+    const has = (key: string) => Object.prototype.hasOwnProperty.call(updated, key);
+    setRows((current) =>
+      current.map((entry) =>
+        entry.id !== targetRow.id
+          ? entry
+          : {
+              ...entry,
+              intake_status: (updated.intake_status as SubmissionRow['intake_status'] | undefined) ?? entry.intake_status,
+              invoice_status: updated.invoice_status ?? entry.invoice_status,
+              invoice_status_started: has('invoice_status')
+                ? Boolean(String(updated.invoice_status || '').trim() && String(updated.invoice_status || '') !== '-')
+                : entry.invoice_status_started,
+              invoice_number: has('invoice_number') ? (updated.invoice_number ?? null) : entry.invoice_number,
+              debit_note_number: has('debit_note_number') ? (updated.debit_note_number ?? null) : entry.debit_note_number,
+              finance_notes: has('finance_notes') ? (updated.finance_notes ?? null) : entry.finance_notes,
+              finance_external_notes: has('finance_external_notes') ? (updated.finance_external_notes ?? null) : entry.finance_external_notes,
+              finance_comment: has('finance_comment')
+                ? (updated.finance_comment ?? null)
+                : has('rejection_note')
+                  ? (updated.rejection_note ?? null)
+                  : entry.finance_comment,
+              creator_invoice_received_started: has('creator_invoice_status')
+                ? hasStartedLifecycleStatus(updated.creator_invoice_status)
+                : entry.creator_invoice_received_started,
+              creator_invoice_received: has('creator_invoice_status')
+                ? normalizeCreatorInvoice(updated.creator_invoice_status)
+                : entry.creator_invoice_received,
+              payment_received_started: has('payment_received_status')
+                ? hasStartedLifecycleStatus(updated.payment_received_status)
+                : entry.payment_received_started,
+              payment_received: has('payment_received_status')
+                ? normalizePaymentReceived(updated.payment_received_status)
+                : entry.payment_received,
+              payment_made_started: has('payment_made_status')
+                ? hasStartedLifecycleStatus(updated.payment_made_status)
+                : entry.payment_made_started,
+              payment_made: has('payment_made_status')
+                ? normalizePaymentMade(updated.payment_made_status)
+                : entry.payment_made,
+              closed_status: has('closure_status')
+                ? normalizeClosedStatus(updated.closure_status)
+                : entry.closed_status,
+              rejection_note: has('rejection_note') ? (updated.rejection_note ?? null) : entry.rejection_note,
+              reviewed_at: updated.reviewed_at ?? new Date().toISOString(),
+              reviewed_by_name: user?.full_name || entry.reviewed_by_name,
+            }
+      )
+    );
   }
 
   async function executeFinanceAction(targetRow: SubmissionRow, action: FinanceAction, extra: Record<string, string> = {}) {
@@ -686,15 +859,15 @@ export default function FinanceReviewPage() {
     if (!response.ok || !body?.success) {
       setActionSubmitting(false);
       setActionLoadingKey(null);
-      setActionError(body?.error || 'Finance action failed.');
+      const nextMessage = body?.error || 'Finance action failed.';
+      if (handleAuthTokenRecoveryMessage(nextMessage)) return;
+      setActionError(nextMessage);
       return;
     }
     try {
-      await loadFinanceSubmissions();
+      applyUpdatedSubmission(row, body?.submission || {});
       setActionSuccess(body?.message || (body?.changed === false ? 'No changes were needed.' : 'Finance action saved successfully.'));
       if (body?.changed !== false) setEditingField(null);
-    } catch (error) {
-      setRowsError(error instanceof Error ? error.message : 'Failed to refresh finance submissions.');
     } finally {
       setActionSubmitting(false);
       setActionLoadingKey(null);
@@ -758,8 +931,12 @@ export default function FinanceReviewPage() {
       if (value === 'accepted') {
         action = 'approve';
       } else if (value === 'rejected') {
+        const note = String(targetRow.finance_comment || targetRow.rejection_note || '').trim();
+        if (!note) {
+          return { success: false, message: 'Resubmission note is required before requesting resubmission.' };
+        }
         action = 'request_resubmission';
-        payload = { rejection_note: targetRow.rejection_note || 'Please review and resubmit.' };
+        payload = { rejection_note: note };
       } else {
         return { success: false, message: 'Submitted state is controlled by submission workflow.' };
       }
@@ -787,6 +964,9 @@ export default function FinanceReviewPage() {
     } else if (field === 'rejection_note') {
       action = 'request_resubmission';
       payload = { rejection_note: value };
+    } else if (field === 'finance_external_notes') {
+      action = 'update_payment_status';
+      payload = { finance_external_notes: value };
     } else {
       action = 'update_payment_status';
       payload = { finance_notes: value };
@@ -797,28 +977,7 @@ export default function FinanceReviewPage() {
       return { success: false, message: body?.error || 'Finance action failed.' };
     }
     const updated = body?.submission || {};
-    setRows((current) =>
-      current.map((entry) =>
-        entry.id !== targetRow.id
-          ? entry
-          : {
-              ...entry,
-              intake_status: updated.intake_status ?? entry.intake_status,
-              invoice_status: updated.invoice_status ?? entry.invoice_status,
-              invoice_number: updated.invoice_number ?? entry.invoice_number,
-              debit_note_number: updated.debit_note_number ?? entry.debit_note_number,
-              finance_notes: updated.finance_notes ?? entry.finance_notes,
-              finance_comment: updated.finance_comment ?? entry.finance_comment,
-              creator_invoice_received: updated.creator_invoice_status ?? entry.creator_invoice_received,
-              payment_received: updated.payment_received_status ?? entry.payment_received,
-              payment_made: updated.payment_made_status ?? entry.payment_made,
-              closed_status: updated.closure_status ?? entry.closed_status,
-              rejection_note: updated.rejection_note ?? entry.rejection_note,
-              reviewed_at: updated.reviewed_at ?? new Date().toISOString(),
-              reviewed_by_name: user.full_name,
-            }
-      )
-    );
+    applyUpdatedSubmission(targetRow, updated);
     return {
       success: true,
       message: body?.message || (body?.changed === false ? 'No changes were needed.' : 'Saved'),
@@ -829,6 +988,7 @@ export default function FinanceReviewPage() {
         invoice_number: updated.invoice_number,
         debit_note_number: updated.debit_note_number,
         finance_notes: updated.finance_notes ?? targetRow.finance_notes,
+        finance_external_notes: updated.finance_external_notes ?? targetRow.finance_external_notes,
         finance_comment: updated.finance_comment,
         creator_invoice_received: updated.creator_invoice_status,
         payment_received: updated.payment_received_status,
@@ -840,9 +1000,9 @@ export default function FinanceReviewPage() {
     };
   }
 
-  const pendingCount = filteredRows.filter((entry) => entry.intake_status === 'submitted').length;
-  const acceptedCount = filteredRows.filter((entry) => entry.intake_status === 'accepted').length;
-  const rejectedCount = filteredRows.filter((entry) => entry.intake_status === 'rejected').length;
+  const pendingCount = rows.filter((entry) => entry.intake_status === 'submitted').length;
+  const acceptedCount = rows.filter((entry) => entry.intake_status === 'accepted').length;
+  const rejectedCount = rows.filter((entry) => entry.intake_status === 'rejected').length;
   const activeAdvancedFilterCount = [
     invoiceStatusFilter !== 'all',
     creatorInvoiceReceivedFilter !== 'all',
@@ -1097,7 +1257,7 @@ export default function FinanceReviewPage() {
         </TrackingRow>
 
         <div className="surface" style={{ padding: 12 }}>
-          <div className="text-muted" style={{ fontSize: 12 }}>Finance Notes</div>
+          <div className="text-muted" style={{ fontSize: 12 }}>Finance Internal Notes</div>
           <div style={{ fontWeight: 600 }}>{row.finance_notes || 'No finance notes yet.'}</div>
         </div>
       </div>
@@ -1113,14 +1273,14 @@ export default function FinanceReviewPage() {
           description="Review submissions, update invoice and payment stages, and request corrected resubmissions."
           className="gap-3 border-b-0 pb-0"
         />
-
+  
         <section style={{ display: 'grid', gap: 12, marginTop: -4, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
           <KpiCard title="Pending Review" value={String(pendingCount)} hint="Requires finance action" variant="warning" compact />
           <KpiCard title="Accepted" value={String(acceptedCount)} hint="Approved by finance" variant="teal" compact />
           <KpiCard title="Rejected" value={String(rejectedCount)} hint="Returned with notes" variant="danger" compact />
         </section>
 
-      <SectionCard padding={16}>
+      <SectionCard padding={16} className="overflow-visible">
         <div className="grid gap-3">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,0.7fr))_auto]">
             <label className="grid gap-1">
@@ -1146,12 +1306,15 @@ export default function FinanceReviewPage() {
             </label>
             <label className="grid gap-1">
               <span className="text-xs font-medium text-muted-foreground">Employee</span>
-              <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}>
-                <option value="all">All</option>
-                {employeeOptions.map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                value={employeeFilter === 'all' ? '' : employeeFilter}
+                options={employeeOptions}
+                onChange={(next) => setEmployeeFilter(next || 'all')}
+                placeholder="Search employee email"
+                panelMaxHeight={220}
+                searchTextByOption={Object.fromEntries(employeeOptions.map((email) => [email, `${email} ${employeeDirectory[email] || ''}`]))}
+                className="border-border/70 bg-card text-foreground"
+              />
             </label>
             <div className="flex items-end">
               <button className="btn w-full xl:w-auto shrink-0" type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
@@ -1230,19 +1393,42 @@ export default function FinanceReviewPage() {
 
       {rowsLoading ? <WorkspaceLoader variant="section" label="Loading finance submissions..." /> : null}
       {rowsError ? <StatePanel tone="danger">{rowsError}</StatePanel> : null}
+      {deepLinkNotice ? <p className="text-xs text-muted-foreground">{deepLinkNotice}</p> : null}
 
       {!rowsLoading && !rowsError ? (
-        <SubmissionTable
-          rows={filteredRows}
-          onOpen={setOpenId}
-          columns={['pi', 'owner_name', 'entity', 'amount', 'intake_status', 'invoice_status', 'submitted_at', 'actions']}
-          emptyLabel="No finance submissions found for the current filters."
-          viewer={user.role === 'admin' ? 'admin' : 'finance'}
-          getActionLabel={() => 'View / Edit'}
-          onFinanceUpdate={updateFinanceCell}
-          masterDataReviewsBySubmission={masterDataReviewsBySubmission}
-          onMasterDataReviewAction={handleMasterDataReviewAction}
-        />
+        <div className="grid gap-3">
+          <SubmissionTable
+            rows={rows}
+            onOpen={setOpenId}
+            columns={['pi', 'owner_name', 'entity', 'amount', 'intake_status', 'invoice_status', 'submitted_at', 'actions']}
+            emptyLabel="No finance submissions found for the current filters."
+            viewer={user.role === 'admin' ? 'admin' : 'finance'}
+            getActionLabel={() => 'View / Edit'}
+            onFinanceUpdate={updateFinanceCell}
+            masterDataReviewsBySubmission={masterDataReviewsBySubmission}
+            onMasterDataReviewAction={handleMasterDataReviewAction}
+            highlightedRowId={highlightedSubmissionId}
+            paginationFooter={(
+              <div>
+                <div className="border-b border-border/50 px-4 py-2 text-center text-xs text-muted-foreground">
+                  PI numbering now continues from 466. Older submissions will be migrated shortly.
+                </div>
+                {rows.length > 0 ? (
+                  hasMore ? (
+                    <div className="flex flex-col items-center gap-3 px-3 py-3">
+                      <div ref={loadMoreRef} className="h-1 w-full" aria-hidden="true" />
+                      <button className="btn" type="button" onClick={() => void loadFinanceSubmissions(nextOffset || 0, true)} disabled={loadingMore || nextOffset === null}>
+                        {loadingMore ? 'Loading more...' : 'Load More'}
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="px-3 py-3 text-center text-xs text-muted-foreground">You&apos;ve reached the latest finance submissions.</p>
+                  )
+                ) : null}
+              </div>
+            )}
+          />
+        </div>
       ) : null}
 
       <SubmissionDrawer

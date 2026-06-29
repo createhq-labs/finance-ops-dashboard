@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
@@ -11,8 +11,18 @@ import { SubmissionTable, type SubmissionRow } from '../../../../components/dash
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { PAYMENT_RECEIVED_STATUS_OPTIONS } from '../../../../lib/client/finance-status';
+import { pickProductReimbursementAttachment } from '../../../../lib/shared/submission-attachments';
+import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { canSubmitInvoice, getDrawerViewerRole, getSubmissionsLabel } from '../../../../lib/client/dashboard-access';
-import { getPiDisplayMeta } from '../../../../lib/client/pi-display';
+
+type SubmissionAttachmentApiRow = {
+  id: string;
+  document_type: string;
+  file_name: string;
+  file_size_bytes: number;
+  mime_type: string;
+  uploaded_at?: string | null;
+};
 
 type MySubmissionApiRow = {
   id: string;
@@ -38,7 +48,10 @@ type MySubmissionApiRow = {
   reimbursement_receipts: string | null;
   additional_information: string | null;
   previous_submission_id: string | null;
+  previous_submission_pi?: string | null;
+  version_status?: 'original' | 'resubmitted' | 'superseded';
   finance_notes?: string | null;
+  finance_external_notes?: string | null;
   finance_comment?: string | null;
   creator_invoice_status?: string | null;
   payment_received?: string | null;
@@ -57,9 +70,20 @@ type MySubmissionApiRow = {
   invoice_status: string | null;
   submitted_at: string | null;
   rejection_note: string | null;
+  submission_attachments?: SubmissionAttachmentApiRow[];
+};
+
+type MySubmissionsResponse = {
+  success?: boolean;
+  submissions?: MySubmissionApiRow[];
+  has_more?: boolean;
+  next_offset?: number | null;
+  error?: string;
 };
 
 type EmployeePaymentFilter = 'all' | (typeof PAYMENT_RECEIVED_STATUS_OPTIONS)[number]['value'];
+
+const PAGE_SIZE = 50;
 
 function normalizeStatusValue(value: string | null | undefined) {
   const normalized = String(value || '')
@@ -77,16 +101,84 @@ function normalizeStatusValue(value: string | null | undefined) {
   return normalized;
 }
 
-function matchesEmployeePaymentFilter(row: SubmissionRow, filter: EmployeePaymentFilter) {
-  if (filter === 'all') return true;
-  const paymentReceived = normalizeStatusValue(row.payment_received);
-  return paymentReceived === filter;
+function hasStartedLifecycleStatus(value: string | null | undefined) {
+  const normalized = normalizeStatusValue(value);
+  return Boolean(normalized && normalized !== 'pending');
+}
+
+function mapSubmissionRow(item: MySubmissionApiRow, userName?: string | null, userEmail?: string | null): SubmissionRow {
+  return {
+    id: String(item.id),
+    pi: item.proforma_invoice ?? '',
+    entity: item.agency_brand_name || '-',
+    amount: Number(item.commercials ?? 0),
+    currency: item.currency || 'INR',
+    owner_name: userName || undefined,
+    submitter_email: item.email_address || userEmail || undefined,
+    intake_status: item.intake_status,
+    invoice_status: item.invoice_status || '-',
+    sync_status: 'pending_sheet_sync',
+    submitted_at: item.submitted_at || new Date().toISOString(),
+    rejection_note: item.rejection_note || null,
+    trade_name: item.agency_brand_trade_name || null,
+    gst_number: item.gst_number || null,
+    address: item.address || null,
+    bill_due: item.bill_due || null,
+    invoice_type: item.invoice_type || null,
+    creator_creators_name: item.creator_creators_name || null,
+    brand_name: item.brand_name || null,
+    campaign_code: item.campaign_code || null,
+    campaign_name: item.campaign_name || null,
+    campaign_brand: item.campaign_brand || null,
+    campaign_notes: item.campaign_notes || null,
+    deliverables: item.deliverables || null,
+    additional_agency_commission: Number(item.additional_agency_commission ?? 0),
+    reimbursement_amount: Number(item.reimbursement_amount ?? 0),
+    reimbursement_receipts: item.reimbursement_receipts || null,
+    additional_information: item.additional_information || null,
+    previous_submission_id: item.previous_submission_id || null,
+    previous_submission_pi: item.previous_submission_pi || null,
+    version_status: item.version_status || 'original',
+    finance_notes: item.finance_notes || null,
+    finance_external_notes: item.finance_external_notes || null,
+    finance_comment: item.finance_comment || undefined,
+    invoice_status_started: Boolean(String(item.invoice_status || '').trim() && String(item.invoice_status || '') !== '-'),
+    creator_invoice_received_started: hasStartedLifecycleStatus(item.creator_invoice_status),
+    payment_received_started: hasStartedLifecycleStatus(item.payment_received_status || item.payment_received),
+    payment_made_started: hasStartedLifecycleStatus(item.payment_made_status || item.payment_made),
+    creator_invoice_received: normalizeStatusValue(item.creator_invoice_status) || undefined,
+    payment_received: normalizeStatusValue(item.payment_received_status || item.payment_received) || undefined,
+    payment_made: normalizeStatusValue(item.payment_made_status || item.payment_made) || undefined,
+    business_line: item.business_line || null,
+    entry_type: item.entry_type || null,
+    entity_type: item.entity_type || null,
+    client_type: item.client_type || null,
+    agency_name: item.agency_name || null,
+    agency_trade_name: item.agency_trade_name || null,
+    brand_trade_name: item.brand_trade_name || null,
+    intake_line_items: item.intake_line_items || [],
+    product_reimbursement_attachment: pickProductReimbursementAttachment(item.submission_attachments),
+  };
+}
+
+function mergeRows(current: SubmissionRow[], incoming: SubmissionRow[]) {
+  const merged = new Map<string, SubmissionRow>();
+  for (const row of current) merged.set(row.id, row);
+  for (const row of incoming) merged.set(row.id, row);
+  return Array.from(merged.values()).sort((left, right) => {
+    const leftTime = new Date(left.submitted_at || '').getTime();
+    const rightTime = new Date(right.submitted_at || '').getTime();
+    return rightTime - leftTime;
+  });
 }
 
 export default function EmployeeSubmissionsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading } = useDashboardSession();
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
+
   const [query, setQuery] = useState('');
   const [intakeStatusFilter, setIntakeStatusFilter] = useState<'all' | SubmissionRow['intake_status']>('all');
   const [versionStatusFilter, setVersionStatusFilter] = useState<'all' | NonNullable<SubmissionRow['version_status']>>('all');
@@ -94,128 +186,101 @@ export default function EmployeeSubmissionsPage() {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [rows, setRows] = useState<SubmissionRow[]>([]);
   const [rowsLoading, setRowsLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [rowsError, setRowsError] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
+  const [highlightedSubmissionId, setHighlightedSubmissionId] = useState<string | null>(null);
+  const [deepLinkNotice, setDeepLinkNotice] = useState('');
+  const handledSubmissionIdRef = useRef<string | null>(null);
+  const loadingSubmissionIdRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    if (!user) return;
+  const loadRows = useCallback(
+    async (offset: number, append: boolean) => {
+      if (!user) return;
 
-    setRowsLoading(true);
-    setRowsError('');
+      if (append) {
+        if (loadingMoreRef.current) return;
+        loadingMoreRef.current = true;
+        setLoadingMore(true);
+      } else {
+        setRowsLoading(true);
+        setRowsError('');
+      }
 
-    fetch('/api/submissions/my', { method: 'GET', cache: 'no-store' })
-      .then(async (res) => {
-        const json = await res.json().catch(() => ({}));
+      try {
+        const params = new URLSearchParams({
+          limit: String(PAGE_SIZE),
+          offset: String(offset),
+        });
+        if (query.trim()) params.set('query', query.trim());
+        if (intakeStatusFilter !== 'all') params.set('intake_status', intakeStatusFilter);
+        if (versionStatusFilter !== 'all') params.set('version_status', versionStatusFilter);
+        if (paymentStatusFilter !== 'all') params.set('payment_status', paymentStatusFilter);
+
+        const res = await fetch('/api/submissions/my?' + params.toString(), { method: 'GET', cache: 'no-store' });
+        const json = (await res.json().catch(() => ({}))) as MySubmissionsResponse;
         if (!res.ok || !json?.success) {
           throw new Error(json?.error || 'Failed to load submissions.');
         }
-        const mapped = ((json.submissions ?? []) as MySubmissionApiRow[]).map((item): SubmissionRow => ({
-          id: String(item.id),
-          pi: item.proforma_invoice ?? '',
-          entity: item.agency_brand_name || '-',
-          amount: Number(item.commercials ?? 0),
-          currency: item.currency || 'INR',
-          owner_name: user.full_name || undefined,
-          submitter_email: item.email_address || user.email || undefined,
-          intake_status: item.intake_status,
-          invoice_status: item.invoice_status || '-',
-          sync_status: 'pending_sheet_sync',
-          submitted_at: item.submitted_at || new Date().toISOString(),
-          rejection_note: item.rejection_note || null,
-          trade_name: item.agency_brand_trade_name || null,
-          gst_number: item.gst_number || null,
-          address: item.address || null,
-          bill_due: item.bill_due || null,
-          invoice_type: item.invoice_type || null,
-          creator_creators_name: item.creator_creators_name || null,
-          brand_name: item.brand_name || null,
-          campaign_code: item.campaign_code || null,
-          campaign_name: item.campaign_name || null,
-          campaign_brand: item.campaign_brand || null,
-          campaign_notes: item.campaign_notes || null,
-          deliverables: item.deliverables || null,
-          additional_agency_commission: Number(item.additional_agency_commission ?? 0),
-          reimbursement_amount: Number(item.reimbursement_amount ?? 0),
-          reimbursement_receipts: item.reimbursement_receipts || null,
-          additional_information: item.additional_information || null,
-          previous_submission_id: item.previous_submission_id || null,
-          finance_notes: item.finance_notes || null,
-          finance_comment: item.finance_comment || undefined,
-          invoice_status_started: Boolean(String(item.invoice_status || '').trim() && String(item.invoice_status || '') !== '-'),
-          creator_invoice_received_started: Boolean(String(item.creator_invoice_status || '').trim()),
-          payment_received_started: Boolean(String(item.payment_received_status || item.payment_received || '').trim()),
-          payment_made_started: Boolean(String(item.payment_made_status || item.payment_made || '').trim()),
-          creator_invoice_received: normalizeStatusValue(item.creator_invoice_status) || undefined,
-          payment_received: normalizeStatusValue(item.payment_received_status || item.payment_received) || undefined,
-          payment_made: normalizeStatusValue(item.payment_made_status || item.payment_made) || undefined,
-          business_line: item.business_line || null,
-          entry_type: item.entry_type || null,
-          entity_type: item.entity_type || null,
-          client_type: item.client_type || null,
-          agency_name: item.agency_name || null,
-          agency_trade_name: item.agency_trade_name || null,
-          brand_trade_name: item.brand_trade_name || null,
-          intake_line_items: item.intake_line_items || [],
-        }));
-        const piById = new Map(mapped.map((entry) => [entry.id, entry.pi]));
-        const newerByPreviousId = new Set(mapped.map((entry) => entry.previous_submission_id).filter(Boolean));
-        const versioned = mapped.map((entry) => ({
-          ...entry,
-          previous_submission_pi: entry.previous_submission_id ? piById.get(entry.previous_submission_id) || null : null,
-          version_status: entry.previous_submission_id
-            ? 'resubmitted'
-            : newerByPreviousId.has(entry.id)
-              ? 'superseded'
-              : 'original',
-        })) satisfies SubmissionRow[];
-        if (active) setRows(versioned);
-      })
-      .catch((error) => {
-        if (active) setRowsError(error instanceof Error ? error.message : 'Failed to load submissions.');
-      })
-      .finally(() => {
-        if (active) setRowsLoading(false);
-      });
 
-    return () => {
-      active = false;
-    };
-  }, [user]);
+        const mapped = ((json.submissions ?? []) as MySubmissionApiRow[]).map((item) =>
+          mapSubmissionRow(item, user.full_name, user.email)
+        );
 
-  const filteredRows = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+        setRows((current) => (append ? mergeRows(current, mapped) : mapped));
+        setHasMore(Boolean(json.has_more));
+        setNextOffset(typeof json.next_offset === 'number' ? json.next_offset : null);
+      } catch (error) {
+        const nextMessage = error instanceof Error ? error.message : 'Failed to load submissions.';
+        if (handleAuthTokenRecoveryMessage(nextMessage)) return;
+        setRowsError(nextMessage);
+      } finally {
+        if (append) {
+          loadingMoreRef.current = false;
+          setLoadingMore(false);
+        } else {
+          setRowsLoading(false);
+        }
+      }
+    },
+    [intakeStatusFilter, paymentStatusFilter, query, user, versionStatusFilter]
+  );
 
-    return rows.filter((row) => {
-      if (intakeStatusFilter !== 'all' && row.intake_status !== intakeStatusFilter) return false;
-      if (versionStatusFilter !== 'all' && (row.version_status || 'original') !== versionStatusFilter) return false;
-      if (!matchesEmployeePaymentFilter(row, paymentStatusFilter)) return false;
+  const loadMore = useCallback(() => {
+    if (rowsLoading || loadingMore || !hasMore || nextOffset === null) return;
+    void loadRows(nextOffset, true);
+  }, [hasMore, loadRows, loadingMore, nextOffset, rowsLoading]);
 
-      if (!normalizedQuery) return true;
+  useEffect(() => {
+    if (!user) return;
+    setRows([]);
+    setHasMore(false);
+    setNextOffset(null);
+    void loadRows(0, false);
+  }, [loadRows, user]);
 
-      const piMeta = getPiDisplayMeta({
-        pi: row.pi,
-        submittedAt: row.submitted_at,
-        invoiceType: row.invoice_type,
-        lineItems: row.intake_line_items,
-      });
-      const haystack = [
-        row.pi,
-        piMeta.label,
-        piMeta.title,
-        row.entity,
-        row.brand_name,
-        row.creator_creators_name,
-        row.campaign_brand,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
+  useEffect(() => {
+    if (!hasMore || loadingMore || loadingMoreRef.current) return undefined;
+    const target = loadMoreRef.current;
+    if (!target || typeof IntersectionObserver === 'undefined') return undefined;
 
-      return haystack.includes(normalizedQuery);
-    });
-  }, [intakeStatusFilter, paymentStatusFilter, query, rows, versionStatusFilter]);
-  const row = useMemo(() => filteredRows.find((entry) => entry.id === openId) || null, [filteredRows, openId]);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !loadingMoreRef.current) {
+          observer.disconnect();
+          loadMore();
+        }
+      },
+      { rootMargin: '180px 0px' }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore, loadingMore]);
+
+  const row = useMemo(() => rows.find((entry) => entry.id === openId) || null, [rows, openId]);
   const activeAdvancedFilterCount = [versionStatusFilter !== 'all', paymentStatusFilter !== 'all'].filter(Boolean).length;
 
   function resetAdvancedFilters() {
@@ -224,12 +289,74 @@ export default function EmployeeSubmissionsPage() {
   }
 
   useEffect(() => {
-    const submissionId = searchParams.get('submission_id');
-    if (!submissionId) return;
-    if (rows.some((entry) => entry.id === submissionId)) {
-      setOpenId(submissionId);
+    if (!highlightedSubmissionId) return undefined;
+    const timer = window.setTimeout(() => {
+      setHighlightedSubmissionId((current) => (current === highlightedSubmissionId ? null : current));
+    }, 2200);
+    return () => window.clearTimeout(timer);
+  }, [highlightedSubmissionId]);
+
+  useEffect(() => {
+    const submissionId = searchParams.get('submission_id')?.trim();
+    if (!submissionId) {
+      handledSubmissionIdRef.current = null;
+      loadingSubmissionIdRef.current = null;
+      setDeepLinkNotice('');
+      return;
     }
-  }, [rows, searchParams]);
+
+    if (rows.some((entry) => entry.id === submissionId)) {
+      if (handledSubmissionIdRef.current !== submissionId) {
+        handledSubmissionIdRef.current = submissionId;
+        setDeepLinkNotice('');
+        setHighlightedSubmissionId(submissionId);
+      }
+      return;
+    }
+
+    if (!user || handledSubmissionIdRef.current === submissionId || loadingSubmissionIdRef.current === submissionId) {
+      return;
+    }
+
+    loadingSubmissionIdRef.current = submissionId;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const params = new URLSearchParams({ submission_id: submissionId, limit: '1', offset: '0' });
+        const res = await fetch('/api/submissions/my?' + params.toString(), { method: 'GET', cache: 'no-store' });
+        const json = (await res.json().catch(() => ({}))) as MySubmissionsResponse;
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.error || 'Failed to locate submission.');
+        }
+
+        const item = json.submissions?.[0];
+        if (!item) {
+          if (!cancelled) setDeepLinkNotice('Submission not found in current view.');
+          return;
+        }
+
+        const mapped = mapSubmissionRow(item, user.full_name, user.email);
+        if (!cancelled) {
+          setRows((current) => mergeRows(current, [mapped]));
+          setDeepLinkNotice('');
+          setHighlightedSubmissionId(submissionId);
+          handledSubmissionIdRef.current = submissionId;
+        }
+      } catch {
+        if (!cancelled) setDeepLinkNotice('Submission not found in current view.');
+      } finally {
+        if (!cancelled) {
+          handledSubmissionIdRef.current = submissionId;
+          loadingSubmissionIdRef.current = null;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rows, searchParams, user]);
 
   if (loading || !user) return null;
 
@@ -269,7 +396,7 @@ export default function EmployeeSubmissionsPage() {
             </label>
             <div className="flex items-end">
               <button className="btn w-full md:w-auto" type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
-                More Filters{activeAdvancedFilterCount > 0 ? ` (${activeAdvancedFilterCount})` : ''}
+                {'More Filters' + (activeAdvancedFilterCount > 0 ? ' (' + activeAdvancedFilterCount + ')' : '')}
               </button>
             </div>
           </div>
@@ -310,22 +437,45 @@ export default function EmployeeSubmissionsPage() {
 
       {rowsLoading ? <WorkspaceLoader variant="section" label="Loading submissions..." /> : null}
       {rowsError ? <StatePanel tone="danger" padding={12}>{rowsError}</StatePanel> : null}
+      {deepLinkNotice ? <p className="text-xs text-muted-foreground">{deepLinkNotice}</p> : null}
       {!rowsLoading && !rowsError ? (
-        <SubmissionTable
-          rows={filteredRows}
-          onOpen={(id, selectedRow) => {
-            if (user.role === 'employee' && selectedRow?.intake_status === 'rejected') {
-              router.push(`/dashboard/submissions/new?resubmit_id=${id}`);
-              return;
-            }
-            setOpenId(id);
-          }}
-          columns={['pi', 'entity', 'amount', 'intake_status', 'invoice_status', 'submitted_at', 'rejection_note', 'actions']}
-          emptyLabel="No submissions found yet."
-          getActionLabel={(row) => user.role === 'employee' && row.intake_status === 'rejected' ? 'Resubmit' : 'View'}
-          viewer={user.role}
-          viewerBusinessLine={user.business_line}
-        />
+        <div className="grid gap-3">
+          <SubmissionTable
+            rows={rows}
+            onOpen={(id, selectedRow) => {
+              if (user.role === 'employee' && selectedRow?.intake_status === 'rejected') {
+                router.push('/dashboard/submissions/new?resubmit_id=' + id);
+                return;
+              }
+              setOpenId(id);
+            }}
+            columns={['pi', 'entity', 'amount', 'intake_status', 'invoice_status', 'submitted_at', 'rejection_note', 'actions']}
+            emptyLabel="No submissions found yet."
+            getActionLabel={(currentRow) => user.role === 'employee' && currentRow.intake_status === 'rejected' ? 'Resubmit' : 'View'}
+            viewer={user.role}
+            viewerBusinessLine={user.business_line}
+            highlightedRowId={highlightedSubmissionId}
+            paginationFooter={(
+              <div>
+                <div className="border-b border-border/50 px-4 py-2 text-center text-xs text-muted-foreground">
+                  PI numbering now continues from 466. Older submissions will be migrated shortly.
+                </div>
+                {rows.length > 0 ? (
+                  hasMore ? (
+                    <div className="flex flex-col items-center gap-3 px-3 py-3">
+                      <div ref={loadMoreRef} className="h-1 w-full" aria-hidden="true" />
+                      <button className="btn" type="button" onClick={loadMore} disabled={loadingMore}>
+                        {loadingMore ? 'Loading more...' : 'Load More'}
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="px-3 py-3 text-center text-xs text-muted-foreground">You&apos;ve reached the latest submissions.</p>
+                  )
+                ) : null}
+              </div>
+            )}
+          />
+        </div>
       ) : null}
 
       <SubmissionDrawer
@@ -334,7 +484,7 @@ export default function EmployeeSubmissionsPage() {
         row={row}
         viewer={getDrawerViewerRole(user.role)}
         onResubmit={(id) => {
-          router.push(`/dashboard/submissions/new?resubmit_id=${id}`);
+          router.push('/dashboard/submissions/new?resubmit_id=' + id);
         }}
       />
     </div>

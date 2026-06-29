@@ -12,6 +12,18 @@ function resolveToken(req: NextRequest) {
   }
 }
 
+function clampLimit(value: string | null, fallback = 50) {
+  const parsed = Number.parseInt(value || '', 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return Math.min(Math.max(parsed, 1), 100);
+}
+
+function parseOffset(value: string | null) {
+  const parsed = Number.parseInt(value || '', 10);
+  if (Number.isNaN(parsed) || parsed < 0) return 0;
+  return parsed;
+}
+
 export async function GET(req: NextRequest) {
   try {
     assertSupabaseEnv();
@@ -25,10 +37,19 @@ export async function GET(req: NextRequest) {
       throw new Error('Unauthorized');
     }
 
+    const params = req.nextUrl.searchParams;
     const adminClient = createServiceClient();
-    const submissions = await listTeamLeadSubmissions(adminClient, appUser.id);
+    const result = await listTeamLeadSubmissions(adminClient, {
+      teamLeadId: appUser.id,
+      limit: clampLimit(params.get('limit'), 50),
+      offset: parseOffset(params.get('offset')),
+      query: params.get('query'),
+      status: params.get('status'),
+      memberQuery: params.get('member_query'),
+      submissionId: params.get('submission_id'),
+    });
 
-    return NextResponse.json({ success: true, submissions }, { status: 200 });
+    return NextResponse.json({ success: true, ...result }, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected error';
     return NextResponse.json({ success: false, error: message }, { status: 400 });
