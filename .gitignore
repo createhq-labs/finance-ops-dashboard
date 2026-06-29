@@ -10,3 +10,5 @@ to_do_later/
 node_modules/
 .next/
 dist/
+.vscode/
+tsconfig.tsbuildinfo

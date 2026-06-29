@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AppRole, AppUser } from '../types/submissions';
+import type { AppRole, AppUser, BusinessLine } from '../types/submissions';
 
 export type UserStatus = 'active' | 'inactive';
 
@@ -11,6 +11,8 @@ export type ManagedUser = {
   role: AppRole;
   status: UserStatus;
   team_name: string | null;
+  team_lead_id: string | null;
+  business_line: BusinessLine | null;
   created_at: string;
   updated_at: string;
 };
@@ -21,6 +23,7 @@ type CreateUserInput = {
   role?: string;
   status?: string;
   team_name?: string | null;
+  business_line?: string | null;
 };
 
 type UpdateUserInput = {
@@ -28,18 +31,19 @@ type UpdateUserInput = {
   role?: string;
   status?: string;
   team_name?: string | null;
+  business_line?: string | null;
 };
 
 const ROLES: AppRole[] = ['employee', 'team_lead', 'finance', 'admin', 'developer'];
 const STATUSES: UserStatus[] = ['active', 'inactive'];
-const USER_FIELDS = 'id, email, full_name, role, status, team_name, created_at, updated_at';
+const USER_FIELDS = 'id, email, full_name, role, status, team_name, team_lead_id, business_line, created_at, updated_at';
 
 export function canManageUsers(role: AppRole) {
   return role === 'finance' || role === 'admin' || role === 'developer';
 }
 
 export function getCreatableRoles(actorRole: AppRole): AppRole[] {
-  if (actorRole === 'finance') return ['employee'];
+  if (actorRole === 'finance') return ['employee', 'team_lead'];
   if (actorRole === 'admin' || actorRole === 'developer') {
     return ['employee', 'team_lead', 'finance', 'admin'];
   }
@@ -47,11 +51,21 @@ export function getCreatableRoles(actorRole: AppRole): AppRole[] {
 }
 
 export function getUpdatableRoles(actorRole: AppRole): AppRole[] {
-  if (actorRole === 'finance') return ['employee'];
+  if (actorRole === 'finance') return ['employee', 'team_lead'];
   if (actorRole === 'admin' || actorRole === 'developer') {
     return ['employee', 'team_lead', 'finance', 'admin'];
   }
   return [];
+}
+
+function canChangeRoleForTarget(actorRole: AppRole, targetRole: AppRole) {
+  if (actorRole === 'finance') return false;
+  return targetRole === 'employee' || targetRole === 'team_lead';
+}
+
+function getAssignableRoleChanges(actorRole: AppRole, targetRole: AppRole): AppRole[] {
+  if (!canChangeRoleForTarget(actorRole, targetRole)) return [];
+  return ['employee', 'team_lead'];
 }
 
 export function isKnownRole(value: string): value is AppRole {
@@ -73,6 +87,13 @@ function normalizeEmail(value: string) {
 function normalizeOptionalText(value: string | null | undefined) {
   const trimmed = String(value ?? '').trim();
   return trimmed ? trimmed : null;
+}
+
+function normalizeBusinessLine(value: string | null | undefined) {
+  const next = String(value ?? '').trim().toUpperCase();
+  if (!next) return null;
+  if (next === 'IM' || next === 'TM') return next as BusinessLine;
+  throw new Error('Invalid business line.');
 }
 
 function pickRandom(source: string) {
@@ -112,6 +133,7 @@ function validateCreatePayload(actorRole: AppRole, input: CreateUserInput) {
   const role = String(input.role ?? '');
   const status = String(input.status ?? 'active') || 'active';
   const team_name = normalizeOptionalText(input.team_name);
+  const business_line = normalizeBusinessLine(input.business_line);
 
   if (!email) throw new Error('Email is required.');
   if (!isCreateDomainEmail(email)) {
@@ -126,13 +148,20 @@ function validateCreatePayload(actorRole: AppRole, input: CreateUserInput) {
   if (!getCreatableRoles(actorRole).includes(role)) {
     throw new Error('You are not allowed to create this role.');
   }
+  if ((role === 'employee' || role === 'team_lead') && !business_line) {
+    throw new Error('Business line is required for employee and team lead users.');
+  }
+  if ((role === 'finance' || role === 'admin' || role === 'developer') && business_line) {
+    throw new Error('Finance, admin, and developer users must remain overall and cannot be assigned to IM or TM.');
+  }
 
-  return { email, full_name, role, status, team_name } as {
+  return { email, full_name, role, status, team_name, business_line } as {
     email: string;
     full_name: string;
     role: AppRole;
     status: UserStatus;
     team_name: string | null;
+    business_line: BusinessLine | null;
   };
 }
 
@@ -163,7 +192,7 @@ async function getUserById(client: SupabaseClient, userId: string) {
 
 export async function listUsers(
   client: SupabaseClient,
-  filters: { search?: string; role?: AppRole | 'all'; status?: UserStatus | 'all' }
+  filters: { search?: string; role?: AppRole | 'all'; status?: UserStatus | 'all'; businessLine?: BusinessLine | 'all' }
 ) {
   const { data, error } = await client.from('users').select(USER_FIELDS).order('created_at', { ascending: false });
 
@@ -172,10 +201,12 @@ export async function listUsers(
   const search = String(filters.search ?? '').trim().toLowerCase();
   const role = filters.role ?? 'all';
   const status = filters.status ?? 'all';
+  const businessLine = filters.businessLine ?? 'all';
 
   return ((data ?? []) as ManagedUser[]).filter((user) => {
     if (role !== 'all' && user.role !== role) return false;
     if (status !== 'all' && user.status !== status) return false;
+    if (businessLine !== 'all' && user.business_line !== businessLine) return false;
     if (search) {
       const haystack = `${user.full_name} ${user.email}`.toLowerCase();
       if (!haystack.includes(search)) return false;
@@ -221,6 +252,7 @@ export async function createDashboardUser(
         role: payload.role,
         status: payload.status,
         team_name: payload.team_name,
+        business_line: payload.business_line,
       })
       .select(USER_FIELDS)
       .single();
@@ -256,6 +288,10 @@ function sanitizeUpdatePayload(input: UpdateUserInput) {
     payload.team_name = normalizeOptionalText(input.team_name) as string | null;
   }
 
+  if (Object.prototype.hasOwnProperty.call(input, 'business_line')) {
+    payload.business_line = normalizeBusinessLine(input.business_line);
+  }
+
   if (Object.prototype.hasOwnProperty.call(input, 'status')) {
     const status = String(input.status ?? '');
     if (!isKnownStatus(status)) throw new Error('Invalid status.');
@@ -286,8 +322,8 @@ export async function updateDashboardUser(
   const isSelf = actor.id === target.id;
 
   if (actor.role === 'finance') {
-    if (target.role !== 'employee') {
-      throw new Error('Finance can only update employee users.');
+    if (target.role !== 'employee' && target.role !== 'team_lead') {
+      throw new Error('Finance can only update employee and team lead users.');
     }
     if (Object.prototype.hasOwnProperty.call(payload, 'role')) {
       throw new Error('Finance cannot change user roles.');
@@ -298,6 +334,9 @@ export async function updateDashboardUser(
     }
     if (payload.role === 'developer') {
       throw new Error('Developer role cannot be assigned here.');
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'role') && payload.role && !getAssignableRoleChanges(actor.role, target.role).includes(payload.role)) {
+      throw new Error('Only employee and team lead role changes are allowed here.');
     }
   }
 
@@ -332,6 +371,30 @@ export async function updateDashboardUser(
   if (payload.role && payload.role !== target.role) {
     updateData.role = payload.role;
   }
+  if (Object.prototype.hasOwnProperty.call(payload, 'business_line')) {
+    const desiredBusinessLine = payload.business_line ?? null;
+    if ((payload.role === 'employee' || payload.role === 'team_lead' || (!payload.role && (target.role === 'employee' || target.role === 'team_lead'))) && !desiredBusinessLine) {
+      throw new Error('Business line is required for employee and team lead users.');
+    }
+    if (desiredBusinessLine !== target.business_line) {
+      updateData.business_line = desiredBusinessLine;
+    }
+  }
+
+  const finalRole = payload.role ?? target.role;
+  const finalBusinessLine = Object.prototype.hasOwnProperty.call(payload, 'business_line')
+    ? payload.business_line ?? null
+    : target.business_line;
+  if ((finalRole === 'employee' || finalRole === 'team_lead') && !finalBusinessLine) {
+    throw new Error('Business line is required for employee and team lead users.');
+  }
+  if ((finalRole === 'finance' || finalRole === 'admin' || finalRole === 'developer') && finalBusinessLine) {
+    throw new Error('Finance, admin, and developer users must remain overall and cannot be assigned to IM or TM.');
+  }
+
+  if (finalRole === 'finance' || finalRole === 'admin' || finalRole === 'developer') {
+    updateData.business_line = null;
+  }
 
   if (Object.keys(updateData).length === 0) {
     return target;
@@ -353,7 +416,7 @@ export async function updateDashboardUser(
 
 export function canResetPassword(actorRole: AppRole, actorId: string, target: ManagedUser) {
   if (target.id === actorId) return false;
-  if (actorRole === 'finance') return target.role === 'employee';
+  if (actorRole === 'finance') return target.role === 'employee' || target.role === 'team_lead';
   if (actorRole === 'admin' || actorRole === 'developer') return target.role !== 'developer';
   return false;
 }
@@ -369,7 +432,7 @@ export async function resetDashboardUserPassword(
 
   const { data: target, error: targetError } = await serviceClient
     .from('users')
-    .select('id, email, full_name, role, status, team_name, created_at, updated_at, supabase_auth_id')
+    .select('id, email, full_name, role, status, team_name, team_lead_id, business_line, created_at, updated_at, supabase_auth_id')
     .eq('id', userId)
     .single();
 

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { BusinessLine } from '../types/submissions';
 
 type TeamLeadMemberRow = {
   id: string;
@@ -14,6 +15,7 @@ type TeamEmployeeRow = {
   email: string;
   role: string;
   status: string;
+  business_line: BusinessLine | null;
 };
 
 export type TeamMemberRecord = {
@@ -21,6 +23,7 @@ export type TeamMemberRecord = {
   full_name: string;
   email: string;
   status: string;
+  business_line: BusinessLine | null;
   created_at: string;
   created_by: string;
 };
@@ -30,9 +33,39 @@ export type TeamCandidateRecord = {
   full_name: string;
   email: string;
   status: string;
+  business_line: BusinessLine | null;
   team_lead_names: string[];
   is_current_team_member: boolean;
+  disabled_reason: string | null;
 };
+
+export type TeamLeadSubmissionListResult = {
+  submissions: Array<Record<string, unknown>>;
+  has_more: boolean;
+  next_offset: number | null;
+  offset: number;
+  limit: number;
+};
+
+type FilterQuery = {
+  eq: (column: string, value: unknown) => FilterQuery;
+  or: (filters: string) => FilterQuery;
+  in: (column: string, values: string[]) => FilterQuery;
+  range: (from: number, to: number) => Promise<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>;
+  order: (column: string, options: { ascending: boolean }) => FilterQuery;
+};
+
+function normalizeBusinessLine(value: string | null | undefined) {
+  const next = String(value ?? '').trim().toUpperCase();
+  if (next === 'IM' || next === 'TM') return next as BusinessLine;
+  return null;
+}
+
+function mapVersionStatus(previousSubmissionId: string | null, isLatestVersion: boolean | null | undefined) {
+  if (previousSubmissionId) return 'resubmitted';
+  if (isLatestVersion === false) return 'superseded';
+  return 'original';
+}
 
 export async function listTeamLeadMembers(client: SupabaseClient, teamLeadId: string) {
   const { data, error } = await client
@@ -52,7 +85,7 @@ export async function listTeamLeadMembers(client: SupabaseClient, teamLeadId: st
 
   const { data: employees, error: employeesError } = await client
     .from('users')
-    .select('id, full_name, email, role, status')
+    .select('id, full_name, email, role, status, business_line')
     .in('id', employeeIds);
 
   if (employeesError) throw new Error(employeesError.message);
@@ -70,6 +103,7 @@ export async function listTeamLeadMembers(client: SupabaseClient, teamLeadId: st
         full_name: employee.full_name,
         email: employee.email,
         status: employee.status,
+        business_line: employee.business_line ?? null,
         created_at: mapping.created_at,
         created_by: mapping.created_by,
       } satisfies TeamMemberRecord;
@@ -80,7 +114,8 @@ export async function listTeamLeadMembers(client: SupabaseClient, teamLeadId: st
 export async function searchTeamLeadCandidates(
   client: SupabaseClient,
   teamLeadId: string,
-  search: string
+  search: string,
+  teamLeadBusinessLine: string | null
 ) {
   const normalizedSearch = search.trim().toLowerCase();
 
@@ -95,7 +130,7 @@ export async function searchTeamLeadCandidates(
 
   const { data, error } = await client
     .from('users')
-    .select('id, full_name, email, role, status')
+    .select('id, full_name, email, role, status, business_line')
     .eq('role', 'employee');
 
   if (error) throw new Error(error.message);
@@ -104,7 +139,7 @@ export async function searchTeamLeadCandidates(
     .filter((employee) => employee.status === 'active')
     .filter((employee) => {
       if (!normalizedSearch) return true;
-      const haystack = `${employee.full_name} ${employee.email}`.toLowerCase();
+      const haystack = (employee.full_name + ' ' + employee.email).toLowerCase();
       return haystack.includes(normalizedSearch);
     })
     .sort((left, right) => left.full_name.localeCompare(right.full_name));
@@ -149,8 +184,15 @@ export async function searchTeamLeadCandidates(
       full_name: employee.full_name,
       email: employee.email,
       status: employee.status,
+      business_line: employee.business_line ?? null,
       team_lead_names: leadNamesByEmployee.get(employee.id) || [],
       is_current_team_member: currentTeamIds.has(employee.id),
+      disabled_reason:
+        !normalizeBusinessLine(teamLeadBusinessLine)
+          ? 'Assign business line first.'
+          : employee.business_line !== normalizeBusinessLine(teamLeadBusinessLine)
+            ? 'Different business line'
+            : null,
     }));
 }
 
@@ -158,7 +200,8 @@ export async function addTeamLeadMember(
   client: SupabaseClient,
   teamLeadId: string,
   employeeId: string,
-  createdBy: string
+  createdBy: string,
+  teamLeadBusinessLine: string | null
 ) {
   if (teamLeadId === employeeId) {
     throw new Error('You cannot add yourself as a team member.');
@@ -166,7 +209,7 @@ export async function addTeamLeadMember(
 
   const { data: employee, error: employeeError } = await client
     .from('users')
-    .select('id, role, status, full_name, email')
+    .select('id, role, status, full_name, email, business_line')
     .eq('id', employeeId)
     .maybeSingle();
 
@@ -174,6 +217,13 @@ export async function addTeamLeadMember(
   if (!employee) throw new Error('Employee not found.');
   if (employee.role !== 'employee') throw new Error('Only employee users can be added to a team.');
   if (employee.status !== 'active') throw new Error('Only active employees can be added to a team.');
+  const leadLine = normalizeBusinessLine(teamLeadBusinessLine);
+  if (!leadLine) {
+    throw new Error('Assign business line first.');
+  }
+  if (employee.business_line !== leadLine) {
+    throw new Error('Different business line.');
+  }
 
   const { data: existing, error: existingError } = await client
     .from('team_lead_members')
@@ -230,7 +280,20 @@ export async function removeTeamLeadMember(
   return { removed: true as const };
 }
 
-export async function listTeamLeadSubmissions(client: SupabaseClient, teamLeadId: string) {
+export async function listTeamLeadSubmissions(
+  client: SupabaseClient,
+  params: {
+    teamLeadId: string;
+    limit: number;
+    offset: number;
+    query?: string | null;
+    status?: string | null;
+    memberQuery?: string | null;
+    submissionId?: string | null;
+  }
+): Promise<TeamLeadSubmissionListResult> {
+  const { teamLeadId, limit, offset, query, status, memberQuery, submissionId } = params;
+
   const { data: mappings, error: mappingsError } = await client
     .from('team_lead_members')
     .select('employee_id')
@@ -238,24 +301,71 @@ export async function listTeamLeadSubmissions(client: SupabaseClient, teamLeadId
 
   if (mappingsError) throw new Error(mappingsError.message);
 
-  const employeeIds = Array.from(new Set((mappings ?? []).map((item) => String(item.employee_id)).filter(Boolean)));
+  let employeeIds = Array.from(new Set((mappings ?? []).map((item) => String(item.employee_id)).filter(Boolean)));
   if (employeeIds.length === 0) {
-    return [] as Array<Record<string, unknown>>;
+    return { submissions: [], has_more: false, next_offset: null, offset, limit };
   }
 
-  const baseSelect =
-    'id, submitted_by, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, invoice_number, debit_note_number, finance_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
+  const normalizedMemberQuery = String(memberQuery || '').trim();
+  if (normalizedMemberQuery) {
+    const { data: matchedUsers, error: matchedUsersError } = await client
+      .from('users')
+      .select('id')
+      .in('id', employeeIds)
+      .or('full_name.ilike.%' + normalizedMemberQuery + '%,email.ilike.%' + normalizedMemberQuery + '%');
 
-  const { data, error } = await client
+    if (matchedUsersError) throw new Error(matchedUsersError.message);
+
+    employeeIds = (matchedUsers ?? []).map((user) => String(user.id ?? '')).filter(Boolean);
+    if (employeeIds.length === 0) {
+      return { submissions: [], has_more: false, next_offset: null, offset, limit };
+    }
+  }
+
+  let submissionsQuery = client
     .from('intake_submissions')
-    .select(baseSelect)
+    .select(
+      'id, submitted_by, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, invoice_number, debit_note_number, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, is_latest_version, submission_attachments(id,document_type,file_name,file_size_bytes,mime_type,uploaded_at), intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)'
+    )
     .in('submitted_by', employeeIds)
-    .order('submitted_at', { ascending: false });
+    .order('submitted_at', { ascending: false }) as unknown as FilterQuery;
+
+  if (submissionId) {
+    submissionsQuery = submissionsQuery.eq('id', submissionId.trim());
+  }
+
+  if (status && status !== 'all') {
+    submissionsQuery = submissionsQuery.eq('intake_status', status);
+  }
+
+  const normalizedQuery = String(query || '').trim().replace(/,/g, ' ');
+  if (normalizedQuery) {
+    submissionsQuery = submissionsQuery.or(
+      [
+        'proforma_invoice.ilike.%' + normalizedQuery + '%',
+        'agency_brand_name.ilike.%' + normalizedQuery + '%',
+        'agency_brand_trade_name.ilike.%' + normalizedQuery + '%',
+        'creator_creators_name.ilike.%' + normalizedQuery + '%',
+        'brand_name.ilike.%' + normalizedQuery + '%',
+        'campaign_code.ilike.%' + normalizedQuery + '%',
+        'campaign_name.ilike.%' + normalizedQuery + '%',
+        'campaign_brand.ilike.%' + normalizedQuery + '%',
+      ].join(',')
+    );
+  }
+
+  const { data, error } = await submissionsQuery.range(offset, offset + limit);
 
   if (error) throw new Error(error.message);
 
+  const pageRows = ((data ?? []) as Array<Record<string, unknown>>).slice(0, limit);
+  const hasMore = ((data ?? []) as Array<Record<string, unknown>>).length > limit;
+
   const submittedByIds = Array.from(
-    new Set(((data ?? []) as Array<{ submitted_by?: string | null }>).map((row) => String(row.submitted_by ?? '')).filter(Boolean))
+    new Set(pageRows.map((row) => String(row.submitted_by ?? '')).filter(Boolean))
+  );
+  const previousSubmissionIds = Array.from(
+    new Set(pageRows.map((row) => String(row.previous_submission_id ?? '')).filter(Boolean))
   );
 
   let userMap = new Map<string, { full_name: string; email: string }>();
@@ -273,12 +383,38 @@ export async function listTeamLeadSubmissions(client: SupabaseClient, teamLeadId
     );
   }
 
-  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+  let previousPiMap = new Map<string, string | null>();
+  if (previousSubmissionIds.length > 0) {
+    const { data: previousRows, error: previousRowsError } = await client
+      .from('intake_submissions')
+      .select('id, proforma_invoice')
+      .in('id', previousSubmissionIds);
+    if (previousRowsError) throw new Error(previousRowsError.message);
+    previousPiMap = new Map(
+      ((previousRows ?? []) as Array<{ id: string; proforma_invoice: string | null }>).map((row) => [
+        String(row.id),
+        row.proforma_invoice ? String(row.proforma_invoice) : null,
+      ])
+    );
+  }
+
+  const submissions = pageRows.map((row) => {
     const owner = userMap.get(String(row.submitted_by ?? ''));
+    const previousSubmissionId = row.previous_submission_id ? String(row.previous_submission_id) : null;
     return {
       ...row,
       submitted_by_name: owner?.full_name ?? null,
       submitted_by_email: owner?.email ?? null,
+      previous_submission_pi: previousSubmissionId ? previousPiMap.get(previousSubmissionId) ?? null : null,
+      version_status: mapVersionStatus(previousSubmissionId, row.is_latest_version as boolean | null | undefined),
     };
   });
+
+  return {
+    submissions,
+    has_more: hasMore,
+    next_offset: hasMore ? offset + limit : null,
+    offset,
+    limit,
+  };
 }

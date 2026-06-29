@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DeliverableAmountRow, MultiCreatorRow } from "./types";
 import { CURRENCY_OPTIONS } from "../../lib/shared/currency";
 import { SearchableSelect } from "./searchable-select";
@@ -23,7 +24,14 @@ function CurrencyField({
   );
 }
 
-function ProductReimbursementField({
+function formatSelectedFileSize(file: File | null) {
+  if (!file) return '';
+  const sizeMb = file.size / (1024 * 1024);
+  if (sizeMb >= 1) return `${sizeMb.toFixed(sizeMb >= 10 ? 0 : 1)} MB`;
+  return `${Math.max(1, Math.round(file.size / 1024))} KB`;
+}
+
+export function ProductReimbursementField({
   fieldKey,
   file,
   error,
@@ -34,25 +42,89 @@ function ProductReimbursementField({
   error: string;
   onChange: (key: string, file: File | null) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const isImage = Boolean(file?.type?.startsWith('image/'));
+
   return (
-    <div className="grid gap-1" style={{ maxWidth: 320 }}>
-      <input
-        className="intake-input"
-        type="file"
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,image/*"
-        style={{ width: "fit-content", maxWidth: 280, minWidth: 220 }}
-        onChange={(e) => onChange(fieldKey, e.target.files?.[0] ?? null)}
-      />
-      <p className="text-muted intake-section-copy" style={{ margin: 0 }}>
-        PDF, image, document, or spreadsheet. Max 10 MB.
-      </p>
-      {error ? <p className="text-danger intake-inline-error">{error}</p> : null}
-      {file ? (
-        <p className="text-muted intake-section-copy" style={{ margin: 0 }}>
-          {file.name}
-        </p>
+    <>
+      <div className="grid gap-2" style={{ maxWidth: 440 }}>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="application/pdf,image/png,image/jpeg,image/webp"
+          onChange={(e) => onChange(fieldKey, e.target.files?.[0] ?? null)}
+          style={{ display: 'none' }}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => inputRef.current?.click()}
+            style={{ minWidth: 122 }}
+          >
+            {file ? 'Replace File' : 'Choose File'}
+          </button>
+          <span className="text-muted intake-section-copy" style={{ margin: 0 }}>
+            PDF, PNG, JPG, or WEBP. Max 10 MB.
+          </span>
+        </div>
+        {error ? <p className="text-danger intake-inline-error">{error}</p> : null}
+        {file ? (
+          <div
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-sky-200/70 bg-sky-50/80 px-3 py-2 dark:border-sky-400/20 dark:bg-sky-500/10"
+            title={file.name}
+          >
+            <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{file.name}</span>
+            <span className="text-xs text-muted-foreground">{formatSelectedFileSize(file)}</span>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setPreviewOpen(true)}
+              style={{ paddingInline: 10, minHeight: 30 }}
+            >
+              View
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      {previewOpen && file ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/45 p-4"
+          onClick={() => setPreviewOpen(false)}
+        >
+          <div
+            className="surface w-full max-w-2xl rounded-2xl border border-border/70 bg-background p-4 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+            style={{ display: 'grid', gap: 12 }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-foreground">{file.name}</div>
+                <div className="text-xs text-muted-foreground">{formatSelectedFileSize(file)}</div>
+              </div>
+              <button type="button" className="btn" onClick={() => setPreviewOpen(false)}>Close</button>
+            </div>
+            <div className="overflow-hidden rounded-xl border border-border/60 bg-card/80" style={{ height: 420 }}>
+              {isImage ? (
+                <img src={previewUrl} alt={file.name} className="h-full w-full object-contain bg-black/5 dark:bg-white/5" />
+              ) : (
+                <iframe src={previewUrl} title={file.name} className="h-full w-full border-0" />
+              )}
+            </div>
+          </div>
+        </div>
       ) : null}
-    </div>
+    </>
   );
 }
 

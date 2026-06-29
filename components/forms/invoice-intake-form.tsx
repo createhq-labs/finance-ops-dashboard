@@ -15,14 +15,17 @@ import { CommercialsSection } from "./sections/CommercialsSection";
 import { CreatorDeliverablesSection } from "./sections/CreatorDeliverablesSection";
 import { FormActions } from "./sections/FormActions";
 import { InvoiceDetailsSection } from "./sections/InvoiceDetailsSection";
-import type { BusinessLine, EntryType, InvoiceIntakeFormValues, InvoiceIntakeSubmissionPayload, MultiCreatorRow } from "./types";
+import type { BusinessLine, EntryType, InvoiceIntakeFormSubmitInput, InvoiceIntakeFormValues, InvoiceIntakeSubmissionPayload, MultiCreatorRow } from "./types";
+import { PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES, PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES } from "../../lib/shared/submission-attachments";
 
 type Props = {
   submitterName?: string;
   submitterEmail?: string;
+  currentUserRole?: 'employee' | 'team_lead' | 'finance' | 'admin' | 'developer';
+  currentUserBusinessLine?: BusinessLine | null;
   initialValues?: Partial<InvoiceIntakeFormValues> | null;
   previousSubmissionId?: string | null;
-  onSubmit?: (payload: InvoiceIntakeSubmissionPayload) => Promise<void> | void;
+  onSubmit?: (submission: InvoiceIntakeFormSubmitInput) => Promise<void> | void;
   submitEnabled?: boolean;
 };
 
@@ -33,6 +36,7 @@ const REIMBURSEMENT_INVOICE_TYPES = new Set([
   "Reimbursement Invoice (With GST)",
   "Reimbursement Invoice (Without GST)",
 ]);
+const PRODUCT_REIMBURSEMENT_UPLOAD_HINT = "Upload a PDF, PNG, JPG, or WEBP file up to 10 MB.";
 const INDIAN_STATES: Array<{ name: string; aliases: string[] }> = [
   { name: "Delhi", aliases: ["delhi", "new delhi"] },
   { name: "Haryana", aliases: ["haryana"] },
@@ -152,9 +156,13 @@ function sumAmounts(values: string[]) {
   return values.reduce((total, value) => total + parseAmount(value), 0);
 }
 
+function normalizeGstNumber(value: string) {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
 function isValidGstin(value: string) {
-  const gst = value.toUpperCase();
-  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gst);
+  const gst = normalizeGstNumber(value);
+  return gst === 'NA' || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gst);
 }
 
 function normalizeState(value: string) {
@@ -247,6 +255,8 @@ function isObviouslyIndianAddress(values: Pick<InvoiceIntakeFormValues, "address
 export function InvoiceIntakeForm({
   submitterName = "",
   submitterEmail = "",
+  currentUserRole,
+  currentUserBusinessLine = null,
   initialValues = null,
   previousSubmissionId = null,
   onSubmit,
@@ -278,6 +288,7 @@ export function InvoiceIntakeForm({
   const [productReimbursementFiles, setProductReimbursementFiles] = useState<Record<string, File | null>>({});
   const [productReimbursementErrors, setProductReimbursementErrors] = useState<Record<string, string>>({});
   const [masters, setMasters] = useState<FormDropdownMasterData>(getFallbackMasterData);
+  const lockedBusinessLine = currentUserRole === 'employee' && currentUserBusinessLine ? currentUserBusinessLine : null;
 
   useEffect(() => {
     setValues((prev) => ({
@@ -286,6 +297,11 @@ export function InvoiceIntakeForm({
       submitterEmail: submitterEmail || prev.submitterEmail,
     }));
   }, [submitterName, submitterEmail]);
+
+  useEffect(() => {
+    if (!lockedBusinessLine) return;
+    setValues((prev) => (prev.businessLine === lockedBusinessLine ? prev : { ...prev, businessLine: lockedBusinessLine }));
+  }, [lockedBusinessLine]);
 
   useEffect(() => {
     if (!initialValues) return;
@@ -563,6 +579,7 @@ export function InvoiceIntakeForm({
   }
 
   function setBranch(branch: BusinessLine) {
+    if (lockedBusinessLine && branch !== lockedBusinessLine) return;
     setValues((prev) => ({
       ...prev,
       businessLine: branch,
@@ -707,15 +724,60 @@ export function InvoiceIntakeForm({
     return productReimbursementErrors[key] ?? "";
   }
 
+  function getVisibleProductReimbursementKeys(nextValues: InvoiceIntakeFormValues) {
+    const keys: string[] = [];
+    if (nextValues.businessLine === "TM" && nextValues.entryType === "SC") {
+      nextValues.scDeliverables.forEach((row, index) => {
+        if (row.deliverable === "Product Reimbursement") keys.push(`sc-${index}`);
+      });
+      return keys;
+    }
+
+    if (nextValues.businessLine === "TM" && nextValues.entryType === "MC") {
+      nextValues.mcRows.forEach((row, index) => {
+        if (row.deliverable === "Product Reimbursement") keys.push(`mc-${index}`);
+      });
+      return keys;
+    }
+
+    if (nextValues.campaignDeliverable === "Product Reimbursement") keys.push("campaign-0");
+    nextValues.campaignExtraDeliverables.forEach((deliverable, index) => {
+      if (deliverable === "Product Reimbursement") keys.push(`campaign-${index + 1}`);
+    });
+    return keys;
+  }
+
+  function getSelectedProductReimbursementFile(nextValues: InvoiceIntakeFormValues) {
+    const keys = getVisibleProductReimbursementKeys(nextValues);
+    for (const key of keys) {
+      const file = productReimbursementFiles[key];
+      if (file) return file;
+    }
+    return null;
+  }
+
   function onProductReimbursementFileChange(key: string, file: File | null) {
-    if (file && file.size > 10 * 1024 * 1024) {
-      setProductReimbursementErrors((prev) => ({ ...prev, [key]: "File must be 10 MB or smaller." }));
+    if (file && file.size > PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES) {
+      setProductReimbursementErrors((prev) => ({ ...prev, [key]: "File exceeds 10 MB. Please compress it below 10 MB and try again." }));
       setProductReimbursementFiles((prev) => ({ ...prev, [key]: null }));
       return;
     }
 
-    setProductReimbursementErrors((prev) => ({ ...prev, [key]: "" }));
-    setProductReimbursementFiles((prev) => ({ ...prev, [key]: file }));
+    if (file && !PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES.includes(file.type as (typeof PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES)[number])) {
+      setProductReimbursementErrors((prev) => ({ ...prev, [key]: "Only PDF, PNG, JPG, or WEBP files are allowed." }));
+      setProductReimbursementFiles((prev) => ({ ...prev, [key]: null }));
+      return;
+    }
+
+    setProductReimbursementErrors((prev) => {
+      const next: Record<string, string> = {};
+      Object.keys(prev).forEach((entryKey) => {
+        if (entryKey !== key) next[entryKey] = "";
+      });
+      next[key] = "";
+      return next;
+    });
+    setProductReimbursementFiles(() => (file ? { [key]: file } : { [key]: null }));
   }
 
   function validateForm(nextValues: InvoiceIntakeFormValues) {
@@ -741,7 +803,7 @@ export function InvoiceIntakeForm({
 
     if (nextValues.clientType === "Indian") {
       if (!nextValues.gstNumber.trim()) errors.gstNumber = "GST number is required.";
-      else if (!isValidGstin(nextValues.gstNumber)) errors.gstNumber = "Enter a valid 15-character GST number. Example: 07AAIFI5054J1Z7";
+      else if (!isValidGstin(nextValues.gstNumber)) errors.gstNumber = "Enter a valid 15-character GST number or NA. Example: 07AAIFI5054J1Z7";
 
       if (!/^\d{6}$/.test(nextValues.pincode.trim())) errors.pincode = "Enter a valid 6-digit Indian pincode.";
       if (hasKnownPincodeLocationMismatch(nextValues.pincode, nextValues.city, nextValues.state)) {
@@ -823,6 +885,20 @@ export function InvoiceIntakeForm({
       (nextValues.businessLine === "IM" && imDeliverables.includes("Product Reimbursement"));
     if (requiresProductReimbursement && !hasProductReimbursement) {
       errors.creatorDeliverables = "Reimbursement invoice requires at least one Product Reimbursement deliverable.";
+    }
+
+    if (hasProductReimbursement) {
+      const visibleKeys = getVisibleProductReimbursementKeys(nextValues);
+      const hasFile = visibleKeys.some((key) => Boolean(productReimbursementFiles[key]));
+      const hasFileError = visibleKeys.some((key) => Boolean(productReimbursementErrors[key]));
+      if (!hasFile) {
+        errors.creatorDeliverables = errors.creatorDeliverables || "Upload a Product Reimbursement document before submitting.";
+        visibleKeys.forEach((key) => {
+          if (!productReimbursementErrors[key]) errors[key] = PRODUCT_REIMBURSEMENT_UPLOAD_HINT;
+        });
+      } else if (hasFileError) {
+        errors.creatorDeliverables = errors.creatorDeliverables || "Fix the Product Reimbursement document before submitting.";
+      }
     }
 
     return errors;
@@ -912,7 +988,7 @@ export function InvoiceIntakeForm({
       agency_brand_name: values.agencyBrandName,
       agency_brand_trade_name: values.agencyBrandTradeName,
       email_address: values.submitterEmail,
-      gst_number: values.clientType === "Indian" ? values.gstNumber.toUpperCase() : "",
+      gst_number: values.clientType === "Indian" ? normalizeGstNumber(values.gstNumber) : "",
       address: [values.addressLine, values.city, values.state, values.country, values.pincode].filter(Boolean).join(", "),
       bill_due: values.billDue,
       invoice_type: values.invoiceType,
@@ -953,10 +1029,14 @@ export function InvoiceIntakeForm({
     }
 
     const payload = buildPayload();
+    const productReimbursementFile = getSelectedProductReimbursementFile(values);
 
     try {
       setSubmitting(true);
-      await onSubmit(payload);
+      await onSubmit({
+        payload,
+        files: { productReimbursementFile },
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submit failed.");
     } finally {
@@ -992,7 +1072,7 @@ export function InvoiceIntakeForm({
         <div className="intake-section-body intake-form-grid" style={{ alignItems: "start" }}>
           <label className="intake-field" style={{ minWidth: 0 }}>
             <span className="intake-label">Name *</span>
-            <input className="intake-input" value={values.submitterName} onChange={(e) => update("submitterName", e.target.value)} data-field="submitterName" autoComplete="off" required />
+            <input className="intake-input" value={values.submitterName} readOnly data-field="submitterName" autoComplete="off" required />
             {fieldErrors.submitterName ? <p className="text-danger intake-inline-error">{fieldErrors.submitterName}</p> : null}
           </label>
           <label className="intake-field" style={{ minWidth: 0 }}>
@@ -1020,18 +1100,28 @@ export function InvoiceIntakeForm({
             }}
           >
             <label className="intake-label" style={{ margin: 0, display: "block" }}>Business Line *</label>
-            <div className="intake-toggle-group">
-              {BUSINESS_LINES.map((line) => (
-                <button
-                  key={line.value}
-                  type="button"
-                  className={values.businessLine === line.value ? "intake-toggle intake-toggle-active" : "intake-toggle"}
-                  onClick={() => setBranch(line.value)}
-                >
-                  {line.label}
-                </button>
-              ))}
-            </div>
+            {lockedBusinessLine ? (
+              <div className="intake-toggle-group" aria-readonly="true">
+                {BUSINESS_LINES.filter((line) => line.value === lockedBusinessLine).map((line) => (
+                  <span key={line.value} className="intake-toggle intake-toggle-active" style={{ cursor: 'default', pointerEvents: 'none' }}>
+                    {line.label}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="intake-toggle-group">
+                {BUSINESS_LINES.map((line) => (
+                  <button
+                    key={line.value}
+                    type="button"
+                    className={values.businessLine === line.value ? "intake-toggle intake-toggle-active" : "intake-toggle"}
+                    onClick={() => setBranch(line.value)}
+                  >
+                    {line.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {values.businessLine === "TM" ? (

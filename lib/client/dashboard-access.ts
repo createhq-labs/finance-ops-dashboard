@@ -8,7 +8,9 @@ export type DashboardPath =
   | '/dashboard/team-submissions'
   | '/dashboard/submissions/new'
   | '/dashboard/finance'
+  | '/dashboard/analytics'
   | '/dashboard/master-data'
+  | '/dashboard/deliverables'
   | '/dashboard/notifications'
   | '/dashboard/guide'
   | '/dashboard/settings'
@@ -43,8 +45,16 @@ export function canViewFinanceDashboard(role: AppRole) {
   return role === 'finance' || isAdminRole(role);
 }
 
+export function canViewAnalyticsPage(role: AppRole) {
+  return isAdminRole(role) || role === 'developer';
+}
+
 export function canViewMasterData(role: AppRole) {
   return role === 'finance' || isAdminRole(role) || role === 'developer';
+}
+
+export function canManageDeliverables(role: AppRole) {
+  return isAdminRole(role) || role === 'developer';
 }
 
 export function canManageUsers(role: AppRole) {
@@ -96,7 +106,9 @@ export function canAccessDashboardPath(role: AppRole, pathname: string) {
   if (pathname === '/dashboard/submissions') return canViewSubmissionsPage(role);
   if (pathname === '/dashboard/team-submissions') return canViewTeamSubmissions(role);
   if (pathname === '/dashboard/finance') return canViewFinanceDashboard(role);
+  if (pathname === '/dashboard/analytics') return canViewAnalyticsPage(role);
   if (pathname === '/dashboard/master-data') return canViewMasterData(role);
+  if (pathname === '/dashboard/deliverables') return canManageDeliverables(role);
   if (pathname === '/dashboard/notifications') return canViewNotifications(role);
   if (pathname === '/dashboard/guide') return true;
   if (pathname === '/dashboard/settings') return true;

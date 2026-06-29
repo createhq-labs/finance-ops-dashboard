@@ -12,6 +12,15 @@ type CreateSubmissionResult =
       error: string;
     };
 
+function getFinancialYearLabel(sourceDate: string | Date | null | undefined) {
+  const fallbackDate = new Date();
+  const parsedDate = sourceDate ? new Date(sourceDate) : fallbackDate;
+  const date = Number.isNaN(parsedDate.getTime()) ? fallbackDate : parsedDate;
+  const startYear = date.getUTCMonth() >= 3 ? date.getUTCFullYear() : date.getUTCFullYear() - 1;
+  const endYearShort = String((startYear + 1) % 100).padStart(2, '0');
+  return String(startYear) + '-' + endYearShort;
+}
+
 function normalizeComparison(value: string | null | undefined) {
   return String(value || '')
     .trim()
@@ -90,6 +99,7 @@ export async function createSubmissionWithLineItems(params: {
   const insertPayload = {
     ...submissionPayload,
     submitted_by: appUser.id,
+    financial_year: getFinancialYearLabel(submissionPayload.submitted_at),
     ...(submissionPayload.previous_submission_id
       ? { proforma_invoice: carryForwardPi ?? null }
       : shouldSkipPi

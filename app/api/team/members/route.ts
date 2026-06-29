@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
 
     const [members, candidates] = await Promise.all([
       listTeamLeadMembers(adminClient, appUser.id),
-      searchTeamLeadCandidates(adminClient, appUser.id, search),
+      searchTeamLeadCandidates(adminClient, appUser.id, search, appUser.business_line ?? null),
     ]);
 
     return NextResponse.json({ success: true, members, candidates }, { status: 200 });
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     if (!employeeId) throw new Error('employee_id is required');
 
     const adminClient = createServiceClient();
-    const result = await addTeamLeadMember(adminClient, appUser.id, employeeId, appUser.id);
+    const result = await addTeamLeadMember(adminClient, appUser.id, employeeId, appUser.id, appUser.business_line ?? null);
 
     return NextResponse.json(
       {
@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
           full_name: result.employee.full_name,
           email: result.employee.email,
           status: result.employee.status,
+          business_line: result.employee.business_line ?? null,
           created_at: result.mapping.created_at,
           created_by: result.mapping.created_by,
         },

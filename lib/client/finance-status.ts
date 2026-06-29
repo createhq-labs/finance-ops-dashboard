@@ -59,8 +59,14 @@ export const INVOICE_STATUS_OPTIONS = Object.entries(INVOICE_STATUS_LABELS)
   .filter(([value]) => value !== 'invoice_pending')
   .map(([value, label]) => ({ value, label }));
 export const PAYMENT_RECEIVED_STATUS_OPTIONS = Object.entries(PAYMENT_RECEIVED_STATUS_LABELS).map(([value, label]) => ({ value, label }));
-export const CREATOR_INVOICE_STATUS_OPTIONS = Object.entries(CREATOR_INVOICE_STATUS_LABELS).map(([value, label]) => ({ value, label }));
-export const PAYMENT_MADE_STATUS_OPTIONS = Object.entries(PAYMENT_MADE_STATUS_LABELS).map(([value, label]) => ({ value, label }));
+export const CREATOR_INVOICE_STATUS_OPTIONS = [
+  { value: 'received', label: 'Yes' },
+  { value: 'not_received', label: 'No' },
+  { value: 'multiple_creators', label: 'Multiple Creators' },
+];
+export const PAYMENT_MADE_STATUS_OPTIONS = Object.entries(PAYMENT_MADE_STATUS_LABELS)
+  .filter(([value]) => value !== 'full')
+  .map(([value, label]) => ({ value, label }));
 export const CLOSURE_STATUS_OPTIONS = Object.entries(CLOSURE_STATUS_LABELS).map(([value, label]) => ({ value, label }));
 
 function fallbackLabel(value: string | null | undefined) {

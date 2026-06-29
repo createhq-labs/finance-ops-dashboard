@@ -4,6 +4,7 @@ export type SessionUser = {
   full_name: string;
   role: 'employee' | 'team_lead' | 'finance' | 'admin' | 'developer';
   status: 'active' | 'inactive';
+  business_line: 'IM' | 'TM' | null;
 };
 
 export async function fetchSessionUser(): Promise<SessionUser | null> {

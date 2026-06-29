@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
@@ -8,9 +9,20 @@ import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
+import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { getDrawerViewerRole } from '../../../../lib/client/dashboard-access';
+import { pickProductReimbursementAttachment } from '../../../../lib/shared/submission-attachments';
+import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { TeamMemberManagement } from '../../../../components/settings/team-member-management';
-import { getPiDisplayMeta } from '../../../../lib/client/pi-display';
+
+type SubmissionAttachmentApiRow = {
+  id: string;
+  document_type: string;
+  file_name: string;
+  file_size_bytes: number;
+  mime_type: string;
+  uploaded_at?: string | null;
+};
 
 type TeamSubmissionApiRow = {
   id: string;
@@ -36,7 +48,10 @@ type TeamSubmissionApiRow = {
   reimbursement_receipts: string | null;
   additional_information: string | null;
   previous_submission_id: string | null;
+  previous_submission_pi?: string | null;
+  version_status?: 'original' | 'resubmitted' | 'superseded';
   finance_notes?: string | null;
+  finance_external_notes?: string | null;
   finance_comment?: string | null;
   invoice_number?: string | null;
   debit_note_number?: string | null;
@@ -60,6 +75,7 @@ type TeamSubmissionApiRow = {
   rejection_note: string | null;
   submitted_by_name?: string | null;
   submitted_by_email?: string | null;
+  submission_attachments?: SubmissionAttachmentApiRow[];
 };
 
 type TeamMemberApiRow = {
@@ -78,16 +94,25 @@ type TeamMembersResponse = {
 };
 
 type TeamSubmissionsResponse = {
-  success: boolean;
+  success?: boolean;
   submissions?: TeamSubmissionApiRow[];
+  has_more?: boolean;
+  next_offset?: number | null;
   error?: string;
 };
+
+const PAGE_SIZE = 50;
 
 function normalizeStatus(value: string | null | undefined) {
   return String(value || '')
     .trim()
     .toLowerCase()
     .replace(/\s+/g, '_');
+}
+
+function hasStartedLifecycleStatus(value: string | null | undefined) {
+  const normalized = normalizeStatus(value);
+  return Boolean(normalized && normalized !== 'pending');
 }
 
 function mapTeamSubmissionRow(item: TeamSubmissionApiRow): SubmissionRow {
@@ -127,8 +152,15 @@ function mapTeamSubmissionRow(item: TeamSubmissionApiRow): SubmissionRow {
     reimbursement_receipts: item.reimbursement_receipts || null,
     additional_information: item.additional_information || null,
     previous_submission_id: item.previous_submission_id || null,
+    previous_submission_pi: item.previous_submission_pi || null,
+    version_status: item.version_status || 'original',
     finance_notes: item.finance_notes || null,
+    finance_external_notes: item.finance_external_notes || null,
     finance_comment: item.finance_comment || undefined,
+    invoice_status_started: Boolean(String(item.invoice_status || '').trim() && String(item.invoice_status || '') !== '-'),
+    creator_invoice_received_started: hasStartedLifecycleStatus(item.creator_invoice_status),
+    payment_received_started: hasStartedLifecycleStatus(item.payment_received_status || item.payment_received),
+    payment_made_started: hasStartedLifecycleStatus(item.payment_made_status || item.payment_made),
     creator_invoice_received: normalizeStatus(item.creator_invoice_status) || undefined,
     payment_received: normalizeStatus(item.payment_received_status || item.payment_received) || undefined,
     payment_made: normalizeStatus(item.payment_made_status || item.payment_made) || undefined,
@@ -141,103 +173,221 @@ function mapTeamSubmissionRow(item: TeamSubmissionApiRow): SubmissionRow {
     agency_trade_name: item.agency_trade_name || null,
     brand_trade_name: item.brand_trade_name || null,
     intake_line_items: item.intake_line_items || [],
+    product_reimbursement_attachment: pickProductReimbursementAttachment(item.submission_attachments),
   };
 }
 
+function mergeRows(current: SubmissionRow[], incoming: SubmissionRow[]) {
+  const merged = new Map<string, SubmissionRow>();
+  for (const row of current) merged.set(row.id, row);
+  for (const row of incoming) merged.set(row.id, row);
+  return Array.from(merged.values()).sort((left, right) => {
+    const leftTime = new Date(left.submitted_at || '').getTime();
+    const rightTime = new Date(right.submitted_at || '').getTime();
+    return rightTime - leftTime;
+  });
+}
+
 export default function TeamSubmissionsPage() {
+  const searchParams = useSearchParams();
   const { user, loading } = useDashboardSession();
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
+
   const [rows, setRows] = useState<SubmissionRow[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMemberApiRow[]>([]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | SubmissionRow['intake_status']>('all');
   const [memberQuery, setMemberQuery] = useState('');
   const [rowsLoading, setRowsLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [rowsError, setRowsError] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [showTeamMembers, setShowTeamMembers] = useState(false);
+  const [highlightedSubmissionId, setHighlightedSubmissionId] = useState<string | null>(null);
+  const [deepLinkNotice, setDeepLinkNotice] = useState('');
+  const handledSubmissionIdRef = useRef<string | null>(null);
+  const loadingSubmissionIdRef = useRef<string | null>(null);
 
-  const loadTeamData = useCallback(
-    async (silent = false) => {
+  const loadMembers = useCallback(async () => {
+    const membersRes = await fetch('/api/team/members', { method: 'GET', cache: 'no-store' });
+    const membersJson = (await membersRes.json().catch(() => ({}))) as TeamMembersResponse;
+    if (!membersRes.ok || !membersJson.success) {
+      throw new Error(membersJson.error || 'Failed to load team members.');
+    }
+    setTeamMembers(Array.isArray(membersJson.members) ? membersJson.members : []);
+  }, []);
+
+  const loadRows = useCallback(
+    async (offset: number, append: boolean) => {
       if (!user) return;
 
-      if (silent) setRefreshing(true);
-      else setRowsLoading(true);
-      setRowsError('');
+      if (append) {
+        if (loadingMoreRef.current) return;
+        loadingMoreRef.current = true;
+        setLoadingMore(true);
+      } else {
+        setRowsLoading(true);
+        setRowsError('');
+      }
 
       try {
-        const [submissionsRes, membersRes] = await Promise.all([
-          fetch('/api/submissions/team', { method: 'GET', cache: 'no-store' }),
-          fetch('/api/team/members', { method: 'GET', cache: 'no-store' }),
-        ]);
+        const params = new URLSearchParams({
+          limit: String(PAGE_SIZE),
+          offset: String(offset),
+        });
+        if (query.trim()) params.set('query', query.trim());
+        if (statusFilter !== 'all') params.set('status', statusFilter);
+        if (memberQuery.trim()) params.set('member_query', memberQuery.trim());
+
+        const submissionsRes = await fetch('/api/submissions/team?' + params.toString(), { method: 'GET', cache: 'no-store' });
         const submissionsJson = (await submissionsRes.json().catch(() => ({}))) as TeamSubmissionsResponse;
-        const membersJson = (await membersRes.json().catch(() => ({}))) as TeamMembersResponse;
 
         if (!submissionsRes.ok || !submissionsJson.success) {
           throw new Error(submissionsJson.error || 'Failed to load team submissions.');
         }
-        if (!membersRes.ok || !membersJson.success) {
-          throw new Error(membersJson.error || 'Failed to load team members.');
-        }
 
-        setRows((submissionsJson.submissions ?? []).map(mapTeamSubmissionRow));
-        setTeamMembers(Array.isArray(membersJson.members) ? membersJson.members : []);
+        const mapped = (submissionsJson.submissions ?? []).map(mapTeamSubmissionRow);
+        setRows((current) => (append ? mergeRows(current, mapped) : mapped));
+        setHasMore(Boolean(submissionsJson.has_more));
+        setNextOffset(typeof submissionsJson.next_offset === 'number' ? submissionsJson.next_offset : null);
       } catch (error) {
-        setRowsError(error instanceof Error ? error.message : 'Failed to load team data.');
+        const nextMessage = error instanceof Error ? error.message : 'Failed to load team data.';
+        if (handleAuthTokenRecoveryMessage(nextMessage)) return;
+        setRowsError(nextMessage);
       } finally {
-        if (silent) setRefreshing(false);
-        else setRowsLoading(false);
+        if (append) {
+          loadingMoreRef.current = false;
+          setLoadingMore(false);
+        } else {
+          setRowsLoading(false);
+        }
       }
     },
-    [user]
+    [memberQuery, query, statusFilter, user]
   );
+
+  const loadAll = useCallback(
+    async (silent = false) => {
+      if (!user) return;
+      if (silent) setRefreshing(true);
+      try {
+        await Promise.all([loadMembers(), loadRows(0, false)]);
+      } finally {
+        if (silent) setRefreshing(false);
+      }
+    },
+    [loadMembers, loadRows, user]
+  );
+
+  const loadMore = useCallback(() => {
+    if (rowsLoading || loadingMore || !hasMore || nextOffset === null) return;
+    void loadRows(nextOffset, true);
+  }, [hasMore, loadRows, loadingMore, nextOffset, rowsLoading]);
 
   useEffect(() => {
     if (!user) return;
-    void loadTeamData(false);
-  }, [loadTeamData, user]);
+    setRows([]);
+    setHasMore(false);
+    setNextOffset(null);
+    void loadAll(false);
+  }, [loadAll, user]);
+
+  useEffect(() => {
+    if (!hasMore || loadingMore || loadingMoreRef.current) return undefined;
+    const target = loadMoreRef.current;
+    if (!target || typeof IntersectionObserver === 'undefined') return undefined;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !loadingMoreRef.current) {
+          observer.disconnect();
+          loadMore();
+        }
+      },
+      { rootMargin: '180px 0px' }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore, loadingMore]);
 
   const row = useMemo(() => rows.find((entry) => entry.id === openId) || null, [rows, openId]);
+
+  useEffect(() => {
+    if (!highlightedSubmissionId) return undefined;
+    const timer = window.setTimeout(() => {
+      setHighlightedSubmissionId((current) => (current === highlightedSubmissionId ? null : current));
+    }, 2200);
+    return () => window.clearTimeout(timer);
+  }, [highlightedSubmissionId]);
+
+  useEffect(() => {
+    const submissionId = searchParams.get('submission_id')?.trim();
+    if (!submissionId) {
+      handledSubmissionIdRef.current = null;
+      loadingSubmissionIdRef.current = null;
+      setDeepLinkNotice('');
+      return;
+    }
+
+    if (rows.some((entry) => entry.id === submissionId)) {
+      if (handledSubmissionIdRef.current !== submissionId) {
+        handledSubmissionIdRef.current = submissionId;
+        setDeepLinkNotice('');
+        setHighlightedSubmissionId(submissionId);
+      }
+      return;
+    }
+
+    if (!user || handledSubmissionIdRef.current === submissionId || loadingSubmissionIdRef.current === submissionId) {
+      return;
+    }
+
+    loadingSubmissionIdRef.current = submissionId;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const params = new URLSearchParams({ submission_id: submissionId, limit: '1', offset: '0' });
+        const res = await fetch('/api/submissions/team?' + params.toString(), { method: 'GET', cache: 'no-store' });
+        const json = (await res.json().catch(() => ({}))) as TeamSubmissionsResponse;
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.error || 'Failed to locate submission.');
+        }
+
+        const item = json.submissions?.[0];
+        if (!item) {
+          if (!cancelled) setDeepLinkNotice('Submission not found in current view.');
+          return;
+        }
+
+        const mapped = mapTeamSubmissionRow(item);
+        if (!cancelled) {
+          setRows((current) => mergeRows(current, [mapped]));
+          setDeepLinkNotice('');
+          setHighlightedSubmissionId(submissionId);
+          handledSubmissionIdRef.current = submissionId;
+        }
+      } catch {
+        if (!cancelled) setDeepLinkNotice('Submission not found in current view.');
+      } finally {
+        if (!cancelled) {
+          handledSubmissionIdRef.current = submissionId;
+          loadingSubmissionIdRef.current = null;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rows, searchParams, user]);
   const teamMembersCount = teamMembers.length;
   const submissionCount = rows.length;
-  const filteredRows = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    const normalizedMemberQuery = memberQuery.trim().toLowerCase();
-
-    return rows.filter((entry) => {
-      if (statusFilter !== 'all' && entry.intake_status !== statusFilter) return false;
-      if (normalizedMemberQuery) {
-        const memberHaystack = `${entry.owner_name || ''} ${entry.submitter_email || ''}`.toLowerCase();
-        if (!memberHaystack.includes(normalizedMemberQuery)) return false;
-      }
-
-      if (!normalizedQuery) return true;
-
-      const piMeta = getPiDisplayMeta({
-        pi: entry.pi,
-        submittedAt: entry.submitted_at,
-        invoiceType: entry.invoice_type,
-        lineItems: entry.intake_line_items,
-      });
-      const haystack = [
-        entry.pi,
-        piMeta.label,
-        piMeta.title,
-        entry.entity,
-        entry.brand_name,
-        entry.creator_creators_name,
-        entry.campaign_brand,
-        entry.owner_name,
-        entry.submitter_email,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-
-      return haystack.includes(normalizedQuery);
-    });
-  }, [memberQuery, query, rows, statusFilter]);
-
   const pendingOrReviewCount = rows.filter((entry) => {
     const intakeStatus = normalizeStatus(entry.intake_status);
     const closedStatus = normalizeStatus(entry.closed_status);
@@ -261,8 +411,9 @@ export default function TeamSubmissionsPage() {
         }
       />
 
-      {rowsLoading ? <StatePanel padding={12}>Loading team submissions...</StatePanel> : null}
+      {rowsLoading ? <WorkspaceLoader variant="section" label="Loading team submissions..." /> : null}
       {rowsError ? <StatePanel tone="danger" padding={12}>{rowsError}</StatePanel> : null}
+      {deepLinkNotice ? <p className="text-xs text-muted-foreground">{deepLinkNotice}</p> : null}
       {refreshing ? <p className="text-muted m-0 text-sm">Refreshing team data...</p> : null}
 
       {!rowsLoading && !rowsError ? (
@@ -280,58 +431,81 @@ export default function TeamSubmissionsPage() {
           </StatePanel>
         ) : (
           <>
-        <section style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-          <KpiCard title="Team Members" value={String(teamMembersCount)} hint="Mapped employees" compact />
-          <KpiCard title="Team Submissions" value={String(submissionCount)} hint="Visible records" compact />
-          <KpiCard title="Pending / Review" value={String(pendingOrReviewCount)} hint="Waiting on finance" compact />
-          <KpiCard title="Resubmissions" value={String(resubmissionCount)} hint="Needs fixes" compact />
-          <KpiCard title="Closed" value={String(closedCount)} hint="Completed" compact />
-        </section>
+            <section style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+              <KpiCard title="Team Members" value={String(teamMembersCount)} hint="Mapped employees" compact />
+              <KpiCard title="Team Submissions" value={String(submissionCount)} hint="Loaded records" compact />
+              <KpiCard title="Pending / Review" value={String(pendingOrReviewCount)} hint="Waiting on finance" compact />
+              <KpiCard title="Resubmissions" value={String(resubmissionCount)} hint="Needs fixes" compact />
+              <KpiCard title="Closed" value={String(closedCount)} hint="Completed" compact />
+            </section>
 
-        <SectionCard padding={12}>
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)]">
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Search</span>
-              <input
-                className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
-                placeholder="Search PI, entity, creator, or brand"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Status</span>
-              <select
-                className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as 'all' | SubmissionRow['intake_status'])}
-              >
-                <option value="all">All</option>
-                <option value="submitted">Submitted</option>
-                <option value="accepted">Accepted</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </label>
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Team Member</span>
-              <input
-                className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
-                placeholder="Search member name or email"
-                value={memberQuery}
-                onChange={(e) => setMemberQuery(e.target.value)}
-              />
-            </label>
-          </div>
-        </SectionCard>
+            <SectionCard padding={12}>
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)]">
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Search</span>
+                  <input
+                    className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
+                    placeholder="Search PI, entity, creator, or brand"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Status</span>
+                  <select
+                    className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as 'all' | SubmissionRow['intake_status'])}
+                  >
+                    <option value="all">All</option>
+                    <option value="submitted">Submitted</option>
+                    <option value="accepted">Accepted</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-muted-foreground">Team Member</span>
+                  <input
+                    className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
+                    placeholder="Search member name or email"
+                    value={memberQuery}
+                    onChange={(e) => setMemberQuery(e.target.value)}
+                  />
+                </label>
+              </div>
+            </SectionCard>
 
             <SectionCard padding={0}>
-              <SubmissionTable
-                rows={filteredRows}
-                onOpen={(id) => setOpenId(id)}
-                emptyLabel="No mapped employee submissions found yet."
-                getActionLabel={() => 'View'}
-                viewer="team_lead"
-              />
+              <div className="grid gap-3 p-0">
+                <SubmissionTable
+                  rows={rows}
+                  onOpen={(id) => setOpenId(id)}
+                  emptyLabel="No mapped employee submissions found yet."
+                  getActionLabel={() => 'View'}
+                  viewer="team_lead"
+                  viewerBusinessLine={user.business_line}
+                  highlightedRowId={highlightedSubmissionId}
+                  paginationFooter={(
+                    <div>
+                      <div className="border-b border-border/50 px-4 py-2 text-center text-xs text-muted-foreground">
+                        PI numbering now continues from 466. Older submissions will be migrated shortly.
+                      </div>
+                      {rows.length > 0 ? (
+                        hasMore ? (
+                          <div className="flex flex-col items-center gap-3 px-3 py-3">
+                            <div ref={loadMoreRef} className="h-1 w-full" aria-hidden="true" />
+                            <button className="btn" type="button" onClick={loadMore} disabled={loadingMore}>
+                              {loadingMore ? 'Loading more...' : 'Load More'}
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="px-3 py-3 text-center text-xs text-muted-foreground">You&apos;ve reached the latest team submissions.</p>
+                        )
+                      ) : null}
+                    </div>
+                  )}
+                />
+              </div>
             </SectionCard>
           </>
         )
@@ -353,7 +527,7 @@ export default function TeamSubmissionsPage() {
                 Close
               </button>
             </div>
-            <TeamMemberManagement onChanged={() => void loadTeamData(true)} />
+            <TeamMemberManagement onChanged={() => void loadAll(true)} />
           </div>
         </div>
       ) : null}
