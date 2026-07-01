@@ -1,26 +1,38 @@
-"use client";
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, LineChart } from 'lucide-react';
-import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
-import { SectionCard } from '../../../../components/dashboard/section-card';
+import {
+  AgingBuckets,
+  AnalyticsMetricCard,
+  AnalyticsPanel,
+  DonutChart,
+  DotStatusList,
+  GaugeGrid,
+  GroupedBarChart,
+  LineAreaChart,
+  RankedProgressList,
+  StackedBarChart,
+  StackedWorkloadRows,
+  TimelineList,
+  WorkflowBars,
+} from '../../../../components/dashboard/analytics-visuals';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { canViewAnalyticsPage, getDefaultDashboardPath } from '../../../../lib/client/dashboard-access';
-import { getRevenueSeries, getLineRevenue, isPiInvoiceType, isTiInvoiceType, type RevenueSeriesPoint } from '../../../../lib/client/admin-stats';
+import { getLineRevenue, getRevenueSeries, getRevenueAmount, isPiInvoiceType, isTiInvoiceType } from '../../../../lib/client/admin-stats';
 
 type AnalyticsSubmissionRow = {
   id: string;
   submitted_by: string | null;
-  full_name?: string | null;
+  reviewed_by: string | null;
+  reviewed_at?: string | null;
   invoice_type: string | null;
   business_line: 'IM' | 'TM' | null;
   submitted_at: string | null;
   intake_status: 'submitted' | 'rejected' | 'accepted';
   closure_status: string | null;
-  reviewed_by: string | null;
   finance_comment: string | null;
   rejection_note: string | null;
   commercials: number | string | null;
@@ -36,6 +48,13 @@ type AnalyticsUserRow = {
   business_line: 'IM' | 'TM' | null;
 };
 
+type MasterDataReviewItem = {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  type: 'agency' | 'brand' | 'creator';
+  created_at: string;
+};
+
 type MasterDataSummary = {
   total: number;
   pending: number;
@@ -49,142 +68,164 @@ type ApiResponse = {
   success: boolean;
   submissions?: AnalyticsSubmissionRow[];
   users?: AnalyticsUserRow[];
+  items?: MasterDataReviewItem[];
   summary?: MasterDataSummary;
   error?: string;
+};
+
+type MonthlyBucket = {
+  key: string;
+  label: string;
+  pi: number;
+  ti: number;
+  imPi: number;
+  tmPi: number;
+  imTi: number;
+  tmTi: number;
+  submitted: number;
+  closed: number;
+  reviewed: number;
+  pending: number;
+  resubmissions: number;
+  reopened: number;
 };
 
 const TABS: Array<{ value: AnalyticsTab; label: string }> = [
   { value: 'overview', label: 'Overview' },
   { value: 'revenue', label: 'Revenue' },
   { value: 'employees', label: 'Employees' },
-  { value: 'team_leads', label: 'Team Leads' },
+  { value: 'team_leads', label: 'Team leads' },
   { value: 'finance', label: 'Finance' },
   { value: 'operations', label: 'Operations' },
 ];
 
-function compactButtonClass(active = false) {
-  return active
-    ? 'inline-flex items-center justify-center rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-sm font-semibold text-foreground shadow-sm shadow-primary/10 transition-colors'
-    : 'inline-flex items-center justify-center rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted/30';
+const IM_COLOR = '#6366f1';
+const TM_COLOR = '#06b6d4';
+const TM_TI_COLOR = '#67e8f9';
+const PI_COLOR = '#6366f1';
+const TI_COLOR = '#06b6d4';
+
+function safeNumber(value: number | string | null | undefined) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatMoney(value: number) {
+function normalizeStatus(value: string | null | undefined) {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, '_');
+}
+
+function formatCompactCurrency(value: number) {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 1,
+    notation: 'compact',
   }).format(value);
+}
+
+function formatDays(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return '—';
+  return `${value.toFixed(1)}d`;
 }
 
 function formatRate(value: number) {
   return `${Math.round(value * 100)}%`;
 }
 
-function formatDate(value: string | null) {
-  if (!value) return 'Unknown';
+function average(numbers: number[]) {
+  if (!numbers.length) return null;
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+}
+
+function getMonthTrendLabel(values: number[], suffix = '% MoM') {
+  if (values.length < 2) return null;
+  const current = values[values.length - 1] ?? 0;
+  const previous = values[values.length - 2] ?? 0;
+  if (previous <= 0 || current <= 0) return null;
+  const diff = ((current - previous) / previous) * 100;
+  const sign = diff > 0 ? '+' : '';
+  return `${sign}${diff.toFixed(1)}${suffix}`;
+}
+
+function getCountDeltaLabel(values: number[]) {
+  if (values.length < 2) return null;
+  const current = values[values.length - 1] ?? 0;
+  const previous = values[values.length - 2] ?? 0;
+  const diff = current - previous;
+  if (diff === 0) return null;
+  return `${diff > 0 ? '+' : ''}${diff}`;
+}
+
+function ageInDays(value: string | null | undefined) {
+  if (!value) return null;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Unknown';
-  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  if (Number.isNaN(date.getTime())) return null;
+  return Math.max(0, (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function lineLabel(value: 'IM' | 'TM' | null) {
-  return value ?? 'Unassigned';
-}
+function buildMonthlyBuckets(rows: AnalyticsSubmissionRow[], months = 6) {
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth() - (months - 1), 1);
+  const buckets = new Map<string, MonthlyBucket>();
 
-function SeriesChart({ series }: { series: RevenueSeriesPoint[] }) {
-  if (series.length === 0) {
-    return <div className="text-sm text-muted-foreground">No revenue data available yet.</div>;
+  for (let offset = 0; offset < months; offset += 1) {
+    const cursor = new Date(start.getFullYear(), start.getMonth() + offset, 1);
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+    buckets.set(key, {
+      key,
+      label: cursor.toLocaleDateString('en-IN', { month: 'short' }),
+      pi: 0,
+      ti: 0,
+      imPi: 0,
+      tmPi: 0,
+      imTi: 0,
+      tmTi: 0,
+      submitted: 0,
+      closed: 0,
+      reviewed: 0,
+      pending: 0,
+      resubmissions: 0,
+      reopened: 0,
+    });
   }
 
-  const width = 700;
-  const height = 220;
-  const maxValue = Math.max(1, ...series.map((point) => Math.max(point.pi, point.ti)));
-  const leftPadding = 28;
-  const rightPadding = 16;
-  const topPadding = 20;
-  const bottomPadding = 28;
-  const innerWidth = width - leftPadding - rightPadding;
-  const innerHeight = height - topPadding - bottomPadding;
+  for (const row of rows) {
+    if (!row.submitted_at) continue;
+    const submittedAt = new Date(row.submitted_at);
+    if (Number.isNaN(submittedAt.getTime()) || submittedAt < start) continue;
+    const key = `${submittedAt.getFullYear()}-${String(submittedAt.getMonth() + 1).padStart(2, '0')}`;
+    const bucket = buckets.get(key);
+    if (!bucket) continue;
 
-  const buildPath = (selector: 'pi' | 'ti') => {
-    return series
-      .map((point, index) => {
-        const x = leftPadding + (innerWidth * index) / Math.max(series.length - 1, 1);
-        const y = topPadding + innerHeight - (innerHeight * point[selector]) / maxValue;
-        return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
-      })
-      .join(' ');
-  };
+    const amount = getRevenueAmount(row);
+    const line = row.business_line ?? 'UNASSIGNED';
+    const closure = normalizeStatus(row.closure_status);
 
-  const piPath = buildPath('pi');
-  const tiPath = buildPath('ti');
+    bucket.submitted += 1;
+    if (closure === 'closed') bucket.closed += 1;
+    if (row.reviewed_by) bucket.reviewed += 1;
+    if (row.intake_status === 'submitted') bucket.pending += 1;
+    if (row.intake_status === 'rejected') bucket.resubmissions += 1;
 
-  return (
-    <div className="grid gap-3">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-[220px] w-full overflow-visible">
-        <defs>
-          <linearGradient id="pi-gradient" x1="0" x2="1" y1="0" y2="0">
-            <stop offset="0%" stopColor="rgb(56 189 248)" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="rgb(59 130 246)" stopOpacity="0.95" />
-          </linearGradient>
-          <linearGradient id="ti-gradient" x1="0" x2="1" y1="0" y2="0">
-            <stop offset="0%" stopColor="rgb(52 211 153)" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="rgb(16 185 129)" stopOpacity="0.95" />
-          </linearGradient>
-        </defs>
+    if (isPiInvoiceType(row.invoice_type)) {
+      bucket.pi += amount;
+      if (line === 'IM') bucket.imPi += amount;
+      if (line === 'TM') bucket.tmPi += amount;
+    }
+    if (isTiInvoiceType(row.invoice_type)) {
+      bucket.ti += amount;
+      if (line === 'IM') bucket.imTi += amount;
+      if (line === 'TM') bucket.tmTi += amount;
+    }
+  }
 
-        {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-          const y = topPadding + innerHeight - innerHeight * ratio;
-          return <line key={ratio} x1={leftPadding} x2={width - rightPadding} y1={y} y2={y} stroke="currentColor" className="text-border/40" strokeDasharray="3 6" />;
-        })}
-
-        <path d={piPath} fill="none" stroke="url(#pi-gradient)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-        <path d={tiPath} fill="none" stroke="url(#ti-gradient)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-
-        {series.map((point, index) => {
-          const x = leftPadding + (innerWidth * index) / Math.max(series.length - 1, 1);
-          const piY = topPadding + innerHeight - (innerHeight * point.pi) / maxValue;
-          const tiY = topPadding + innerHeight - (innerHeight * point.ti) / maxValue;
-          return (
-            <g key={point.key}>
-              <circle cx={x} cy={piY} r="4" fill="rgb(56 189 248)" />
-              <circle cx={x} cy={tiY} r="4" fill="rgb(52 211 153)" />
-              <text x={x} y={height - 8} textAnchor="middle" className="fill-muted-foreground text-[10px]">
-                {point.label}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-
-      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-sky-400" />
-          PI Revenue
-        </span>
-        <span className="inline-flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-          TI Revenue
-        </span>
-      </div>
-    </div>
-  );
+  return Array.from(buckets.values());
 }
 
-function TabButton({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button type="button" onClick={onClick} className={compactButtonClass(active)}>
-      {label}
-    </button>
-  );
+function buildTabButtonClass(active: boolean) {
+  return active
+    ? 'inline-flex items-center justify-center rounded-full border border-slate-900 bg-slate-900 px-7 py-3 text-base font-semibold text-white shadow-sm dark:border-white dark:bg-white dark:text-slate-950'
+    : 'inline-flex items-center justify-center rounded-full border border-border bg-card px-7 py-3 text-base font-medium text-muted-foreground transition-colors hover:text-foreground';
 }
 
 export default function AnalyticsPage() {
@@ -192,10 +233,10 @@ export default function AnalyticsPage() {
   const [tab, setTab] = useState<AnalyticsTab>('overview');
   const [submissions, setSubmissions] = useState<AnalyticsSubmissionRow[]>([]);
   const [users, setUsers] = useState<AnalyticsUserRow[]>([]);
+  const [masterDataItems, setMasterDataItems] = useState<MasterDataReviewItem[]>([]);
   const [masterDataSummary, setMasterDataSummary] = useState<MasterDataSummary>({ total: 0, pending: 0, approved: 0, rejected: 0 });
   const [pageLoading, setPageLoading] = useState(true);
   const [error, setError] = useState('');
-  const userNameById = useMemo(() => new Map(users.map((entry) => [entry.id, entry.full_name])), [users]);
 
   useEffect(() => {
     if (loading || !user) return;
@@ -221,25 +262,18 @@ export default function AnalyticsPage() {
         const usersJson = (await usersRes.json().catch(() => ({}))) as ApiResponse;
         const masterDataJson = (await masterDataRes.json().catch(() => ({}))) as ApiResponse;
 
-        if (!submissionsRes.ok || !submissionsJson.success) {
-          throw new Error(submissionsJson.error || 'Failed to load submissions.');
-        }
-        if (!usersRes.ok || !usersJson.success) {
-          throw new Error(usersJson.error || 'Failed to load users.');
-        }
-        if (!masterDataRes.ok || !masterDataJson.success) {
-          throw new Error(masterDataJson.error || 'Failed to load master data reviews.');
-        }
+        if (!submissionsRes.ok || !submissionsJson.success) throw new Error(submissionsJson.error || 'Failed to load submissions.');
+        if (!usersRes.ok || !usersJson.success) throw new Error(usersJson.error || 'Failed to load users.');
+        if (!masterDataRes.ok || !masterDataJson.success) throw new Error(masterDataJson.error || 'Failed to load master data reviews.');
 
         if (!active) return;
         setSubmissions(Array.isArray(submissionsJson.submissions) ? submissionsJson.submissions : []);
         setUsers(Array.isArray(usersJson.users) ? usersJson.users : []);
+        setMasterDataItems(Array.isArray(masterDataJson.items) ? masterDataJson.items : []);
         setMasterDataSummary(masterDataJson.summary ?? { total: 0, pending: 0, approved: 0, rejected: 0 });
       })
       .catch((nextError) => {
-        if (active) {
-          setError(nextError instanceof Error ? nextError.message : 'Failed to load analytics.');
-        }
+        if (active) setError(nextError instanceof Error ? nextError.message : 'Failed to load analytics.');
       })
       .finally(() => {
         if (active) setPageLoading(false);
@@ -250,7 +284,12 @@ export default function AnalyticsPage() {
     };
   }, [user]);
 
-  const visibleRows = useMemo(() => [...submissions].sort((left, right) => new Date(right.submitted_at || '').getTime() - new Date(left.submitted_at || '').getTime()), [submissions]);
+  const visibleRows = useMemo(
+    () => [...submissions].sort((left, right) => new Date(right.submitted_at || '').getTime() - new Date(left.submitted_at || '').getTime()),
+    [submissions]
+  );
+  const userNameById = useMemo(() => new Map(users.map((entry) => [entry.id, entry.full_name || entry.email])), [users]);
+  const monthlyBuckets = useMemo(() => buildMonthlyBuckets(visibleRows), [visibleRows]);
   const revenueSeries = useMemo(() => getRevenueSeries(visibleRows), [visibleRows]);
 
   const overviewMetrics = useMemo(() => {
@@ -260,17 +299,7 @@ export default function AnalyticsPage() {
     const tmPiRevenue = getLineRevenue(visibleRows, 'TM', 'pi');
     const imTiRevenue = getLineRevenue(visibleRows, 'IM', 'ti');
     const tmTiRevenue = getLineRevenue(visibleRows, 'TM', 'ti');
-    const submissionsThisMonth = visibleRows.filter((entry) => {
-      const submittedAt = new Date(entry.submitted_at || '');
-      const now = new Date();
-      return submittedAt.getFullYear() === now.getFullYear() && submittedAt.getMonth() === now.getMonth();
-    }).length;
-    const closedThisMonth = visibleRows.filter((entry) => {
-      const date = new Date(entry.submitted_at || '');
-      const now = new Date();
-      return entry.closure_status === 'closed' && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
-    }).length;
-    const pendingFinance = visibleRows.filter((entry) => entry.intake_status === 'submitted').length;
+    const currentMonth = monthlyBuckets[monthlyBuckets.length - 1];
 
     return {
       totalPiRevenue,
@@ -279,327 +308,667 @@ export default function AnalyticsPage() {
       tmPiRevenue,
       imTiRevenue,
       tmTiRevenue,
-      submissionsThisMonth,
-      closedThisMonth,
-      pendingFinance,
+      submissionsThisMonth: currentMonth?.submitted ?? 0,
+      closedThisMonth: currentMonth?.closed ?? 0,
+      pendingFinance: visibleRows.filter((entry) => entry.intake_status === 'submitted').length,
+      pendingMasterData: masterDataSummary.pending,
+      revenueTrend: revenueSeries.map((point) => point.pi + point.ti),
+      piTrend: revenueSeries.map((point) => point.pi),
+      tiTrend: revenueSeries.map((point) => point.ti),
+      submissionTrend: monthlyBuckets.map((point) => point.submitted),
+      closedTrend: monthlyBuckets.map((point) => point.closed),
     };
-  }, [visibleRows]);
+  }, [masterDataSummary.pending, monthlyBuckets, revenueSeries, visibleRows]);
 
   const employeeRows = useMemo(() => {
-    return users.filter((entry) => entry.role === 'employee').map((employee) => {
-      const personalRows = visibleRows.filter((row) => row.submitted_by === employee.id);
-      const resubmissions = personalRows.filter((row) => row.intake_status === 'rejected').length;
-      const piRevenue = personalRows.filter((row) => isPiInvoiceType(row.invoice_type)).reduce((sum, row) => sum + Number(row.commercials ?? 0), 0);
-      const tiRevenue = personalRows.filter((row) => isTiInvoiceType(row.invoice_type)).reduce((sum, row) => sum + Number(row.commercials ?? 0), 0);
-      const closedCount = personalRows.filter((row) => row.closure_status === 'closed').length;
-      return {
-        ...employee,
-        submissions: personalRows.length,
-        resubmissions,
-        resubmissionRate: personalRows.length > 0 ? resubmissions / personalRows.length : 0,
-        piRevenue,
-        tiRevenue,
-        closedCount,
-      };
-    }).sort((left, right) => right.submissions - left.submissions);
+    return users
+      .filter((entry) => entry.role === 'employee')
+      .map((employee) => {
+        const personalRows = visibleRows.filter((row) => row.submitted_by === employee.id);
+        const resubmissions = personalRows.filter((row) => row.intake_status === 'rejected').length;
+        const piRevenue = personalRows.filter((row) => isPiInvoiceType(row.invoice_type)).reduce((sum, row) => sum + safeNumber(row.commercials), 0);
+        const tiRevenue = personalRows.filter((row) => isTiInvoiceType(row.invoice_type)).reduce((sum, row) => sum + safeNumber(row.commercials), 0);
+        const closedCount = personalRows.filter((row) => normalizeStatus(row.closure_status) === 'closed').length;
+        return {
+          ...employee,
+          submissions: personalRows.length,
+          resubmissions,
+          resubmissionRate: personalRows.length > 0 ? resubmissions / personalRows.length : 0,
+          totalRevenue: piRevenue + tiRevenue,
+          piRevenue,
+          tiRevenue,
+          closedCount,
+        };
+      })
+      .sort((left, right) => right.submissions - left.submissions || right.totalRevenue - left.totalRevenue);
   }, [users, visibleRows]);
 
   const teamLeadRows = useMemo(() => {
-    return users.filter((entry) => entry.role === 'team_lead').map((lead) => {
-      const teamMembers = users.filter((member) => member.team_lead_id === lead.id);
-      const memberIds = new Set(teamMembers.map((member) => member.id));
-      const teamRows = visibleRows.filter((row) => memberIds.has(row.submitted_by || ''));
-      const resubmissions = teamRows.filter((row) => row.intake_status === 'rejected').length;
-      const teamPiRevenue = teamRows.filter((row) => isPiInvoiceType(row.invoice_type)).reduce((sum, row) => sum + Number(row.commercials ?? 0), 0);
-      const teamTiRevenue = teamRows.filter((row) => isTiInvoiceType(row.invoice_type)).reduce((sum, row) => sum + Number(row.commercials ?? 0), 0);
-      return {
-        ...lead,
-        teamMembers: teamMembers.length,
-        teamSubmissions: teamRows.length,
-        teamPiRevenue,
-        teamTiRevenue,
-        resubmissionRate: teamRows.length > 0 ? resubmissions / teamRows.length : 0,
-      };
-    }).sort((left, right) => right.teamSubmissions - left.teamSubmissions);
+    return users
+      .filter((entry) => entry.role === 'team_lead')
+      .map((lead) => {
+        const teamMembers = users.filter((member) => member.team_lead_id === lead.id && member.role === 'employee');
+        const memberIds = new Set(teamMembers.map((member) => member.id));
+        const teamRows = visibleRows.filter((row) => memberIds.has(row.submitted_by || ''));
+        const closedCount = teamRows.filter((row) => normalizeStatus(row.closure_status) === 'closed').length;
+        const pendingCount = teamRows.filter((row) => normalizeStatus(row.closure_status) !== 'closed').length;
+        const piRevenue = teamRows.filter((row) => isPiInvoiceType(row.invoice_type)).reduce((sum, row) => sum + safeNumber(row.commercials), 0);
+        const tiRevenue = teamRows.filter((row) => isTiInvoiceType(row.invoice_type)).reduce((sum, row) => sum + safeNumber(row.commercials), 0);
+        const resubmissions = teamRows.filter((row) => row.intake_status === 'rejected').length;
+        return {
+          ...lead,
+          teamMembers: teamMembers.length,
+          teamSubmissions: teamRows.length,
+          closedCount,
+          pendingCount,
+          piRevenue,
+          tiRevenue,
+          completionRate: teamRows.length > 0 ? closedCount / teamRows.length : 0,
+          resubmissionRate: teamRows.length > 0 ? resubmissions / teamRows.length : 0,
+        };
+      })
+      .sort((left, right) => right.teamSubmissions - left.teamSubmissions || right.closedCount - left.closedCount);
   }, [users, visibleRows]);
 
-  const financeRows = useMemo(() => {
-    return users.filter((entry) => entry.role === 'finance').map((financeUser) => {
-      const reviewedRows = visibleRows.filter((row) => row.reviewed_by === financeUser.id);
-      return {
-        ...financeUser,
-        reviewsCompleted: reviewedRows.length,
-        pendingReviews: visibleRows.filter((row) => row.intake_status === 'submitted').length,
-        masterDataReviews: masterDataSummary.total,
-        closedWork: reviewedRows.filter((row) => row.closure_status === 'closed').length,
-      };
-    });
-  }, [masterDataSummary.total, users, visibleRows]);
+  const financeSummary = useMemo(() => {
+    const reviewedRows = visibleRows.filter((row) => row.reviewed_by);
+    const avgReviewDays = average(
+      reviewedRows
+        .map((row) => {
+          if (!row.reviewed_at || !row.submitted_at) return null;
+          const reviewedAt = new Date(row.reviewed_at).getTime();
+          const submittedAt = new Date(row.submitted_at).getTime();
+          if (!Number.isFinite(reviewedAt) || !Number.isFinite(submittedAt) || reviewedAt < submittedAt) return null;
+          return (reviewedAt - submittedAt) / (1000 * 60 * 60 * 24);
+        })
+        .filter((value): value is number => value !== null)
+    );
 
-  const pendingOver3 = useMemo(() => visibleRows.filter((entry) => {
-    const diffDays = (Date.now() - new Date(entry.submitted_at || '').getTime()) / (1000 * 60 * 60 * 24);
-    return diffDays > 3 && entry.closure_status !== 'closed';
-  }).length, [visibleRows]);
-  const pendingOver7 = useMemo(() => visibleRows.filter((entry) => {
-    const diffDays = (Date.now() - new Date(entry.submitted_at || '').getTime()) / (1000 * 60 * 60 * 24);
-    return diffDays > 7 && entry.closure_status !== 'closed';
-  }).length, [visibleRows]);
-  const pendingOver15 = useMemo(() => visibleRows.filter((entry) => {
-    const diffDays = (Date.now() - new Date(entry.submitted_at || '').getTime()) / (1000 * 60 * 60 * 24);
-    return diffDays > 15 && entry.closure_status !== 'closed';
-  }).length, [visibleRows]);
-  const mostFollowUps = useMemo(() => visibleRows.filter((entry) => entry.finance_comment || entry.rejection_note).slice(0, 5), [visibleRows]);
-  const mostResubmissions = useMemo(() => visibleRows.filter((entry) => entry.intake_status === 'rejected').slice(0, 5), [visibleRows]);
+    const financeUsers = users.filter((entry) => entry.role === 'finance');
+    const userRows = financeUsers
+      .map((financeUser) => {
+        const touchedRows = visibleRows.filter((row) => row.reviewed_by === financeUser.id);
+        const completed = touchedRows.filter((row) => normalizeStatus(row.closure_status) === 'closed').length;
+        const pending = touchedRows.filter((row) => normalizeStatus(row.closure_status) !== 'closed').length;
+        const personalReviewTimes = touchedRows
+          .map((row) => {
+            if (!row.reviewed_at || !row.submitted_at) return null;
+            const reviewedAt = new Date(row.reviewed_at).getTime();
+            const submittedAt = new Date(row.submitted_at).getTime();
+            if (!Number.isFinite(reviewedAt) || !Number.isFinite(submittedAt) || reviewedAt < submittedAt) return null;
+            return (reviewedAt - submittedAt) / (1000 * 60 * 60 * 24);
+          })
+          .filter((value): value is number => value !== null);
+        return {
+          ...financeUser,
+          touched: touchedRows.length,
+          completed,
+          pending,
+          avgReviewDays: average(personalReviewTimes),
+        };
+      })
+      .sort((left, right) => right.touched - left.touched);
+
+    return {
+      reviewedCount: reviewedRows.length,
+      pendingCount: visibleRows.filter((row) => row.intake_status === 'submitted').length,
+      closedCount: visibleRows.filter((row) => normalizeStatus(row.closure_status) === 'closed').length,
+      avgReviewDays,
+      userRows,
+    };
+  }, [users, visibleRows]);
+
+  const operationsSummary = useMemo(() => {
+    const openRows = visibleRows.filter((row) => normalizeStatus(row.closure_status) !== 'closed');
+    const aging = {
+      zeroToThree: openRows.filter((row) => {
+        const age = ageInDays(row.submitted_at);
+        return age !== null && age < 3;
+      }).length,
+      threeToSeven: openRows.filter((row) => {
+        const age = ageInDays(row.submitted_at);
+        return age !== null && age >= 3 && age < 7;
+      }).length,
+      sevenToFifteen: openRows.filter((row) => {
+        const age = ageInDays(row.submitted_at);
+        return age !== null && age >= 7 && age < 15;
+      }).length,
+      fifteenPlus: openRows.filter((row) => {
+        const age = ageInDays(row.submitted_at);
+        return age !== null && age >= 15;
+      }).length,
+    };
+
+    const followUpRows = employeeRows
+      .map((entry) => {
+        const personalRows = openRows.filter((row) => row.submitted_by === entry.id);
+        const overdue = personalRows.filter((row) => {
+          const age = ageInDays(row.submitted_at);
+          return age !== null && age >= 7;
+        }).length;
+        const dueSoon = personalRows.filter((row) => {
+          const age = ageInDays(row.submitted_at);
+          return age !== null && age >= 3 && age < 7;
+        }).length;
+        const onTime = personalRows.filter((row) => {
+          const age = ageInDays(row.submitted_at);
+          return age !== null && age < 3;
+        }).length;
+        return {
+          label: entry.full_name,
+          overdue,
+          dueSoon,
+          onTime,
+          total: overdue + dueSoon + onTime,
+        };
+      })
+      .filter((entry) => entry.total > 0)
+      .sort((left, right) => right.total - left.total)
+      .slice(0, 5);
+
+    const financeReviewAges = openRows.filter((row) => row.intake_status === 'submitted').map((row) => ageInDays(row.submitted_at)).filter((value): value is number => value !== null);
+    const paymentAges = openRows.filter((row) => row.intake_status === 'accepted').map((row) => ageInDays(row.submitted_at)).filter((value): value is number => value !== null);
+    const resubmissionAges = openRows.filter((row) => row.intake_status === 'rejected').map((row) => ageInDays(row.submitted_at)).filter((value): value is number => value !== null);
+    const masterDataAges = masterDataItems.filter((item) => item.status === 'pending').map((item) => ageInDays(item.created_at)).filter((value): value is number => value !== null);
+
+    return {
+      aging,
+      followUpRows,
+      queueAgeDays: {
+        finance: average(financeReviewAges) ?? 0,
+        masterData: average(masterDataAges) ?? 0,
+        payment: average(paymentAges) ?? 0,
+        resubmission: average(resubmissionAges) ?? 0,
+      },
+    };
+  }, [employeeRows, masterDataItems, visibleRows]);
+
+  const recentActivityItems = useMemo<Array<{ title: string; subtitle: string; meta: string; tone: 'rose' | 'green' | 'cyan' }>>(() => {
+    return visibleRows.slice(0, 5).map((entry) => ({
+      title: `${entry.id.slice(0, 8)} · ${entry.intake_status === 'rejected' ? 'Resubmission requested' : entry.intake_status === 'accepted' ? 'Submission approved' : 'Submission received'}`,
+      subtitle: `${userNameById.get(entry.submitted_by || '') || entry.submitted_by || 'Unknown'} · ${entry.business_line || 'Unassigned'}`,
+      meta: entry.submitted_at ? new Date(entry.submitted_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '',
+      tone: entry.intake_status === 'rejected' ? 'rose' : entry.intake_status === 'accepted' ? 'green' : 'cyan',
+    }));
+  }, [userNameById, visibleRows]);
+
+  const revenuePoints = useMemo(
+    () => revenueSeries.map((point) => ({ label: point.label, values: { pi: point.pi, ti: point.ti } })),
+    [revenueSeries]
+  );
+
+  const imTmComparisonPoints = useMemo(
+    () => monthlyBuckets.map((point) => ({ label: point.label, values: { im: point.imPi + point.imTi, tm: point.tmPi + point.tmTi } })),
+    [monthlyBuckets]
+  );
+
+  const stackedRevenuePoints = useMemo(
+    () => monthlyBuckets.map((point) => ({ label: point.label, values: { imPi: point.imPi, tmPi: point.tmPi, imTi: point.imTi, tmTi: point.tmTi } })),
+    [monthlyBuckets]
+  );
+
+  const employeeDistributionPoints = useMemo(
+    () => employeeRows.slice(0, 8).map((entry) => ({ label: entry.full_name.split(' ')[0] || entry.full_name, values: { submissions: entry.submissions } })),
+    [employeeRows]
+  );
+
+  const teamSubmissionPoints = useMemo(
+    () => teamLeadRows.slice(0, 6).map((entry) => ({ label: entry.full_name.split(' ')[0] || entry.full_name, values: { submitted: entry.teamSubmissions, closed: entry.closedCount } })),
+    [teamLeadRows]
+  );
+
+  const teamRevenuePoints = useMemo(
+    () => teamLeadRows.slice(0, 6).map((entry) => ({ label: entry.full_name.split(' ')[0] || entry.full_name, values: { pi: entry.piRevenue, ti: entry.tiRevenue } })),
+    [teamLeadRows]
+  );
+
+  const financeThroughputPoints = useMemo(
+    () => monthlyBuckets.map((point) => ({ label: point.label, values: { completed: point.reviewed, pending: point.pending } })),
+    [monthlyBuckets]
+  );
+
+  const closedTrendPoints = useMemo(
+    () => monthlyBuckets.map((point) => ({ label: point.label, values: { closed: point.closed } })),
+    [monthlyBuckets]
+  );
+
+  const resubmissionTrendPoints = useMemo(
+    () => monthlyBuckets.map((point) => ({ label: point.label, values: { resubmissions: point.resubmissions, reopened: point.reopened } })),
+    [monthlyBuckets]
+  );
 
   if (loading || !user) return null;
-  if (pageLoading) {
-    return <WorkspaceLoader variant="section" label="Loading analytics..." />;
-  }
+  if (pageLoading) return <WorkspaceLoader variant="section" label="Loading analytics..." />;
   if (error) return <StatePanel tone="danger">{error}</StatePanel>;
 
+  const analyticsOverviewGrid = (
+    <div className="grid gap-5">
+      <section className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <AnalyticsMetricCard title="Total PI revenue" value={formatCompactCurrency(overviewMetrics.totalPiRevenue)} trend={getMonthTrendLabel(overviewMetrics.piTrend)} tone="navy" sparkline={overviewMetrics.piTrend} />
+        <AnalyticsMetricCard title="Total TI revenue" value={formatCompactCurrency(overviewMetrics.totalTiRevenue)} trend={getMonthTrendLabel(overviewMetrics.tiTrend)} tone="cyan" sparkline={overviewMetrics.tiTrend} />
+        <AnalyticsMetricCard title="Pending finance" value={String(overviewMetrics.pendingFinance)} hint="needs review" tone="amber" />
+        <AnalyticsMetricCard title="IM PI revenue" value={formatCompactCurrency(overviewMetrics.imPiRevenue)} trend={getMonthTrendLabel(monthlyBuckets.map((entry) => entry.imPi), '%')} tone="cyan" />
+        <AnalyticsMetricCard title="TM PI revenue" value={formatCompactCurrency(overviewMetrics.tmPiRevenue)} trend={getMonthTrendLabel(monthlyBuckets.map((entry) => entry.tmPi), '%')} tone="navy" />
+        <AnalyticsMetricCard title="Master data pending" value={String(overviewMetrics.pendingMasterData)} hint="awaiting approval" tone="amber" />
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-4">
+        <AnalyticsMetricCard title="IM TI revenue" value={formatCompactCurrency(overviewMetrics.imTiRevenue)} trend={getMonthTrendLabel(monthlyBuckets.map((entry) => entry.imTi), '%')} tone="teal" />
+        <AnalyticsMetricCard title="TM TI revenue" value={formatCompactCurrency(overviewMetrics.tmTiRevenue)} trend={getMonthTrendLabel(monthlyBuckets.map((entry) => entry.tmTi), '%')} tone="teal" />
+        <AnalyticsMetricCard title="Submissions this month" value={String(overviewMetrics.submissionsThisMonth)} hint="current intake" trend={getCountDeltaLabel(overviewMetrics.submissionTrend)} tone="green" sparkline={overviewMetrics.submissionTrend} />
+        <AnalyticsMetricCard title="Closed this month" value={String(overviewMetrics.closedThisMonth)} hint="completed" trend={getCountDeltaLabel(overviewMetrics.closedTrend)} tone="green" sparkline={overviewMetrics.closedTrend} />
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+        <AnalyticsPanel title="Revenue trend — 6 months" subtitle="PI and TI revenue over the latest six monthly buckets.">
+          <LineAreaChart
+            points={revenuePoints}
+            series={[
+              { key: 'pi', label: 'PI revenue', color: PI_COLOR, fill: '#6366f1' },
+              { key: 'ti', label: 'TI revenue', color: TI_COLOR, fill: '#06b6d4' },
+            ]}
+            valueFormatter={(value) => formatCompactCurrency(value)}
+          />
+        </AnalyticsPanel>
+        <AnalyticsPanel title="IM vs TM split" subtitle="Combined PI + TI contribution by business line.">
+          <DonutChart
+            centerLabel="total"
+            centerValue={formatCompactCurrency(overviewMetrics.imPiRevenue + overviewMetrics.tmPiRevenue + overviewMetrics.imTiRevenue + overviewMetrics.tmTiRevenue)}
+            segments={[
+              { label: 'IM', value: overviewMetrics.imPiRevenue + overviewMetrics.imTiRevenue, color: IM_COLOR, note: formatCompactCurrency(overviewMetrics.imPiRevenue + overviewMetrics.imTiRevenue) },
+              { label: 'TM', value: overviewMetrics.tmPiRevenue + overviewMetrics.tmTiRevenue, color: TM_COLOR, note: formatCompactCurrency(overviewMetrics.tmPiRevenue + overviewMetrics.tmTiRevenue) },
+            ]}
+          />
+        </AnalyticsPanel>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.85fr)_minmax(320px,0.85fr)]">
+        <AnalyticsPanel title="Top employees" subtitle="Ranked by submission count and revenue contribution.">
+          <RankedProgressList
+            items={employeeRows.slice(0, 5).map((entry) => ({
+              label: entry.full_name,
+              sublabel: entry.business_line || 'Unassigned',
+              value: entry.submissions,
+              displayValue: `${entry.submissions} subs`,
+              accent: formatCompactCurrency(entry.totalRevenue),
+              color: entry.business_line === 'TM' ? `linear-gradient(90deg, ${TM_COLOR}, #67e8f9)` : `linear-gradient(90deg, ${IM_COLOR}, #8b5cf6)`,
+            }))}
+            emptyLabel="No employee submissions yet."
+          />
+        </AnalyticsPanel>
+
+        <AnalyticsPanel title="Finance throughput" subtitle="Current review completion and active review pace.">
+          <div className="grid gap-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-[22px] border border-emerald-200/80 bg-emerald-50/80 px-4 py-4 text-center dark:border-emerald-500/35 dark:bg-emerald-500/10">
+                <div className="text-[2.4rem] font-bold leading-none text-emerald-700 dark:text-emerald-300">{financeSummary.reviewedCount}</div>
+                <div className="mt-2 text-base font-medium text-emerald-700/90 dark:text-emerald-200">completed</div>
+              </div>
+              <div className="rounded-[22px] border border-amber-200/80 bg-amber-50/80 px-4 py-4 text-center dark:border-amber-500/35 dark:bg-amber-500/10">
+                <div className="text-[2.4rem] font-bold leading-none text-amber-700 dark:text-amber-300">{financeSummary.pendingCount}</div>
+                <div className="mt-2 text-base font-medium text-amber-700/90 dark:text-amber-200">pending</div>
+              </div>
+            </div>
+            <div className="text-sm text-muted-foreground">Avg review time: <span className="font-semibold text-foreground">{financeSummary.avgReviewDays === null ? '—' : `${financeSummary.avgReviewDays.toFixed(1)} days`}</span></div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {financeSummary.userRows.slice(0, 2).map((entry) => (
+                <div key={entry.id} className="rounded-2xl border border-border/60 px-3.5 py-3">
+                  <div className="text-sm font-semibold text-foreground">{entry.full_name}</div>
+                  <div className="mt-1 text-lg font-bold text-foreground">{formatDays(entry.avgReviewDays)}</div>
+                  <div className="text-xs text-muted-foreground">{entry.touched} touched</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </AnalyticsPanel>
+
+        <AnalyticsPanel title="Team leads" subtitle="Completion view across mapped teams.">
+          <RankedProgressList
+            items={teamLeadRows.slice(0, 4).map((entry) => ({
+              label: entry.full_name,
+              sublabel: entry.business_line || 'Unassigned',
+              value: Math.round(entry.completionRate * 100),
+              displayValue: `${Math.round(entry.completionRate * 100)}%`,
+              accent: `${entry.teamMembers} members`,
+              color: entry.business_line === 'TM' ? `linear-gradient(90deg, ${TM_COLOR}, #67e8f9)` : `linear-gradient(90deg, ${IM_COLOR}, #8b5cf6)`,
+            }))}
+            emptyLabel="No mapped team leads yet."
+          />
+        </AnalyticsPanel>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-4">
+        <AnalyticsMetricCard title="Active employees" value={String(users.filter((entry) => entry.role === 'employee' && entry.status === 'active').length)} hint="employee access" tone="slate" />
+        <AnalyticsMetricCard title="Active team leads" value={String(users.filter((entry) => entry.role === 'team_lead' && entry.status === 'active').length)} hint="mapped lead access" tone="slate" />
+        <AnalyticsMetricCard title="Active finance users" value={String(users.filter((entry) => entry.role === 'finance' && entry.status === 'active').length)} hint="finance access" tone="slate" />
+        <AnalyticsMetricCard title="Master data approved" value={String(masterDataSummary.approved)} hint="reusable values" tone="slate" />
+      </section>
+    </div>
+  );
+
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-5">
       <PageHeader
         className="gap-3 border-b-0 pb-1"
         title="Analytics"
         description="Role-based company insights across revenue, operations, employees, and finance."
       />
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2.5">
         {TABS.map((entry) => (
-          <TabButton key={entry.value} active={tab === entry.value} label={entry.label} onClick={() => setTab(entry.value)} />
+          <button key={entry.value} type="button" onClick={() => setTab(entry.value)} className={buildTabButtonClass(tab === entry.value)}>
+            {entry.label}
+          </button>
         ))}
       </div>
 
-      {tab === 'overview' ? (
-        <div className="grid gap-4">
-          <section className="grid gap-3 md:grid-cols-4">
-            <KpiCard title="Total PI Revenue" value={formatMoney(overviewMetrics.totalPiRevenue)} hint="Proforma-linked revenue" variant="navy" compact />
-            <KpiCard title="Total TI Revenue" value={formatMoney(overviewMetrics.totalTiRevenue)} hint="Tax-invoice-linked revenue" variant="teal" compact />
-            <KpiCard title="Pending Finance" value={String(overviewMetrics.pendingFinance)} hint="Needs finance review" variant="warning" compact />
-            <KpiCard title="Master Data Pending" value={String(masterDataSummary.pending)} hint="Awaiting approval" variant="danger" compact />
+      {tab === 'overview' ? analyticsOverviewGrid : null}
+
+      {tab === 'revenue' ? (
+        <div className="grid gap-5">
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <AnalyticsMetricCard title="Total PI revenue" value={formatCompactCurrency(overviewMetrics.totalPiRevenue)} trend={getMonthTrendLabel(overviewMetrics.piTrend)} tone="navy" sparkline={overviewMetrics.piTrend} />
+            <AnalyticsMetricCard title="Total TI revenue" value={formatCompactCurrency(overviewMetrics.totalTiRevenue)} trend={getMonthTrendLabel(overviewMetrics.tiTrend)} tone="cyan" sparkline={overviewMetrics.tiTrend} />
+            <AnalyticsMetricCard title="Submissions this month" value={String(overviewMetrics.submissionsThisMonth)} trend={getCountDeltaLabel(overviewMetrics.submissionTrend)} tone="green" sparkline={overviewMetrics.submissionTrend} />
+            <AnalyticsMetricCard title="Closed this month" value={String(overviewMetrics.closedThisMonth)} trend={getCountDeltaLabel(overviewMetrics.closedTrend)} tone="amber" sparkline={overviewMetrics.closedTrend} />
           </section>
 
-          <section className="grid gap-3 md:grid-cols-4">
-            <KpiCard title="IM PI Revenue" value={formatMoney(overviewMetrics.imPiRevenue)} hint="Influencer Marketing" compact />
-            <KpiCard title="TM PI Revenue" value={formatMoney(overviewMetrics.tmPiRevenue)} hint="Talent Management" compact />
-            <KpiCard title="IM TI Revenue" value={formatMoney(overviewMetrics.imTiRevenue)} hint="Influencer Marketing" compact />
-            <KpiCard title="TM TI Revenue" value={formatMoney(overviewMetrics.tmTiRevenue)} hint="Talent Management" compact />
+          <AnalyticsPanel title="Revenue trend — PI and TI (6 months)">
+            <LineAreaChart
+              points={revenuePoints}
+              series={[
+                { key: 'pi', label: 'PI revenue', color: PI_COLOR, fill: '#6366f1' },
+                { key: 'ti', label: 'TI revenue', color: TI_COLOR, fill: '#06b6d4' },
+              ]}
+              valueFormatter={(value) => formatCompactCurrency(value)}
+            />
+          </AnalyticsPanel>
+
+          <section className="grid gap-5 xl:grid-cols-2">
+            <AnalyticsPanel title="IM vs TM — monthly comparison">
+              <GroupedBarChart
+                points={imTmComparisonPoints}
+                series={[
+                  { key: 'im', label: 'IM', color: IM_COLOR },
+                  { key: 'tm', label: 'TM', color: TM_COLOR },
+                ]}
+              />
+            </AnalyticsPanel>
+            <AnalyticsPanel title="Revenue distribution">
+              <DonutChart
+                centerLabel="mix"
+                centerValue={formatCompactCurrency(overviewMetrics.totalPiRevenue + overviewMetrics.totalTiRevenue)}
+                segments={[
+                  { label: 'IM PI', value: overviewMetrics.imPiRevenue, color: IM_COLOR },
+                  { label: 'TM PI', value: overviewMetrics.tmPiRevenue, color: '#8b5cf6' },
+                  { label: 'IM TI', value: overviewMetrics.imTiRevenue, color: TM_COLOR },
+                  { label: 'TM TI', value: overviewMetrics.tmTiRevenue, color: TM_TI_COLOR },
+                ]}
+              />
+            </AnalyticsPanel>
           </section>
 
-          <section className="grid gap-3 md:grid-cols-4">
-            <KpiCard title="Submissions This Month" value={String(overviewMetrics.submissionsThisMonth)} hint="Current month intake" compact />
-            <KpiCard title="Closed This Month" value={String(overviewMetrics.closedThisMonth)} hint="Completed workflows" compact />
-            <KpiCard title="Active Employees" value={String(users.filter((entry) => entry.role === 'employee' && entry.status === 'active').length)} hint="Employee access" compact />
-            <KpiCard title="Active Finance Users" value={String(users.filter((entry) => entry.role === 'finance' && entry.status === 'active').length)} hint="Finance access" compact />
+          <AnalyticsPanel title="Monthly revenue breakdown (stacked)">
+            <StackedBarChart
+              points={stackedRevenuePoints}
+              series={[
+                { key: 'imPi', label: 'IM PI', color: IM_COLOR },
+                { key: 'tmPi', label: 'TM PI', color: '#8b5cf6' },
+                { key: 'imTi', label: 'IM TI', color: TM_COLOR },
+                { key: 'tmTi', label: 'TM TI', color: TM_TI_COLOR },
+              ]}
+            />
+          </AnalyticsPanel>
+        </div>
+      ) : null}
+
+      {tab === 'employees' ? (
+        <div className="grid gap-5">
+          <AnalyticsPanel title="Top performers — by submissions and revenue">
+            <RankedProgressList
+              items={employeeRows.slice(0, 5).map((entry) => ({
+                label: entry.full_name,
+                value: entry.submissions,
+                displayValue: `${entry.submissions} subs`,
+                accent: formatCompactCurrency(entry.totalRevenue),
+                color: entry.business_line === 'TM' ? `linear-gradient(90deg, ${TM_COLOR}, #67e8f9)` : `linear-gradient(90deg, ${IM_COLOR}, #8b5cf6)`,
+              }))}
+              emptyLabel="No employee activity yet."
+            />
+            <div className="mt-4 flex flex-wrap gap-4 text-sm text-muted-foreground">
+              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded bg-[#8b5cf6]" />TM</span>
+              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded bg-[#06b6d4]" />IM</span>
+            </div>
+          </AnalyticsPanel>
+
+          <section className="grid gap-5 xl:grid-cols-2">
+            <AnalyticsPanel title="Submission distribution">
+              <GroupedBarChart points={employeeDistributionPoints} series={[{ key: 'submissions', label: 'Submissions', color: IM_COLOR }]} />
+            </AnalyticsPanel>
+            <AnalyticsPanel title="Revenue contribution">
+              <DonutChart
+                centerLabel="revenue"
+                centerValue={formatCompactCurrency(employeeRows.reduce((sum, entry) => sum + entry.totalRevenue, 0))}
+                segments={(() => {
+                  const top = employeeRows.filter((entry) => entry.totalRevenue > 0).slice(0, 3);
+                  const others = employeeRows.slice(3).reduce((sum, entry) => sum + entry.totalRevenue, 0);
+                  return [
+                    ...top.map((entry, index) => ({
+                      label: entry.full_name,
+                      value: entry.totalRevenue,
+                      color: [IM_COLOR, '#8b5cf6', TM_COLOR][index] || '#cbd5e1',
+                    })),
+                    { label: 'Others', value: others, color: '#d1d5db' },
+                  ].filter((entry) => entry.value > 0);
+                })()}
+              />
+            </AnalyticsPanel>
+          </section>
+
+          <section className="grid gap-5 xl:grid-cols-2">
+            <AnalyticsPanel title="Resubmission rate">
+              <RankedProgressList
+                items={employeeRows
+                  .filter((entry) => entry.submissions > 0)
+                  .sort((left, right) => right.resubmissionRate - left.resubmissionRate)
+                  .slice(0, 5)
+                  .map((entry) => ({
+                    label: entry.full_name,
+                    value: Math.round(entry.resubmissionRate * 100),
+                    displayValue: formatRate(entry.resubmissionRate),
+                    color: entry.resubmissionRate >= 0.15 ? 'linear-gradient(90deg, #ef4444, #f59e0b)' : 'linear-gradient(90deg, #10b981, #06b6d4)',
+                    accent: `${entry.resubmissions}/${entry.submissions}`,
+                  }))}
+                emptyLabel="No resubmissions yet."
+              />
+            </AnalyticsPanel>
+            <AnalyticsPanel title="Business line split">
+              <DonutChart
+                centerLabel="employees"
+                centerValue={String(employeeRows.length)}
+                segments={[
+                  { label: 'TM', value: employeeRows.filter((entry) => entry.business_line === 'TM').length, color: IM_COLOR },
+                  { label: 'IM', value: employeeRows.filter((entry) => entry.business_line === 'IM').length, color: TM_COLOR },
+                  { label: 'Unassigned', value: employeeRows.filter((entry) => entry.business_line == null).length, color: '#cbd5e1' },
+                ]}
+              />
+            </AnalyticsPanel>
           </section>
         </div>
       ) : null}
 
-      {tab === 'revenue' ? (
-        <SectionCard title="Revenue Trends" description="PI and TI revenue across recent months." contentClassName="grid gap-4">
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.85fr)]">
-            <div className="rounded-2xl border border-border/60 bg-card p-4">
-              <SeriesChart series={revenueSeries} />
-            </div>
-            <div className="grid gap-3">
-              <KpiCard title="Total PI Revenue" value={formatMoney(overviewMetrics.totalPiRevenue)} hint="All proforma-linked submissions" variant="navy" compact />
-              <KpiCard title="Total TI Revenue" value={formatMoney(overviewMetrics.totalTiRevenue)} hint="All tax-invoice-linked submissions" variant="teal" compact />
-              <div className="rounded-2xl border border-border/60 bg-card p-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2 font-semibold text-foreground">
-                  <LineChart className="h-4 w-4 text-sky-500" />
-                  Method
-                </div>
-                <p className="mt-2 leading-6">
-                  Revenue split uses the current invoice type labels already stored in submissions. PI and TI categories are shown separately to match the workflow surface.
-                </p>
-              </div>
-            </div>
-          </div>
-        </SectionCard>
-      ) : null}
-
-      {tab === 'employees' ? (
-        <SectionCard title="Employees" description="Ranked by submission volume and workflow activity." contentClassName="grid gap-4">
-          <div className="overflow-hidden rounded-2xl border border-border/60">
-            <table className="min-w-full border-separate border-spacing-0">
-              <thead className="sticky top-0 z-[1] bg-app">
-                <tr>
-                  {['Employee', 'Business Line', 'Submissions', 'Resubmissions', 'Resubmission Rate', 'PI Revenue', 'TI Revenue', 'Closed Count'].map((heading) => (
-                    <th key={heading} className="border-b border-border/60 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      {heading}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {employeeRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-4 py-8 text-sm text-muted-foreground">
-                      No employee data available.
-                    </td>
-                  </tr>
-                ) : (
-                  employeeRows.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-muted/20">
-                      <td className="border-b border-border/50 px-4 py-3">
-                        <div className="text-sm font-medium text-foreground">{entry.full_name}</div>
-                        <div className="text-xs text-muted-foreground">{entry.email}</div>
-                      </td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-muted-foreground">{lineLabel(entry.business_line)}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{entry.submissions}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{entry.resubmissions}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{formatRate(entry.resubmissionRate)}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{formatMoney(entry.piRevenue)}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{formatMoney(entry.tiRevenue)}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{entry.closedCount}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
-      ) : null}
-
       {tab === 'team_leads' ? (
-        <SectionCard title="Team Leads" description="Mapped members and team submission performance." contentClassName="grid gap-4">
-          <div className="overflow-hidden rounded-2xl border border-border/60">
-            <table className="min-w-full border-separate border-spacing-0">
-              <thead className="sticky top-0 z-[1] bg-app">
-                <tr>
-                  {['Team Lead', 'Business Line', 'Team Members', 'Team Submissions', 'Team PI Revenue', 'Team TI Revenue', 'Team Resubmission Rate'].map((heading) => (
-                    <th key={heading} className="border-b border-border/60 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      {heading}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {teamLeadRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-8 text-sm text-muted-foreground">
-                      No team lead data available.
-                    </td>
-                  </tr>
-                ) : (
-                  teamLeadRows.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-muted/20">
-                      <td className="border-b border-border/50 px-4 py-3">
-                        <div className="text-sm font-medium text-foreground">{entry.full_name}</div>
-                        <div className="text-xs text-muted-foreground">{entry.email}</div>
-                      </td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-muted-foreground">{lineLabel(entry.business_line)}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{entry.teamMembers}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{entry.teamSubmissions}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{formatMoney(entry.teamPiRevenue)}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{formatMoney(entry.teamTiRevenue)}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{formatRate(entry.resubmissionRate)}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
+        <div className="grid gap-5">
+          <AnalyticsPanel title="Team overview">
+            <GaugeGrid
+              items={teamLeadRows.slice(0, 3).map((entry) => ({
+                label: entry.full_name,
+                subtitle: entry.business_line || 'Unassigned',
+                value: entry.completionRate,
+                detail: `${entry.teamMembers} members · ${formatCompactCurrency(entry.piRevenue + entry.tiRevenue)}`,
+                tone: entry.business_line === 'TM' ? 'cyan' : 'green',
+              }))}
+            />
+          </AnalyticsPanel>
+
+          <section className="grid gap-5 xl:grid-cols-2">
+            <AnalyticsPanel title="Team submissions">
+              <GroupedBarChart
+                points={teamSubmissionPoints}
+                series={[
+                  { key: 'submitted', label: 'Submitted', color: IM_COLOR },
+                  { key: 'closed', label: 'Closed', color: '#10b981' },
+                ]}
+              />
+            </AnalyticsPanel>
+            <AnalyticsPanel title="Team revenue (PI + TI)">
+              <StackedBarChart
+                points={teamRevenuePoints}
+                series={[
+                  { key: 'pi', label: 'PI revenue', color: IM_COLOR },
+                  { key: 'ti', label: 'TI revenue', color: TM_COLOR },
+                ]}
+              />
+            </AnalyticsPanel>
+          </section>
+
+          <AnalyticsPanel title="Pending approvals by team">
+            <RankedProgressList
+              items={teamLeadRows.map((entry) => ({
+                label: `${entry.full_name} (${entry.business_line || 'Unassigned'})`,
+                value: entry.pendingCount,
+                displayValue: `${entry.pendingCount} pending`,
+                sublabel: `Resubmission rate ${formatRate(entry.resubmissionRate)}`,
+                color: entry.pendingCount >= 6 ? 'linear-gradient(90deg, #ef4444, #fb7185)' : entry.pendingCount >= 3 ? 'linear-gradient(90deg, #f59e0b, #facc15)' : 'linear-gradient(90deg, #10b981, #34d399)',
+              }))}
+              emptyLabel="No team approvals waiting."
+            />
+          </AnalyticsPanel>
+        </div>
       ) : null}
 
       {tab === 'finance' ? (
-        <SectionCard title="Finance" description="Finance user throughput and review coverage." contentClassName="grid gap-4">
-          <div className="grid gap-3 md:grid-cols-4">
-            <KpiCard title="Reviews Completed" value={String(visibleRows.filter((row) => Boolean(row.reviewed_by)).length)} hint="Rows touched by finance" compact />
-            <KpiCard title="Pending Reviews" value={String(visibleRows.filter((row) => row.intake_status === 'submitted').length)} hint="Awaiting review" compact />
-            <KpiCard title="Master Data Reviews" value={String(masterDataSummary.total)} hint="Review queue volume" compact />
-            <KpiCard title="Closed Work" value={String(visibleRows.filter((row) => row.closure_status === 'closed').length)} hint="Workflow complete" compact />
-          </div>
+        <div className="grid gap-5">
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <AnalyticsMetricCard title="Reviews completed" value={String(financeSummary.reviewedCount)} hint="this month slice" tone="green" />
+            <AnalyticsMetricCard title="Pending reviews" value={String(financeSummary.pendingCount)} hint="awaiting action" tone="amber" />
+            <AnalyticsMetricCard title="Master data reviews" value={String(masterDataSummary.total)} hint="in queue" tone="navy" />
+            <AnalyticsMetricCard title="Closed work" value={String(financeSummary.closedCount)} hint="workflow complete" tone="cyan" />
+          </section>
 
-          <div className="overflow-hidden rounded-2xl border border-border/60">
-            <table className="min-w-full border-separate border-spacing-0">
-              <thead className="sticky top-0 z-[1] bg-app">
-                <tr>
-                  {['Finance User', 'Reviews Completed', 'Pending Reviews', 'Master Data Reviews', 'Closed Work'].map((heading) => (
-                    <th key={heading} className="border-b border-border/60 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      {heading}
-                    </th>
+          <section className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.85fr)]">
+            <AnalyticsPanel title="Review throughput — 6 months">
+              <LineAreaChart
+                points={financeThroughputPoints}
+                series={[
+                  { key: 'completed', label: 'Completed', color: '#10b981', fill: '#10b981' },
+                  { key: 'pending', label: 'Pending', color: '#f59e0b', fill: '#f59e0b' },
+                ]}
+              />
+            </AnalyticsPanel>
+            <AnalyticsPanel title="Avg review time">
+              <div className="grid h-full gap-5">
+                <div className="pt-8 text-center">
+                  <div className="text-[4.25rem] font-bold leading-none tracking-tight text-foreground">{financeSummary.avgReviewDays === null ? '—' : financeSummary.avgReviewDays.toFixed(1)}</div>
+                  <div className="mt-3 text-2xl text-muted-foreground">days average</div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {financeSummary.userRows.slice(0, 2).map((entry) => (
+                    <div key={entry.id} className={`rounded-[20px] px-4 py-4 text-center ${entry.avgReviewDays !== null && entry.avgReviewDays <= (financeSummary.avgReviewDays ?? entry.avgReviewDays) ? 'border border-emerald-200/80 bg-emerald-50/80 dark:border-emerald-500/35 dark:bg-emerald-500/10' : 'border border-amber-200/80 bg-amber-50/80 dark:border-amber-500/35 dark:bg-amber-500/10'}`}>
+                      <div className="text-[2rem] font-bold leading-none text-foreground">{formatDays(entry.avgReviewDays)}</div>
+                      <div className="mt-2 text-base font-medium text-muted-foreground">{entry.full_name}</div>
+                    </div>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {financeRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-sm text-muted-foreground">
-                      No finance users found.
-                    </td>
-                  </tr>
-                ) : (
-                  financeRows.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-muted/20">
-                      <td className="border-b border-border/50 px-4 py-3">
-                        <div className="text-sm font-medium text-foreground">{entry.full_name}</div>
-                        <div className="text-xs text-muted-foreground">{entry.email}</div>
-                      </td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{entry.reviewsCompleted}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{entry.pendingReviews}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{entry.masterDataReviews}</td>
-                      <td className="border-b border-border/50 px-4 py-3 text-sm text-foreground">{entry.closedWork}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
+                </div>
+              </div>
+            </AnalyticsPanel>
+          </section>
+
+          <AnalyticsPanel title="Finance user workload breakdown">
+            <StackedWorkloadRows
+              rows={financeSummary.userRows.map((entry) => ({
+                label: entry.full_name,
+                totalLabel: String(entry.touched),
+                values: {
+                  completed: entry.completed,
+                  pending: entry.pending,
+                  closed: entry.completed,
+                },
+              }))}
+              segments={[
+                { key: 'completed', label: 'Completed', color: '#10b981' },
+                { key: 'pending', label: 'Pending', color: '#f59e0b' },
+                { key: 'closed', label: 'Closed', color: '#06b6d4' },
+              ]}
+            />
+          </AnalyticsPanel>
+
+          <AnalyticsPanel title="Closed submissions — monthly trend">
+            <GroupedBarChart points={closedTrendPoints} series={[{ key: 'closed', label: 'Closed', color: '#06b6d4' }]} />
+          </AnalyticsPanel>
+        </div>
       ) : null}
 
       {tab === 'operations' ? (
-        <SectionCard title="Operations" description="Aging queues and high-touch submissions." contentClassName="grid gap-4">
-          <div className="grid gap-3 md:grid-cols-3">
-            <KpiCard title="Pending > 3 Days" value={String(pendingOver3)} hint="Older queue items" variant="warning" compact />
-            <KpiCard title="Pending > 7 Days" value={String(pendingOver7)} hint="Needs follow-up" variant="danger" compact />
-            <KpiCard title="Pending > 15 Days" value={String(pendingOver15)} hint="Escalation queue" variant="danger" compact />
-          </div>
+        <div className="grid gap-5">
+          <AnalyticsPanel title="Aging buckets">
+            <AgingBuckets
+              buckets={[
+                { label: '0–3 days', value: operationsSummary.aging.zeroToThree, note: 'On track', tone: 'green' },
+                { label: '3–7 days', value: operationsSummary.aging.threeToSeven, note: 'Needs follow-up', tone: 'amber' },
+                { label: '7–15 days', value: operationsSummary.aging.sevenToFifteen, note: 'At risk', tone: 'rose' },
+                { label: '15+ days', value: operationsSummary.aging.fifteenPlus, note: 'Escalation', tone: 'violet' },
+              ]}
+            />
+          </AnalyticsPanel>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-border/60 bg-card p-4">
-              <div className="mb-3 flex items-center gap-2 font-semibold text-foreground">
-                <ChevronRight className="h-4 w-4 text-sky-500" />
-                Most Follow-Ups
-              </div>
-              <div className="grid gap-2">
-                {mostFollowUps.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">No follow-up notes available.</div>
-                ) : (
-                  mostFollowUps.map((entry) => (
-                    <div key={entry.id} className="rounded-xl border border-border/60 px-3 py-2">
-                      <div className="text-sm font-medium text-foreground">{userNameById.get(entry.submitted_by || '') || entry.submitted_by || entry.id}</div>
-                      <div className="text-xs text-muted-foreground">{formatDate(entry.submitted_at)} · {entry.finance_comment || entry.rejection_note}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+          <section className="grid gap-5 xl:grid-cols-2">
+            <AnalyticsPanel title="Workflow bottlenecks">
+              <WorkflowBars
+                rows={[
+                  { label: 'Submission', value: visibleRows.length, tone: 'navy' },
+                  { label: 'Finance review', value: overviewMetrics.pendingFinance, tone: 'violet' },
+                  { label: 'Master data', value: masterDataSummary.pending, tone: 'rose' },
+                  { label: 'Payment', value: visibleRows.filter((row) => row.intake_status === 'accepted' && normalizeStatus(row.closure_status) !== 'closed').length, tone: 'amber' },
+                  { label: 'Closed', value: financeSummary.closedCount, tone: 'slate' },
+                ]}
+              />
+            </AnalyticsPanel>
+            <AnalyticsPanel title="Follow-up distribution">
+              <DotStatusList rows={operationsSummary.followUpRows.map((entry) => ({ label: entry.label, overdue: entry.overdue, dueSoon: entry.dueSoon, onTime: entry.onTime, totalLabel: String(entry.total) }))} />
+            </AnalyticsPanel>
+          </section>
 
-            <div className="rounded-2xl border border-border/60 bg-card p-4">
-              <div className="mb-3 flex items-center gap-2 font-semibold text-foreground">
-                <ChevronLeft className="h-4 w-4 text-rose-500" />
-                Most Resubmissions
-              </div>
-              <div className="grid gap-2">
-                {mostResubmissions.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">No resubmissions in the current slice.</div>
-                ) : (
-                  mostResubmissions.map((entry) => (
-                    <div key={entry.id} className="rounded-xl border border-border/60 px-3 py-2">
-                      <div className="text-sm font-medium text-foreground">{userNameById.get(entry.submitted_by || '') || entry.submitted_by || entry.id}</div>
-                      <div className="text-xs text-muted-foreground">{formatDate(entry.submitted_at)} · {entry.invoice_type || 'Unknown invoice'}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        </SectionCard>
+          <section className="grid gap-5 xl:grid-cols-2">
+            <AnalyticsPanel title="Resubmission trends — 6 months">
+              <LineAreaChart
+                points={resubmissionTrendPoints}
+                series={[
+                  { key: 'resubmissions', label: 'Resubmissions', color: '#ef4444', fill: '#ef4444' },
+                  { key: 'reopened', label: 'Reopened', color: '#f59e0b', fill: '#f59e0b' },
+                ]}
+              />
+            </AnalyticsPanel>
+            <AnalyticsPanel title="Pending queue age (days)">
+              <WorkflowBars
+                rows={[
+                  { label: 'Finance review', value: Math.round(operationsSummary.queueAgeDays.finance * 10) / 10, tone: 'amber' },
+                  { label: 'Master data', value: Math.round(operationsSummary.queueAgeDays.masterData * 10) / 10, tone: 'rose' },
+                  { label: 'Payment', value: Math.round(operationsSummary.queueAgeDays.payment * 10) / 10, tone: 'green' },
+                  { label: 'Resubmission', value: Math.round(operationsSummary.queueAgeDays.resubmission * 10) / 10, tone: 'violet' },
+                ]}
+              />
+            </AnalyticsPanel>
+          </section>
+        </div>
       ) : null}
+
+      <AnalyticsPanel title="Recent activity" subtitle="Visible company workflow events from the latest submission activity.">
+        <TimelineList
+          items={recentActivityItems}
+          emptyLabel="No recent activity yet. Submission, finance, master data, and user events will appear here once activity begins."
+        />
+      </AnalyticsPanel>
     </div>
   );
 }

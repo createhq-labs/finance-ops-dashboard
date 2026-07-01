@@ -10,6 +10,7 @@ import {
   canViewAnalyticsPage,
   canViewNotifications,
   canViewTeamSubmissions,
+  canViewTransferredSubmissions,
   getDefaultDashboardPath,
   getInvoiceIntakePath,
   getSubmissionsLabel,
@@ -54,6 +55,9 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
       ...(canViewTeamSubmissions(role ?? 'employee')
         ? [{ href: '/dashboard/team-submissions', label: 'Team Submissions', icon: ListChecks, group: 'operations' as const }]
         : []),
+      ...(canViewTransferredSubmissions(role ?? 'employee')
+        ? [{ href: '/dashboard/transferred-submissions', label: 'Transferred Submissions', icon: ListChecks, group: 'operations' as const }]
+        : []),
       { href: '/dashboard/notifications', label: 'Notifications', icon: Bell, group: 'workspace', badge: unreadCount > 0 ? unreadCount : undefined },
       { href: '/dashboard/guide', label: 'Guide', icon: BookOpen, group: 'workspace' },
       { href: '/dashboard/finance', label: 'Finance Review', icon: BriefcaseBusiness, group: 'operations' },
@@ -68,6 +72,7 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
     return base.filter((i) => {
       if (!role) return i.href === '/dashboard';
       if (i.href === '/dashboard/team-submissions') return canViewTeamSubmissions(role);
+      if (i.href === '/dashboard/transferred-submissions') return canViewTransferredSubmissions(role);
       return canAccessDashboardPath(role, i.href);
     });
   }, [unreadCount, user?.role]);

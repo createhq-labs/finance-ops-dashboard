@@ -71,6 +71,7 @@ export type SubmissionRow = {
   reimbursement_amount?: number | null;
   reimbursement_receipts?: string | null;
   product_reimbursement_attachment?: SubmissionAttachmentSummary | null;
+  reference_po_attachment?: SubmissionAttachmentSummary | null;
   additional_information?: string | null;
   previous_submission_id?: string | null;
   previous_submission_pi?: string | null;
@@ -195,6 +196,7 @@ type SheetColumnId =
   | 'campaign_notes'
   | 'product_reimbursement_upload'
   | 'product_reimbursement_file'
+  | 'reference_po_file'
   | 'commercials'
   | 'additional_agency_commission'
   | 'additional_information'
@@ -248,6 +250,7 @@ const COLUMN_TITLES: Record<SheetColumnId, string> = {
   campaign_notes: 'Campaign Notes',
   product_reimbursement_upload: 'Product Reimbursement',
   product_reimbursement_file: 'Product Reimbursement File',
+  reference_po_file: 'Reference PO File',
   commercials: 'Amount',
   additional_agency_commission: 'Additional Agency Commission',
   additional_information: 'Additional Information',
@@ -296,6 +299,7 @@ const COLUMN_WIDTHS: Record<SheetColumnId, number> = {
   campaign_notes: 144,
   product_reimbursement_upload: 124,
   product_reimbursement_file: 156,
+  reference_po_file: 156,
   commercials: 170,
   additional_agency_commission: 94,
   additional_information: 144,
@@ -721,6 +725,7 @@ function getColumns(
     'line_amounts',
     'product_reimbursement_upload',
     'product_reimbursement_file',
+    'reference_po_file',
     'campaign_code',
     'campaign_name',
     'campaign_brand',
@@ -750,6 +755,7 @@ function getColumns(
     'line_amounts',
     'product_reimbursement_upload',
     'product_reimbursement_file',
+    'reference_po_file',
     'campaign_code',
     'campaign_name',
     'campaign_brand',
@@ -796,6 +802,7 @@ function getColumns(
         'line_amounts',
         'product_reimbursement_upload',
         'product_reimbursement_file',
+    'reference_po_file',
         'additional_agency_commission',
         'additional_information',
         'actions',
@@ -835,6 +842,7 @@ function getColumns(
         'line_amounts',
         'product_reimbursement_upload',
         'product_reimbursement_file',
+    'reference_po_file',
         'additional_agency_commission',
         'additional_information',
         'actions',
@@ -2177,8 +2185,7 @@ export function SubmissionTable({
     }
   }, []);
 
-  const openAttachment = useCallback(async (row: SubmissionRow, mode: 'view' | 'download') => {
-    const attachment = row.product_reimbursement_attachment;
+  const openAttachment = useCallback(async (attachment: SubmissionAttachmentSummary | null | undefined, row: SubmissionRow, mode: 'view' | 'download') => {
     if (!attachment) return;
     const key = `${row.id}:${attachment.id}:${mode}`;
     setAttachmentActionKey(key);
@@ -2271,6 +2278,8 @@ export function SubmissionTable({
         return copyMoney(getProductReimbursementValue(row));
       case 'product_reimbursement_file':
         return fieldValue(row.product_reimbursement_attachment?.file_name);
+      case 'reference_po_file':
+        return fieldValue(row.reference_po_attachment?.file_name);
       case 'commercials':
         return copyMoney(money(row.amount, row.currency));
       case 'additional_agency_commission':
@@ -2656,8 +2665,7 @@ export function SubmissionTable({
     const commonText = (value: string, title?: string, copyValue = value, className?: string) => (
       <ExpandableText value={value} copied={isCopied} onCopy={() => void copyCell(cellKey, copyValue)} title={title} className={className} />
     );
-    const renderAttachmentCell = (row: SubmissionRow) => {
-      const attachment = row.product_reimbursement_attachment;
+    const renderAttachmentCell = (attachment: SubmissionAttachmentSummary | null | undefined, row: SubmissionRow) => {
       if (!attachment) return commonText('-');
       const actionKeyBase = `${row.id}:${attachment.id}`;
       const isViewing = attachmentActionKey === `${actionKeyBase}:view`;
@@ -2676,14 +2684,14 @@ export function SubmissionTable({
           <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
-              onClick={() => void openAttachment(row, 'view')}
+              onClick={() => void openAttachment(attachment, row, 'view')}
               className="inline-flex h-6 items-center rounded-md border border-border/70 bg-card px-2 text-[11px] font-medium text-foreground transition-none hover:bg-muted/40"
             >
               {isViewing ? 'Opening' : 'View'}
             </button>
             <button
               type="button"
-              onClick={() => void openAttachment(row, 'download')}
+              onClick={() => void openAttachment(attachment, row, 'download')}
               className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-border/70 bg-card text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground"
               aria-label="Download attachment"
             >
@@ -2916,7 +2924,9 @@ export function SubmissionTable({
       case 'product_reimbursement_upload':
         return commonText(getProductReimbursementValue(row), getCurrencyTitle(row.currency), copyMoney(getProductReimbursementValue(row)));
       case 'product_reimbursement_file':
-        return renderAttachmentCell(row);
+        return renderAttachmentCell(row.product_reimbursement_attachment, row);
+      case 'reference_po_file':
+        return renderAttachmentCell(row.reference_po_attachment, row);
       case 'commercials':
         return commonText(money(row.amount, row.currency), getCurrencyTitle(row.currency, row.amount), copyMoney(money(row.amount, row.currency)));
       case 'additional_agency_commission':
@@ -3150,6 +3160,8 @@ export function SubmissionTable({
                           <>Product<br />Reimbursement</>
                         ) : column === 'product_reimbursement_file' ? (
                           <>Product Reimb.<br />File</>
+                        ) : column === 'reference_po_file' ? (
+                          <>Reference PO<br />File</>
                         ) : column === 'creator_invoice_received' ? (
                           <>Creator<br />Invoice</>
                       ) : column === 'payment_received' ? (

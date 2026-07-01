@@ -287,6 +287,8 @@ export function SubmissionDrawer({
               />
             ) : null}
             <DetailItem label="Reimbursement/Product Reimbursement File Info" value={row.reimbursement_receipts} />
+            <DetailItem label="Product Reimbursement File" value={row.product_reimbursement_attachment?.file_name || '-'} />
+            <DetailItem label="Reference PO File" value={row.reference_po_attachment?.file_name || '-'} />
           </DetailSection>
 
           {resubmissionNote ? (
