@@ -27,7 +27,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     const { id } = await context.params;
     const body = await req.json().catch(() => ({}));
     const serviceClient = createServiceClient();
-    const item = await updateDeliverable(serviceClient, id, body ?? {});
+    const item = await updateDeliverable(serviceClient, appUser.id, id, body ?? {});
 
     return NextResponse.json({ success: true, item }, { status: 200 });
   } catch (error) {

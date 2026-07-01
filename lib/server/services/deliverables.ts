@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AppRole, BusinessLine } from '../types/submissions';
+import { logActivityEvent } from './activityLog';
 
 export type ManagedDeliverable = {
   id: string;
@@ -102,15 +103,45 @@ export async function createDeliverable(client: SupabaseClient, actorId: string,
     throw new Error(error?.message || 'Failed to create deliverable.');
   }
 
+  await logActivityEvent(client, {
+    actorUserId: actorId,
+    action: 'deliverable_added',
+    details: {
+      message: `Deliverable ${data.name} was created.`,
+      deliverable_name: data.name,
+      business_line: data.business_line,
+      is_active: data.is_active,
+    },
+    structured: {
+      action_type: 'deliverable_added',
+      entity_type: 'deliverable',
+      entity_id: String(data.id),
+      metadata: {
+        deliverable_name: data.name,
+        business_line: data.business_line,
+        is_active: data.is_active,
+      },
+    },
+  });
+
   return data as ManagedDeliverable;
 }
 
 export async function updateDeliverable(
   client: SupabaseClient,
+  actorId: string,
   id: string,
   input: DeliverableInput
 ) {
   const payload = sanitizeInput(input);
+  const { data: existing, error: existingError } = await client
+    .from('deliverables')
+    .select(DELIVERABLE_FIELDS)
+    .eq('id', id)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (!existing) throw new Error('Deliverable not found.');
 
   if (Object.prototype.hasOwnProperty.call(payload, 'name') && payload.name) {
     const { data: duplicate, error: duplicateError } = await client
@@ -132,10 +163,7 @@ export async function updateDeliverable(
   if (typeof payload.is_active === 'boolean') updateData.is_active = payload.is_active;
 
   if (Object.keys(updateData).length === 0) {
-    const { data, error } = await client.from('deliverables').select(DELIVERABLE_FIELDS).eq('id', id).maybeSingle();
-    if (error) throw error;
-    if (!data) throw new Error('Deliverable not found.');
-    return data as ManagedDeliverable;
+    return existing as ManagedDeliverable;
   }
 
   const { data, error } = await client
@@ -148,6 +176,43 @@ export async function updateDeliverable(
   if (error || !data) {
     throw new Error(error?.message || 'Failed to update deliverable.');
   }
+
+  await logActivityEvent(client, {
+    actorUserId: actorId,
+    action: 'deliverable_updated',
+    details: {
+      message: `Deliverable ${existing.name} was updated.`,
+      old_value: {
+        name: existing.name,
+        business_line: existing.business_line,
+        is_active: existing.is_active,
+      },
+      new_value: {
+        name: data.name,
+        business_line: data.business_line,
+        is_active: data.is_active,
+      },
+    },
+    structured: {
+      action_type: 'deliverable_updated',
+      entity_type: 'deliverable',
+      entity_id: String(data.id),
+      metadata: {
+        old_value: {
+          name: existing.name,
+          business_line: existing.business_line,
+          is_active: existing.is_active,
+        },
+        new_value: {
+          name: data.name,
+          business_line: data.business_line,
+          is_active: data.is_active,
+          financial_year: null,
+          module: 'deliverables',
+        },
+      },
+    },
+  });
 
   return data as ManagedDeliverable;
 }

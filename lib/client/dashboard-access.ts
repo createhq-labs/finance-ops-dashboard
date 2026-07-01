@@ -1,4 +1,5 @@
-﻿import type { SessionUser } from './session';
+import type { SessionUser } from './session';
+import { ENABLE_TRANSFERRED_SUBMISSIONS } from '../shared/feature-flags';
 
 export type AppRole = SessionUser['role'];
 export type DashboardPath =
@@ -6,6 +7,7 @@ export type DashboardPath =
   | '/dashboard/submit'
   | '/dashboard/submissions'
   | '/dashboard/team-submissions'
+  | '/dashboard/transferred-submissions'
   | '/dashboard/submissions/new'
   | '/dashboard/finance'
   | '/dashboard/analytics'
@@ -69,6 +71,10 @@ export function canViewTeamSubmissions(role: AppRole) {
   return isTeamLeadRole(role);
 }
 
+export function canViewTransferredSubmissions(role: AppRole) {
+  return ENABLE_TRANSFERRED_SUBMISSIONS && isTeamLeadRole(role);
+}
+
 export function canCreateSubmission(role: AppRole) {
   return isEmployeeRole(role) || isTeamLeadRole(role);
 }
@@ -105,6 +111,7 @@ export function canAccessDashboardPath(role: AppRole, pathname: string) {
   if (pathname === '/dashboard/submissions/new') return canSubmitInvoice(role);
   if (pathname === '/dashboard/submissions') return canViewSubmissionsPage(role);
   if (pathname === '/dashboard/team-submissions') return canViewTeamSubmissions(role);
+  if (pathname === '/dashboard/transferred-submissions') return canViewTransferredSubmissions(role);
   if (pathname === '/dashboard/finance') return canViewFinanceDashboard(role);
   if (pathname === '/dashboard/analytics') return canViewAnalyticsPage(role);
   if (pathname === '/dashboard/master-data') return canViewMasterData(role);

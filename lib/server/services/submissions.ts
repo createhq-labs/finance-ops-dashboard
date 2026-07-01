@@ -4,7 +4,7 @@ import type { AppUser, SanitizedLineItemPayload, SanitizedSubmissionPayload } fr
 type CreateSubmissionResult =
   | {
       success: true;
-      submission: { id: string; proforma_invoice: string | null; sync_status: string | null; currency: string | null };
+      submission: { id: string; proforma_invoice: string | null; sync_status: string | null; currency: string | null; financial_year: string | null };
     }
   | {
       success: false;
@@ -99,6 +99,8 @@ export async function createSubmissionWithLineItems(params: {
   const insertPayload = {
     ...submissionPayload,
     submitted_by: appUser.id,
+    assigned_to_user_id: appUser.id,
+    original_submitted_by: appUser.id,
     financial_year: getFinancialYearLabel(submissionPayload.submitted_at),
     ...(submissionPayload.previous_submission_id
       ? { proforma_invoice: carryForwardPi ?? null }
@@ -110,7 +112,7 @@ export async function createSubmissionWithLineItems(params: {
   const { data: submission, error: submissionError } = await userClient
     .from('intake_submissions')
     .insert(insertPayload)
-    .select('id, proforma_invoice, sync_status, currency')
+    .select('id, proforma_invoice, sync_status, currency, financial_year')
     .single();
 
   if (submissionError || !submission) {

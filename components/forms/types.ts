@@ -127,5 +127,6 @@ export type InvoiceIntakeFormSubmitInput = {
   payload: InvoiceIntakeSubmissionPayload;
   files?: {
     productReimbursementFile?: File | null;
+    referencePoFile?: File | null;
   };
 };

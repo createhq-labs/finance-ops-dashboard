@@ -1,8 +1,17 @@
 import { randomInt } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AppRole, AppUser, BusinessLine } from '../types/submissions';
+import { logActivityEvent } from './activityLog';
 
 export type UserStatus = 'active' | 'inactive';
+
+export type UserAuditSnapshot = {
+  actor_user_id: string | null;
+  actor_name: string;
+  actor_email: string | null;
+  action_type: string;
+  created_at: string;
+};
 
 export type ManagedUser = {
   id: string;
@@ -15,6 +24,11 @@ export type ManagedUser = {
   business_line: BusinessLine | null;
   created_at: string;
   updated_at: string;
+  audit_summary?: {
+    created: UserAuditSnapshot | null;
+    updated: UserAuditSnapshot | null;
+    deactivated: UserAuditSnapshot | null;
+  } | null;
 };
 
 type CreateUserInput = {
@@ -37,6 +51,84 @@ type UpdateUserInput = {
 const ROLES: AppRole[] = ['employee', 'team_lead', 'finance', 'admin', 'developer'];
 const STATUSES: UserStatus[] = ['active', 'inactive'];
 const USER_FIELDS = 'id, email, full_name, role, status, team_name, team_lead_id, business_line, created_at, updated_at';
+
+type ActivityLogRow = {
+  actor_user_id: string | null;
+  action_type: string | null;
+  entity_id: string | null;
+  created_at: string;
+};
+
+async function attachUserAuditSummaries(client: SupabaseClient, users: ManagedUser[]) {
+  if (!users.length) return users;
+
+  const userIds = users.map((entry) => entry.id);
+  const { data: activityRows, error: activityError } = await client
+    .from('activity_log')
+    .select('actor_user_id, action_type, entity_id, created_at')
+    .eq('entity_type', 'user')
+    .in('entity_id', userIds)
+    .in('action_type', ['user_created', 'user_updated', 'user_deactivated', 'user_status_changed', 'role_changed', 'business_line_changed'])
+    .order('created_at', { ascending: false });
+
+  if (activityError) throw activityError;
+
+  const actorIds = Array.from(new Set(((activityRows ?? []) as ActivityLogRow[]).map((row) => row.actor_user_id).filter(Boolean) as string[]));
+  const actorNameById = new Map<string, { full_name: string | null; email: string | null }>();
+
+  if (actorIds.length) {
+    const { data: actorRows, error: actorError } = await client
+      .from('users')
+      .select('id, full_name, email')
+      .in('id', actorIds);
+
+    if (actorError) throw actorError;
+
+    for (const actor of actorRows ?? []) {
+      actorNameById.set(String(actor.id), {
+        full_name: typeof actor.full_name === 'string' ? actor.full_name : null,
+        email: typeof actor.email === 'string' ? actor.email : null,
+      });
+    }
+  }
+
+  const rowsByUserId = new Map<string, ActivityLogRow[]>();
+  for (const row of (activityRows ?? []) as ActivityLogRow[]) {
+    const entityId = row.entity_id ? String(row.entity_id) : '';
+    if (!entityId) continue;
+    const bucket = rowsByUserId.get(entityId) ?? [];
+    bucket.push(row);
+    rowsByUserId.set(entityId, bucket);
+  }
+
+  const buildSnapshot = (row: ActivityLogRow | undefined): UserAuditSnapshot | null => {
+    if (!row) return null;
+    const actor = row.actor_user_id ? actorNameById.get(String(row.actor_user_id)) : null;
+    return {
+      actor_user_id: row.actor_user_id ?? null,
+      actor_name: actor?.full_name || actor?.email || 'Unknown user',
+      actor_email: actor?.email ?? null,
+      action_type: row.action_type ?? 'unknown',
+      created_at: row.created_at,
+    };
+  };
+
+  return users.map((entry) => {
+    const rows = rowsByUserId.get(entry.id) ?? [];
+    const created = rows.find((row) => row.action_type === 'user_created');
+    const deactivated = rows.find((row) => row.action_type === 'user_deactivated');
+    const updated = rows.find((row) => row.action_type !== 'user_created' && row.action_type !== 'user_deactivated');
+
+    return {
+      ...entry,
+      audit_summary: {
+        created: buildSnapshot(created),
+        updated: buildSnapshot(updated),
+        deactivated: buildSnapshot(deactivated),
+      },
+    };
+  });
+}
 
 export function canManageUsers(role: AppRole) {
   return role === 'finance' || role === 'admin' || role === 'developer';
@@ -203,7 +295,7 @@ export async function listUsers(
   const status = filters.status ?? 'all';
   const businessLine = filters.businessLine ?? 'all';
 
-  return ((data ?? []) as ManagedUser[]).filter((user) => {
+  const filtered = ((data ?? []) as ManagedUser[]).filter((user) => {
     if (role !== 'all' && user.role !== role) return false;
     if (status !== 'all' && user.status !== status) return false;
     if (businessLine !== 'all' && user.business_line !== businessLine) return false;
@@ -213,6 +305,8 @@ export async function listUsers(
     }
     return true;
   });
+
+  return attachUserAuditSummaries(client, filtered);
 }
 
 export async function createDashboardUser(
@@ -260,6 +354,29 @@ export async function createDashboardUser(
     if (insertError || !createdUser) {
       throw insertError || new Error('Failed to create app user.');
     }
+
+    await logActivityEvent(serviceClient, {
+      actorUserId: actor.id,
+      action: 'user_created',
+      details: {
+        message: `User ${createdUser.full_name} was created.`,
+        email: createdUser.email,
+        role: createdUser.role,
+        status: createdUser.status,
+        business_line: createdUser.business_line,
+      },
+      structured: {
+        action_type: 'user_created',
+        entity_type: 'user',
+        entity_id: String(createdUser.id),
+        metadata: {
+          email: createdUser.email,
+          role: createdUser.role,
+          status: createdUser.status,
+          business_line: createdUser.business_line,
+        },
+      },
+    });
 
     return {
       user: createdUser as ManagedUser,
@@ -411,7 +528,116 @@ export async function updateDashboardUser(
     throw new Error(error?.message || 'Failed to update user.');
   }
 
-  return data as ManagedUser;
+  const updatedUser = data as ManagedUser;
+  if (target.role !== updatedUser.role) {
+    await logActivityEvent(serviceClient, {
+      actorUserId: actor.id,
+      action: 'role_changed',
+      details: {
+        message: `Role changed for ${updatedUser.full_name}.`,
+        old_value: target.role,
+        new_value: updatedUser.role,
+        email: updatedUser.email,
+      },
+      structured: {
+        action_type: 'role_changed',
+        from_status: target.role,
+        to_status: updatedUser.role,
+        entity_type: 'user',
+        entity_id: String(updatedUser.id),
+        metadata: {
+          email: updatedUser.email,
+          old_value: target.role,
+          new_value: updatedUser.role,
+          business_line: updatedUser.business_line,
+          financial_year: null,
+          module: 'users',
+        },
+      },
+    });
+  }
+
+  if (target.business_line !== updatedUser.business_line) {
+    await logActivityEvent(serviceClient, {
+      actorUserId: actor.id,
+      action: 'business_line_changed',
+      details: {
+        message: `Business line changed for ${updatedUser.full_name}.`,
+        old_value: target.business_line,
+        new_value: updatedUser.business_line,
+        email: updatedUser.email,
+      },
+      structured: {
+        action_type: 'business_line_changed',
+        from_status: target.business_line,
+        to_status: updatedUser.business_line,
+        entity_type: 'user',
+        entity_id: String(updatedUser.id),
+        metadata: {
+          email: updatedUser.email,
+          old_value: target.business_line,
+          new_value: updatedUser.business_line,
+          role: updatedUser.role,
+        },
+      },
+    });
+  }
+
+  if (target.status !== updatedUser.status) {
+    await logActivityEvent(serviceClient, {
+      actorUserId: actor.id,
+      action: updatedUser.status === 'inactive' ? 'user_deactivated' : 'user_status_changed',
+      details: {
+        message: updatedUser.status === 'inactive'
+          ? `${updatedUser.full_name} was deactivated.`
+          : `Status changed for ${updatedUser.full_name}.`,
+        old_value: target.status,
+        new_value: updatedUser.status,
+        email: updatedUser.email,
+      },
+      structured: {
+        action_type: updatedUser.status === 'inactive' ? 'user_deactivated' : 'user_status_changed',
+        from_status: target.status,
+        to_status: updatedUser.status,
+        entity_type: 'user',
+        entity_id: String(updatedUser.id),
+        metadata: {
+          email: updatedUser.email,
+          old_value: target.status,
+          new_value: updatedUser.status,
+          role: updatedUser.role,
+          business_line: updatedUser.business_line,
+        },
+      },
+    });
+  }
+
+  if (target.full_name !== updatedUser.full_name || target.team_name !== updatedUser.team_name) {
+    await logActivityEvent(serviceClient, {
+      actorUserId: actor.id,
+      action: 'user_updated',
+      details: {
+        message: `Profile details updated for ${updatedUser.full_name}.`,
+        email: updatedUser.email,
+      },
+      structured: {
+        action_type: 'user_updated',
+        entity_type: 'user',
+        entity_id: String(updatedUser.id),
+        metadata: {
+          email: updatedUser.email,
+          role: updatedUser.role,
+          business_line: updatedUser.business_line,
+          old_full_name: target.full_name,
+          new_full_name: updatedUser.full_name,
+          old_team_name: target.team_name,
+          new_team_name: updatedUser.team_name,
+        },
+      },
+    });
+  }
+
+  return updatedUser;
 }
 
 export function canResetPassword(actorRole: AppRole, actorId: string, target: ManagedUser) {
@@ -458,3 +684,4 @@ export async function resetDashboardUserPassword(
     temporaryPassword,
   };
 }
+

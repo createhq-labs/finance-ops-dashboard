@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AppRole, AppUser } from '../types/submissions';
+import { logActivityEvent } from './activityLog';
 
 export type MasterDataReviewType = 'agency' | 'brand' | 'creator';
 export type MasterDataReviewStatus = 'pending' | 'approved' | 'rejected';
@@ -339,6 +340,34 @@ export async function approveMasterDataReview(params: {
     throw new Error(updateError?.message || 'Failed to mark review approved.');
   }
 
+  await logActivityEvent(adminClient, {
+    actorUserId: appUser.id,
+    action: 'master_data_approved',
+    details: {
+      message: `Master data ${review.submitted_value} was approved.`,
+      review_type: review.type,
+      submitted_value: review.submitted_value,
+      source_result: sourceResult,
+    },
+    submissionId: review.created_from_submission_id ?? null,
+    structured: {
+      action_type: 'master_data_approved',
+      from_status: review.status,
+      to_status: 'approved',
+      entity_type: 'master_data_review',
+      entity_id: review.id,
+      metadata: {
+        review_type: review.type,
+        submitted_value: review.submitted_value,
+        normalized_value: review.normalized_value,
+        source_result: sourceResult,
+        created_from_submission_id: review.created_from_submission_id,
+        financial_year: null,
+        module: 'master_data',
+      },
+    },
+  });
+
   return {
     review: updated as MasterDataReviewRecord,
     sourceResult,
@@ -376,6 +405,34 @@ export async function rejectMasterDataReview(params: {
   if (updateError || !updated) {
     throw new Error(updateError?.message || 'Failed to ignore review.');
   }
+
+  await logActivityEvent(adminClient, {
+    actorUserId: appUser.id,
+    action: 'master_data_ignored',
+    details: {
+      message: `Master data ${review.submitted_value} was ignored.`,
+      review_type: review.type,
+      submitted_value: review.submitted_value,
+      rejection_reason: updated.rejection_reason,
+    },
+    submissionId: review.created_from_submission_id ?? null,
+    structured: {
+      action_type: 'master_data_ignored',
+      from_status: review.status,
+      to_status: 'rejected',
+      entity_type: 'master_data_review',
+      entity_id: review.id,
+      metadata: {
+        review_type: review.type,
+        submitted_value: review.submitted_value,
+        rejection_reason: updated.rejection_reason,
+        created_from_submission_id: review.created_from_submission_id,
+        financial_year: null,
+        module: 'master_data',
+      },
+    },
+  });
+
 
   return updated as MasterDataReviewRecord;
 }
@@ -509,6 +566,45 @@ export async function editApprovedMasterDataReview(params: {
   if (updateError || !updated) {
     throw new Error(updateError?.message || 'Failed to audit master data edit.');
   }
+
+  await logActivityEvent(adminClient, {
+    actorUserId: appUser.id,
+    action: 'master_data_edited',
+    details: {
+      message: `Master data ${review.submitted_value} was edited.`,
+      review_type: review.type,
+      old_value: {
+        submitted_value: review.submitted_value,
+        submitted_trade_name: review.submitted_trade_name,
+      },
+      new_value: {
+        submitted_value: nextValue,
+        submitted_trade_name: nextTradeName,
+      },
+      edit_reason: nextEditReason,
+    },
+    submissionId: review.created_from_submission_id ?? null,
+    structured: {
+      action_type: 'master_data_edited',
+      entity_type: 'master_data_review',
+      entity_id: review.id,
+      metadata: {
+        review_type: review.type,
+        old_value: {
+          submitted_value: review.submitted_value,
+          submitted_trade_name: review.submitted_trade_name,
+        },
+        new_value: {
+          submitted_value: nextValue,
+          submitted_trade_name: nextTradeName,
+        },
+        edit_reason: nextEditReason,
+        created_from_submission_id: review.created_from_submission_id,
+        financial_year: null,
+        module: 'master_data',
+      },
+    },
+  });
 
   return updated as MasterDataReviewRecord;
 }
