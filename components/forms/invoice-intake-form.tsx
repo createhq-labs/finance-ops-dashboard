@@ -16,7 +16,7 @@ import { CreatorDeliverablesSection } from "./sections/CreatorDeliverablesSectio
 import { FormActions } from "./sections/FormActions";
 import { InvoiceDetailsSection } from "./sections/InvoiceDetailsSection";
 import type { BusinessLine, EntryType, InvoiceIntakeFormSubmitInput, InvoiceIntakeFormValues, InvoiceIntakeSubmissionPayload, MultiCreatorRow } from "./types";
-import { PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES, PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES } from "../../lib/shared/submission-attachments";
+import { PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES, PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES, REFERENCE_PO_ALLOWED_MIME_TYPES, REFERENCE_PO_MAX_FILE_SIZE_BYTES } from "../../lib/shared/submission-attachments";
 
 type Props = {
   submitterName?: string;
@@ -287,6 +287,8 @@ export function InvoiceIntakeForm({
   });
   const [productReimbursementFiles, setProductReimbursementFiles] = useState<Record<string, File | null>>({});
   const [productReimbursementErrors, setProductReimbursementErrors] = useState<Record<string, string>>({});
+  const [referencePoFile, setReferencePoFile] = useState<File | null>(null);
+  const [referencePoError, setReferencePoError] = useState('');
   const [masters, setMasters] = useState<FormDropdownMasterData>(getFallbackMasterData);
   const lockedBusinessLine = currentUserRole === 'employee' && currentUserBusinessLine ? currentUserBusinessLine : null;
 
@@ -756,15 +758,17 @@ export function InvoiceIntakeForm({
     return null;
   }
 
-  function onProductReimbursementFileChange(key: string, file: File | null) {
-    if (file && file.size > PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES) {
-      setProductReimbursementErrors((prev) => ({ ...prev, [key]: "File exceeds 10 MB. Please compress it below 10 MB and try again." }));
-      setProductReimbursementFiles((prev) => ({ ...prev, [key]: null }));
-      return;
-    }
+  function validateAttachmentFile(file: File | null, allowedMimeTypes: readonly string[], maxSizeBytes: number) {
+    if (!file) return '';
+    if (file.size > maxSizeBytes) return 'File exceeds 10 MB. Please compress it below 10 MB and try again.';
+    if (!allowedMimeTypes.includes(file.type as (typeof allowedMimeTypes)[number])) return 'Only PDF, PNG, JPG, or WEBP files are allowed.';
+    return '';
+  }
 
-    if (file && !PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES.includes(file.type as (typeof PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES)[number])) {
-      setProductReimbursementErrors((prev) => ({ ...prev, [key]: "Only PDF, PNG, JPG, or WEBP files are allowed." }));
+  function onProductReimbursementFileChange(key: string, file: File | null) {
+    const validationMessage = validateAttachmentFile(file, PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES, PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES);
+    if (validationMessage) {
+      setProductReimbursementErrors((prev) => ({ ...prev, [key]: validationMessage }));
       setProductReimbursementFiles((prev) => ({ ...prev, [key]: null }));
       return;
     }
@@ -778,6 +782,18 @@ export function InvoiceIntakeForm({
       return next;
     });
     setProductReimbursementFiles(() => (file ? { [key]: file } : { [key]: null }));
+  }
+
+  function onReferencePoFileChange(_key: string, file: File | null) {
+    const validationMessage = validateAttachmentFile(file, REFERENCE_PO_ALLOWED_MIME_TYPES, REFERENCE_PO_MAX_FILE_SIZE_BYTES);
+    if (validationMessage) {
+      setReferencePoError(validationMessage);
+      setReferencePoFile(null);
+      return;
+    }
+
+    setReferencePoError('');
+    setReferencePoFile(file);
   }
 
   function validateForm(nextValues: InvoiceIntakeFormValues) {
@@ -1035,7 +1051,7 @@ export function InvoiceIntakeForm({
       setSubmitting(true);
       await onSubmit({
         payload,
-        files: { productReimbursementFile },
+        files: { productReimbursementFile, referencePoFile },
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submit failed.");
@@ -1054,6 +1070,8 @@ export function InvoiceIntakeForm({
     setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
     setProductReimbursementFiles({});
     setProductReimbursementErrors({});
+    setReferencePoFile(null);
+    setReferencePoError('');
     previousBillingBrandRef.current = "";
     setFieldErrors({});
     setHasInteracted(false);
@@ -1186,7 +1204,14 @@ export function InvoiceIntakeForm({
         onPatchMcCreator={patchMcCreator}
       />
       <CommercialsSection values={values} totalAmount={totalAmount} onChange={update} errors={fieldErrors} />
-      <AdditionalInfoSection values={values} onChange={update} errors={fieldErrors} />
+      <AdditionalInfoSection
+        values={values}
+        referencePoFile={referencePoFile}
+        referencePoError={referencePoError}
+        onReferencePoFileChange={onReferencePoFileChange}
+        onChange={update}
+        errors={fieldErrors}
+      />
       <FormActions onReset={handleReset} submitting={submitting} submitEnabled={submitEnabled && Boolean(onSubmit)} />
 
       {error ? <p className="text-danger intake-inline-error">{error}</p> : null}

@@ -31,16 +31,18 @@ function formatSelectedFileSize(file: File | null) {
   return `${Math.max(1, Math.round(file.size / 1024))} KB`;
 }
 
-export function ProductReimbursementField({
+export function AttachmentUploadField({
   fieldKey,
   file,
   error,
   onChange,
+  helperText = 'PDF, PNG, JPG, or WEBP. Max 10 MB.',
 }: {
   fieldKey: string;
   file: File | null;
   error: string;
   onChange: (key: string, file: File | null) => void;
+  helperText?: string;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -53,6 +55,12 @@ export function ProductReimbursementField({
   }, [previewUrl]);
 
   const isImage = Boolean(file?.type?.startsWith('image/'));
+
+  function clearSelectedFile() {
+    if (inputRef.current) inputRef.current.value = '';
+    setPreviewOpen(false);
+    onChange(fieldKey, null);
+  }
 
   return (
     <>
@@ -74,7 +82,7 @@ export function ProductReimbursementField({
             {file ? 'Replace File' : 'Choose File'}
           </button>
           <span className="text-muted intake-section-copy" style={{ margin: 0 }}>
-            PDF, PNG, JPG, or WEBP. Max 10 MB.
+            {helperText}
           </span>
         </div>
         {error ? <p className="text-danger intake-inline-error">{error}</p> : null}
@@ -92,6 +100,14 @@ export function ProductReimbursementField({
               style={{ paddingInline: 10, minHeight: 30 }}
             >
               View
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={clearSelectedFile}
+              style={{ paddingInline: 10, minHeight: 30 }}
+            >
+              Delete
             </button>
           </div>
         ) : null}
@@ -125,6 +141,28 @@ export function ProductReimbursementField({
         </div>
       ) : null}
     </>
+  );
+}
+
+export function ProductReimbursementField({
+  fieldKey,
+  file,
+  error,
+  onChange,
+}: {
+  fieldKey: string;
+  file: File | null;
+  error: string;
+  onChange: (key: string, file: File | null) => void;
+}) {
+  return (
+    <AttachmentUploadField
+      fieldKey={fieldKey}
+      file={file}
+      error={error}
+      onChange={onChange}
+      helperText="PDF, PNG, JPG, or WEBP. Max 10 MB."
+    />
   );
 }
 
