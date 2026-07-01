@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { CheckCircle2, CircleOff, Copy, Info, UserPlus, X } from 'lucide-react';
+import { CheckCircle2, CircleOff, Copy, Info, KeyRound, UserPlus, X } from 'lucide-react';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
@@ -46,6 +46,7 @@ type ManagedUser = {
     created: UserAuditSnapshot | null;
     updated: UserAuditSnapshot | null;
     deactivated: UserAuditSnapshot | null;
+    password_reset: UserAuditSnapshot | null;
   } | null;
   transfer_summary?: TransferEligibilitySummary | null;
 };
@@ -155,6 +156,11 @@ function UserAuditPopover({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const [actionTab, setActionTab] = useState<'actions' | 'password'>('actions');
+
+  useEffect(() => {
+    setActionTab('actions');
+  }, [section, user.id]);
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -178,6 +184,8 @@ function UserAuditPopover({
   const created = user.audit_summary?.created ?? null;
   const updated = user.audit_summary?.updated ?? null;
   const deactivated = user.audit_summary?.deactivated ?? null;
+  const passwordReset = user.audit_summary?.password_reset ?? null;
+  const showingPasswordAudit = section === 'actions' && actionTab === 'password';
 
   return (
     <div
@@ -191,39 +199,68 @@ function UserAuditPopover({
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-foreground">{section === 'created' ? 'Created Audit' : 'User Actions Audit'}</div>
+          <div className="text-sm font-semibold text-foreground">
+            {section === 'created' ? 'Created Audit' : showingPasswordAudit ? 'Password Audit' : 'User Actions Audit'}
+          </div>
           <div className="mt-1 text-xs text-muted-foreground">{user.full_name}</div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/70 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-          aria-label="Close audit details"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-2">
+          {section === 'actions' ? (
+            <button
+              type="button"
+              onClick={() => setActionTab((current) => (current === 'password' ? 'actions' : 'password'))}
+              className={`inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors ${
+                showingPasswordAudit
+                  ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/12 dark:text-sky-200'
+                  : 'border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+              }`}
+              aria-label="Toggle password audit details"
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/70 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+            aria-label="Close audit details"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       <div className="mt-4 space-y-3 text-sm">
         {section === 'created' ? (
           <>
-            <div className="rounded-xl border border-border/60 bg-muted/10 px-3 py-2.5">
+            <div className="rounded-xl border border-border/60 bg-muted/4 px-3 py-2.5">
               <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Created At</div>
               <div className="mt-1 font-medium text-foreground">{formatAuditDateTime(created?.created_at ?? user.created_at)}</div>
             </div>
-            <div className="rounded-xl border border-border/60 bg-muted/10 px-3 py-2.5">
+            <div className="rounded-xl border border-border/60 bg-muted/4 px-3 py-2.5">
               <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Created By</div>
               <div className="mt-1 font-medium text-foreground">{created?.actor_name ?? 'Not recorded yet'}</div>
             </div>
           </>
+        ) : showingPasswordAudit ? (
+          <>
+            <div className="rounded-xl border border-border/60 bg-muted/4 px-3 py-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Password Updated At</div>
+              <div className="mt-1 font-medium text-foreground">{passwordReset ? formatAuditDateTime(passwordReset.created_at) : 'Not recorded yet'}</div>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-muted/4 px-3 py-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Password Updated By</div>
+              <div className="mt-1 font-medium text-foreground">{passwordReset?.actor_name ?? 'Not recorded yet'}</div>
+            </div>
+          </>
         ) : (
           <>
-            <div className="rounded-xl border border-border/60 bg-muted/10 px-3 py-2.5">
+            <div className="rounded-xl border border-border/60 bg-muted/4 px-3 py-2.5">
               <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Last Updated</div>
               <div className="mt-1 font-medium text-foreground">{updated ? formatAuditDateTime(updated.created_at) : 'Not recorded yet'}</div>
               <div className="mt-1 text-xs text-muted-foreground">By {updated?.actor_name ?? 'Not recorded yet'}</div>
             </div>
-            <div className="rounded-xl border border-border/60 bg-muted/10 px-3 py-2.5">
+            <div className="rounded-xl border border-border/60 bg-muted/4 px-3 py-2.5">
               <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Deactivated Status</div>
               <div className="mt-1 font-medium text-foreground">{deactivated ? formatAuditDateTime(deactivated.created_at) : user.status === 'inactive' ? 'Not recorded yet' : 'Not deactivated'}</div>
               <div className="mt-1 text-xs text-muted-foreground">By {deactivated?.actor_name ?? (user.status === 'inactive' ? 'Not recorded yet' : '-')}</div>

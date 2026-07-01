@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AppRole, AppUser, BusinessLine } from '../types/submissions';
+import { createServiceClient } from '../supabase';
 import { logActivityEvent } from './activityLog';
 
 export type UserStatus = 'active' | 'inactive';
@@ -24,10 +25,15 @@ export type ManagedUser = {
   business_line: BusinessLine | null;
   created_at: string;
   updated_at: string;
+  created_by?: string | null;
+  updated_by?: string | null;
+  deactivated_by?: string | null;
+  deactivated_at?: string | null;
   audit_summary?: {
     created: UserAuditSnapshot | null;
     updated: UserAuditSnapshot | null;
     deactivated: UserAuditSnapshot | null;
+    password_reset: UserAuditSnapshot | null;
   } | null;
 };
 
@@ -50,7 +56,7 @@ type UpdateUserInput = {
 
 const ROLES: AppRole[] = ['employee', 'team_lead', 'finance', 'admin', 'developer'];
 const STATUSES: UserStatus[] = ['active', 'inactive'];
-const USER_FIELDS = 'id, email, full_name, role, status, team_name, team_lead_id, business_line, created_at, updated_at';
+const USER_FIELDS = 'id, email, full_name, role, status, team_name, team_lead_id, business_line, created_at, updated_at, created_by, updated_by, deactivated_by, deactivated_at';
 
 type ActivityLogRow = {
   actor_user_id: string | null;
@@ -63,17 +69,30 @@ async function attachUserAuditSummaries(client: SupabaseClient, users: ManagedUs
   if (!users.length) return users;
 
   const userIds = users.map((entry) => entry.id);
+  const directActorIds = Array.from(
+    new Set(
+      users
+        .flatMap((entry) => [entry.created_by ?? null, entry.updated_by ?? null, entry.deactivated_by ?? null])
+        .filter(Boolean) as string[]
+    )
+  );
+
   const { data: activityRows, error: activityError } = await client
     .from('activity_log')
     .select('actor_user_id, action_type, entity_id, created_at')
     .eq('entity_type', 'user')
     .in('entity_id', userIds)
-    .in('action_type', ['user_created', 'user_updated', 'user_deactivated', 'user_status_changed', 'role_changed', 'business_line_changed'])
+    .in('action_type', ['user_created', 'user_updated', 'user_deactivated', 'user_status_changed', 'role_changed', 'business_line_changed', 'user_password_reset'])
     .order('created_at', { ascending: false });
 
   if (activityError) throw activityError;
 
-  const actorIds = Array.from(new Set(((activityRows ?? []) as ActivityLogRow[]).map((row) => row.actor_user_id).filter(Boolean) as string[]));
+  const actorIds = Array.from(
+    new Set([
+      ...directActorIds,
+      ...(((activityRows ?? []) as ActivityLogRow[]).map((row) => row.actor_user_id).filter(Boolean) as string[]),
+    ])
+  );
   const actorNameById = new Map<string, { full_name: string | null; email: string | null }>();
 
   if (actorIds.length) {
@@ -101,7 +120,23 @@ async function attachUserAuditSummaries(client: SupabaseClient, users: ManagedUs
     rowsByUserId.set(entityId, bucket);
   }
 
-  const buildSnapshot = (row: ActivityLogRow | undefined): UserAuditSnapshot | null => {
+  const buildSnapshotFromActor = (
+    actorUserId: string | null | undefined,
+    createdAt: string | null | undefined,
+    actionType: string
+  ): UserAuditSnapshot | null => {
+    if (!actorUserId || !createdAt) return null;
+    const actor = actorNameById.get(String(actorUserId));
+    return {
+      actor_user_id: actorUserId,
+      actor_name: actor?.full_name || actor?.email || 'Unknown user',
+      actor_email: actor?.email ?? null,
+      action_type: actionType,
+      created_at: createdAt,
+    };
+  };
+
+  const buildSnapshotFromRow = (row: ActivityLogRow | undefined): UserAuditSnapshot | null => {
     if (!row) return null;
     const actor = row.actor_user_id ? actorNameById.get(String(row.actor_user_id)) : null;
     return {
@@ -115,16 +150,23 @@ async function attachUserAuditSummaries(client: SupabaseClient, users: ManagedUs
 
   return users.map((entry) => {
     const rows = rowsByUserId.get(entry.id) ?? [];
-    const created = rows.find((row) => row.action_type === 'user_created');
-    const deactivated = rows.find((row) => row.action_type === 'user_deactivated');
-    const updated = rows.find((row) => row.action_type !== 'user_created' && row.action_type !== 'user_deactivated');
+    const createdRow = rows.find((row) => row.action_type === 'user_created');
+    const deactivatedRow = rows.find((row) => row.action_type === 'user_deactivated');
+    const passwordResetRow = rows.find((row) => row.action_type === 'user_password_reset');
+    const updatedRow = rows.find((row) => row.action_type !== 'user_created' && row.action_type !== 'user_deactivated' && row.action_type !== 'user_password_reset');
+
+    const created = buildSnapshotFromActor(entry.created_by, entry.created_at, 'user_created') ?? buildSnapshotFromRow(createdRow);
+    const updated = buildSnapshotFromActor(entry.updated_by, entry.updated_at, 'user_updated') ?? buildSnapshotFromRow(updatedRow);
+    const deactivated = buildSnapshotFromActor(entry.deactivated_by, entry.deactivated_at, 'user_deactivated') ?? buildSnapshotFromRow(deactivatedRow);
+    const password_reset = buildSnapshotFromRow(passwordResetRow);
 
     return {
       ...entry,
       audit_summary: {
-        created: buildSnapshot(created),
-        updated: buildSnapshot(updated),
-        deactivated: buildSnapshot(deactivated),
+        created,
+        updated,
+        deactivated,
+        password_reset,
       },
     };
   });
@@ -306,7 +348,8 @@ export async function listUsers(
     return true;
   });
 
-  return attachUserAuditSummaries(client, filtered);
+  const auditClient = createServiceClient();
+  return attachUserAuditSummaries(auditClient, filtered);
 }
 
 export async function createDashboardUser(
@@ -347,6 +390,10 @@ export async function createDashboardUser(
         status: payload.status,
         team_name: payload.team_name,
         business_line: payload.business_line,
+        created_by: actor.id,
+        updated_by: null,
+        deactivated_by: null,
+        deactivated_at: null,
       })
       .select(USER_FIELDS)
       .single();
@@ -517,6 +564,18 @@ export async function updateDashboardUser(
     return target;
   }
 
+  const updateTimestamp = new Date().toISOString();
+  updateData.updated_by = actor.id;
+  updateData.updated_at = updateTimestamp;
+
+  if (payload.status === 'inactive' && target.status !== 'inactive') {
+    updateData.deactivated_by = actor.id;
+    updateData.deactivated_at = updateTimestamp;
+  } else if (payload.status === 'active' && target.status === 'inactive') {
+    updateData.deactivated_by = null;
+    updateData.deactivated_at = null;
+  }
+
   const { data, error } = await serviceClient
     .from('users')
     .update(updateData)
@@ -678,6 +737,29 @@ export async function resetDashboardUserPassword(
   if (error) {
     throw new Error(error.message || 'Failed to reset password.');
   }
+
+  await logActivityEvent(serviceClient, {
+    actorUserId: actor.id,
+    action: 'user_password_reset',
+    details: {
+      message: `Password reset for ${target.full_name}.`,
+      email: target.email,
+      role: target.role,
+      business_line: target.business_line,
+    },
+    structured: {
+      action_type: 'user_password_reset',
+      entity_type: 'user',
+      entity_id: String(target.id),
+      metadata: {
+        email: target.email,
+        role: target.role,
+        business_line: target.business_line,
+        financial_year: null,
+        module: 'users',
+      },
+    },
+  });
 
   return {
     user: target as ManagedUser,
