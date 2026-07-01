@@ -5,6 +5,9 @@ import {
   PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES,
   PRODUCT_REIMBURSEMENT_DOCUMENT_TYPE,
   PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES,
+  REFERENCE_PO_ALLOWED_MIME_TYPES,
+  REFERENCE_PO_DOCUMENT_TYPE,
+  REFERENCE_PO_MAX_FILE_SIZE_BYTES,
 } from '../../shared/submission-attachments';
 
 type UploadableFile = {
@@ -23,28 +26,74 @@ function sanitizeFileName(name: string) {
   return cleaned || 'document';
 }
 
-export function validateProductReimbursementFile(file: UploadableFile | null | undefined) {
-  if (!file) throw new Error('Product reimbursement document is required.');
-  if (file.size > PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES) {
-    throw new Error('Product reimbursement file must be 10 MB or smaller.');
+function validateSubmissionAttachmentFile(params: {
+  file: UploadableFile | null | undefined;
+  requiredLabel: string;
+  sizeLabel: string;
+  typeLabel: string;
+  maxSizeBytes: number;
+  allowedMimeTypes: readonly string[];
+}) {
+  const { file, requiredLabel, sizeLabel, typeLabel, maxSizeBytes, allowedMimeTypes } = params;
+  if (!file) throw new Error(requiredLabel);
+  if (file.size > maxSizeBytes) {
+    throw new Error(sizeLabel);
   }
-  if (!PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES.includes(file.type as (typeof PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES)[number])) {
-    throw new Error('Only PDF, PNG, JPEG, or WEBP files are allowed for product reimbursement.');
+  if (!allowedMimeTypes.includes(file.type)) {
+    throw new Error(typeLabel);
   }
 }
 
-export async function uploadProductReimbursementAttachment(params: {
+export function validateProductReimbursementFile(file: UploadableFile | null | undefined) {
+  validateSubmissionAttachmentFile({
+    file,
+    requiredLabel: 'Product reimbursement document is required.',
+    sizeLabel: 'Product reimbursement file must be 10 MB or smaller.',
+    typeLabel: 'Only PDF, PNG, JPEG, or WEBP files are allowed for product reimbursement.',
+    maxSizeBytes: PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES,
+    allowedMimeTypes: PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES,
+  });
+}
+
+export function validateReferencePoFile(file: UploadableFile | null | undefined) {
+  validateSubmissionAttachmentFile({
+    file,
+    requiredLabel: 'Reference PO document is required.',
+    sizeLabel: 'Reference PO file must be 10 MB or smaller.',
+    typeLabel: 'Only PDF, PNG, JPEG, or WEBP files are allowed for reference PO uploads.',
+    maxSizeBytes: REFERENCE_PO_MAX_FILE_SIZE_BYTES,
+    allowedMimeTypes: REFERENCE_PO_ALLOWED_MIME_TYPES,
+  });
+}
+
+async function uploadSubmissionAttachment(params: {
   adminClient: SupabaseClient;
   submissionId: string;
   uploadedBy: string;
   file: UploadableFile;
+  documentType: string;
+  storageFolder: string;
+  validateFile: (file: UploadableFile) => void;
+  insertErrorMessage: string;
+  uploadErrorMessage: string;
 }): Promise<SubmissionAttachmentRecord> {
-  const { adminClient, submissionId, uploadedBy, file } = params;
-  validateProductReimbursementFile(file);
+  const {
+    adminClient,
+    submissionId,
+    uploadedBy,
+    file,
+    documentType,
+    storageFolder,
+    validateFile,
+    insertErrorMessage,
+    uploadErrorMessage,
+  } = params;
+
+  validateFile(file);
 
   const attachmentId = randomUUID();
   const safeFileName = sanitizeFileName(file.name);
-  const filePath = `submissions/${submissionId}/product-reimbursement/${attachmentId}-${safeFileName}`;
+  const filePath = `submissions/${submissionId}/${storageFolder}/${attachmentId}-${safeFileName}`;
   const fileBuffer = Buffer.from(await file.arrayBuffer());
 
   const { error: uploadError } = await adminClient.storage
@@ -55,13 +104,13 @@ export async function uploadProductReimbursementAttachment(params: {
     });
 
   if (uploadError) {
-    throw new Error(uploadError.message || 'Failed to upload reimbursement document.');
+    throw new Error(uploadError.message || uploadErrorMessage);
   }
 
   const metadata: SubmissionAttachmentRecord = {
     id: attachmentId,
     submission_id: submissionId,
-    document_type: PRODUCT_REIMBURSEMENT_DOCUMENT_TYPE,
+    document_type: documentType,
     file_name: safeFileName,
     file_path: filePath,
     file_size_bytes: file.size,
@@ -78,10 +127,50 @@ export async function uploadProductReimbursementAttachment(params: {
 
   if (insertError || !data) {
     await adminClient.storage.from('finance-documents').remove([filePath]);
-    throw new Error(insertError?.message || 'Failed to save reimbursement attachment metadata.');
+    throw new Error(insertError?.message || insertErrorMessage);
   }
 
   return data as SubmissionAttachmentRecord;
+}
+
+export async function uploadProductReimbursementAttachment(params: {
+  adminClient: SupabaseClient;
+  submissionId: string;
+  uploadedBy: string;
+  file: UploadableFile;
+}): Promise<SubmissionAttachmentRecord> {
+  const { adminClient, submissionId, uploadedBy, file } = params;
+  return uploadSubmissionAttachment({
+    adminClient,
+    submissionId,
+    uploadedBy,
+    file,
+    documentType: PRODUCT_REIMBURSEMENT_DOCUMENT_TYPE,
+    storageFolder: 'product-reimbursement',
+    validateFile: validateProductReimbursementFile,
+    insertErrorMessage: 'Failed to save reimbursement attachment metadata.',
+    uploadErrorMessage: 'Failed to upload reimbursement document.',
+  });
+}
+
+export async function uploadReferencePoAttachment(params: {
+  adminClient: SupabaseClient;
+  submissionId: string;
+  uploadedBy: string;
+  file: UploadableFile;
+}): Promise<SubmissionAttachmentRecord> {
+  const { adminClient, submissionId, uploadedBy, file } = params;
+  return uploadSubmissionAttachment({
+    adminClient,
+    submissionId,
+    uploadedBy,
+    file,
+    documentType: REFERENCE_PO_DOCUMENT_TYPE,
+    storageFolder: 'reference-po',
+    validateFile: validateReferencePoFile,
+    insertErrorMessage: 'Failed to save reference PO attachment metadata.',
+    uploadErrorMessage: 'Failed to upload reference PO document.',
+  });
 }
 
 export async function getSubmissionAttachmentForUser(params: {

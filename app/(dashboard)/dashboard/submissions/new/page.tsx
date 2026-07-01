@@ -9,7 +9,7 @@ import { useDashboardSession } from '../../../../../components/layout/dashboard-
 import { WorkspaceLoader } from '../../../../../components/layout/workspace-loader';
 import type { InvoiceIntakeFormSubmitInput, InvoiceIntakeFormValues } from '../../../../../components/forms/types';
 import { getPiDisplayMeta } from '../../../../../lib/client/pi-display';
-import { pickProductReimbursementAttachment } from '../../../../../lib/shared/submission-attachments';
+import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../../lib/shared/submission-attachments';
 import { handleAuthTokenRecoveryMessage } from '../../../../../lib/client/auth-recovery';
 import { canSubmitInvoice, getDefaultDashboardPath } from '../../../../../lib/client/dashboard-access';
 
@@ -56,6 +56,7 @@ export default function NewSubmissionPage() {
   const [resubmissionNote, setResubmissionNote] = useState('');
   const [showResubmissionNote, setShowResubmissionNote] = useState(false);
   const [existingReimbursementAttachmentName, setExistingReimbursementAttachmentName] = useState('');
+  const [existingReferencePoAttachmentName, setExistingReferencePoAttachmentName] = useState('');
 
   useEffect(() => {
     if (loading || !user) return;
@@ -69,6 +70,8 @@ export default function NewSubmissionPage() {
     setPrefillError('');
     setResubmissionNote('');
     setExistingReimbursementAttachmentName('');
+    setExistingReferencePoAttachmentName('');
+    setExistingReferencePoAttachmentName('');
     try {
       const res = await fetch('/api/submissions/my', { method: 'GET', cache: 'no-store' });
       const body = await res.json().catch(() => ({}));
@@ -121,6 +124,7 @@ export default function NewSubmissionPage() {
       if (!found) throw new Error('Submission not found for resubmit.');
       setResubmissionNote(String(found.finance_comment ?? found.rejection_note ?? '').trim());
       setExistingReimbursementAttachmentName(pickProductReimbursementAttachment(found.submission_attachments)?.file_name ?? '');
+      setExistingReferencePoAttachmentName(pickReferencePoAttachment(found.submission_attachments)?.file_name ?? '');
 
       const lineItems = Array.isArray(found.intake_line_items) ? found.intake_line_items : [];
       const addressParts = String(found.address ?? '')
@@ -235,6 +239,9 @@ export default function NewSubmissionPage() {
     if (files?.productReimbursementFile) {
       formData.append('product_reimbursement_file', files.productReimbursementFile);
     }
+    if (files?.referencePoFile) {
+      formData.append('reference_po_file', files.referencePoFile);
+    }
 
     const res = await fetch('/api/submissions/create', {
       method: 'POST',
@@ -296,6 +303,11 @@ export default function NewSubmissionPage() {
             {existingReimbursementAttachmentName ? (
               <p className="text-muted" style={{ margin: 0 }}>
                 Previous product reimbursement file: {existingReimbursementAttachmentName}. Upload a new one if this resubmission updates the document.
+              </p>
+            ) : null}
+            {existingReferencePoAttachmentName ? (
+              <p className="text-muted" style={{ margin: 0 }}>
+                Previous reference PO file: {existingReferencePoAttachmentName}. Upload a new one if this resubmission updates the document.
               </p>
             ) : null}
           </div>
