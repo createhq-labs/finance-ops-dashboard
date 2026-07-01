@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../lib/server/auth';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../lib/server/supabase';
-import { logSubmissionCreated } from '../../../../lib/server/services/activityLog';
+import { logActivityEvent, logSubmissionCreated } from '../../../../lib/server/services/activityLog';
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
 import { createPendingMasterDataReviews } from '../../../../lib/server/services/masterDataReviews';
 import { createFinanceAndAdminSubmissionNotifications, createPendingMasterReviewNotifications } from '../../../../lib/server/services/notifications';
 import { createSubmissionWithLineItems } from '../../../../lib/server/services/submissions';
-import { uploadProductReimbursementAttachment, validateProductReimbursementFile } from '../../../../lib/server/services/submissionAttachments';
+import {
+  uploadProductReimbursementAttachment,
+  uploadReferencePoAttachment,
+  validateProductReimbursementFile,
+  validateReferencePoFile,
+} from '../../../../lib/server/services/submissionAttachments';
 import type { CreateSubmissionInput } from '../../../../lib/server/types/submissions';
+import { sanitizeLineItems, sanitizeSubmissionInput } from '../../../../lib/server/validators/submissions';
 
 type FormUploadFile = File & {
   name: string;
@@ -26,8 +32,6 @@ function isFormUploadFile(value: FormDataEntryValue | null): value is FormUpload
     'type' in value
   );
 }
-import { sanitizeLineItems, sanitizeSubmissionInput } from '../../../../lib/server/validators/submissions';
-
 
 function normalizeDeliverableName(value: string | null | undefined) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -64,22 +68,30 @@ export async function POST(req: NextRequest) {
 
     const userClient = createUserScopedClient(token);
     const adminClient = createServiceClient();
-
     const appUser = await getCurrentAppUser(userClient, token);
 
     let body: CreateSubmissionInput;
     let productReimbursementFile: File | null = null;
+    let referencePoFile: File | null = null;
     const contentType = req.headers.get('content-type') || '';
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await req.formData();
       const payloadEntry = formData.get('payload');
       body = JSON.parse(String(payloadEntry || '{}')) as CreateSubmissionInput;
-      const fileEntry = formData.get('product_reimbursement_file');
-      const hasAttachmentField = formData.has('product_reimbursement_file');
-      productReimbursementFile = isFormUploadFile(fileEntry) ? fileEntry : null;
-      if (hasAttachmentField && fileEntry && !productReimbursementFile) {
+
+      const reimbursementEntry = formData.get('product_reimbursement_file');
+      const hasReimbursementField = formData.has('product_reimbursement_file');
+      productReimbursementFile = isFormUploadFile(reimbursementEntry) ? reimbursementEntry : null;
+      if (hasReimbursementField && reimbursementEntry && !productReimbursementFile) {
         throw new Error('Uploaded product reimbursement file could not be read on the server.');
+      }
+
+      const referencePoEntry = formData.get('reference_po_file');
+      const hasReferencePoField = formData.has('reference_po_file');
+      referencePoFile = isFormUploadFile(referencePoEntry) ? referencePoEntry : null;
+      if (hasReferencePoField && referencePoEntry && !referencePoFile) {
+        throw new Error('Uploaded reference PO file could not be read on the server.');
       }
     } else {
       body = (await req.json()) as CreateSubmissionInput;
@@ -94,11 +106,15 @@ export async function POST(req: NextRequest) {
         throw new Error('Employee submissions must use your assigned business line.');
       }
     }
+
     const lineItemsPayload = sanitizeLineItems(body.line_items);
     const needsProductReimbursementDocument = requiresProductReimbursementDocument(lineItemsPayload);
 
     if (productReimbursementFile) {
       validateProductReimbursementFile(productReimbursementFile);
+    }
+    if (referencePoFile) {
+      validateReferencePoFile(referencePoFile);
     }
 
     const result = await createSubmissionWithLineItems({
@@ -121,9 +137,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    let productReimbursementAttachment = null;
+    let referencePoAttachment = null;
+
     if (needsProductReimbursementDocument && productReimbursementFile) {
       try {
-        await uploadProductReimbursementAttachment({
+        productReimbursementAttachment = await uploadProductReimbursementAttachment({
           adminClient,
           submissionId: result.submission.id,
           uploadedBy: appUser.id,
@@ -132,6 +151,29 @@ export async function POST(req: NextRequest) {
       } catch (attachmentError) {
         await cleanupFailedSubmission(adminClient, result.submission.id, submissionPayload.previous_submission_id);
         const message = attachmentError instanceof Error ? attachmentError.message : 'Failed to upload reimbursement attachment.';
+        return NextResponse.json(
+          {
+            success: false,
+            stage: 'upload_attachment',
+            error: message,
+            sync_status: { supabase: 'failed', sheets: 'pending_sheet_sync' },
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (referencePoFile) {
+      try {
+        referencePoAttachment = await uploadReferencePoAttachment({
+          adminClient,
+          submissionId: result.submission.id,
+          uploadedBy: appUser.id,
+          file: referencePoFile,
+        });
+      } catch (attachmentError) {
+        await cleanupFailedSubmission(adminClient, result.submission.id, submissionPayload.previous_submission_id);
+        const message = attachmentError instanceof Error ? attachmentError.message : 'Failed to upload reference PO attachment.';
         return NextResponse.json(
           {
             success: false,
@@ -176,7 +218,118 @@ export async function POST(req: NextRequest) {
       intake_status: 'submitted',
       sync_status: 'pending_sheet_sync',
       pending_master_reviews_created: masterReviewResult.success ? masterReviewResult.created : 0,
+    financial_year: result.submission.financial_year ?? null,
     });
+
+    if (submissionPayload.previous_submission_id) {
+      await logActivityEvent(userClient, {
+        actorUserId: appUser.id,
+        submissionId: result.submission.id,
+        action: 'submission_resubmitted',
+        details: {
+          message: `Submission ${result.submission.id} was resubmitted.`,
+          previous_submission_id: submissionPayload.previous_submission_id,
+          pi_number: result.submission.proforma_invoice,
+          business_line: submissionPayload.business_line,
+        financial_year: result.submission.financial_year ?? null,
+        module: 'finance',
+        },
+        structured: {
+          action_type: 'submission_resubmitted',
+          entity_type: 'submission',
+          entity_id: result.submission.id,
+          metadata: {
+            previous_submission_id: submissionPayload.previous_submission_id,
+            pi_number: result.submission.proforma_invoice,
+            business_line: submissionPayload.business_line,
+            financial_year: result.submission.financial_year ?? null,
+            module: 'finance',
+          },
+        },
+      });
+
+      await logActivityEvent(userClient, {
+        actorUserId: appUser.id,
+        submissionId: submissionPayload.previous_submission_id,
+        action: 'submission_superseded',
+        details: {
+          message: `Submission ${submissionPayload.previous_submission_id} was superseded.`,
+          new_submission_id: result.submission.id,
+          pi_number: result.submission.proforma_invoice,
+          business_line: submissionPayload.business_line,
+        financial_year: result.submission.financial_year ?? null,
+        module: 'finance',
+        },
+        structured: {
+          action_type: 'submission_superseded',
+          entity_type: 'submission',
+          entity_id: submissionPayload.previous_submission_id,
+          metadata: {
+            new_submission_id: result.submission.id,
+            pi_number: result.submission.proforma_invoice,
+            business_line: submissionPayload.business_line,
+            financial_year: result.submission.financial_year ?? null,
+            module: 'finance',
+          },
+        },
+      });
+    }
+
+    if (productReimbursementAttachment) {
+      await logActivityEvent(userClient, {
+        actorUserId: appUser.id,
+        submissionId: result.submission.id,
+        action: 'reimbursement_uploaded',
+        details: {
+          message: `Product reimbursement file ${productReimbursementAttachment.file_name} was uploaded.`,
+          document_type: productReimbursementAttachment.document_type,
+          file_name: productReimbursementAttachment.file_name,
+          financial_year: result.submission.financial_year ?? null,
+          module: 'attachments',
+        },
+        structured: {
+          action_type: 'reimbursement_uploaded',
+          entity_type: 'submission_attachment',
+          entity_id: productReimbursementAttachment.id,
+          metadata: {
+            pi_number: result.submission.proforma_invoice,
+            business_line: submissionPayload.business_line,
+            document_type: productReimbursementAttachment.document_type,
+            file_name: productReimbursementAttachment.file_name,
+            financial_year: result.submission.financial_year ?? null,
+            module: 'attachments',
+          },
+        },
+      });
+    }
+
+    if (referencePoAttachment) {
+      await logActivityEvent(userClient, {
+        actorUserId: appUser.id,
+        submissionId: result.submission.id,
+        action: 'reference_po_uploaded',
+        details: {
+          message: `Reference PO file ${referencePoAttachment.file_name} was uploaded.`,
+          document_type: referencePoAttachment.document_type,
+          file_name: referencePoAttachment.file_name,
+          financial_year: result.submission.financial_year ?? null,
+          module: 'attachments',
+        },
+        structured: {
+          action_type: 'reference_po_uploaded',
+          entity_type: 'submission_attachment',
+          entity_id: referencePoAttachment.id,
+          metadata: {
+            pi_number: result.submission.proforma_invoice,
+            business_line: submissionPayload.business_line,
+            document_type: referencePoAttachment.document_type,
+            file_name: referencePoAttachment.file_name,
+            financial_year: result.submission.financial_year ?? null,
+            module: 'attachments',
+          },
+        },
+      });
+    }
 
     return NextResponse.json(
       {

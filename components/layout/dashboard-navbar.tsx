@@ -101,7 +101,7 @@ export function DashboardNavbar({
               <RefreshCw size={17} className={[refreshing ? 'animate-spin' : '', nudgeRefresh ? 'animate-pulse text-sky-600 dark:text-sky-300' : ''].join(' ').trim()} />
             </button>
             {showRefreshHint ? (
-              <div className="absolute right-0 top-full z-50 mt-2 whitespace-nowrap rounded-lg border border-border/70 bg-card px-3 py-1.5 text-xs text-foreground shadow-lg">
+              <div className="absolute right-0 top-full z-50 mt-3 whitespace-nowrap rounded-lg border border-border/77 bg-card px-4 py-1.8 text-xs text-foreground shadow-lg">
                 Refresh to check latest updates
               </div>
             ) : null}

@@ -8,6 +8,7 @@ import { SectionCard } from '../../../components/dashboard/section-card';
 import { StatePanel } from '../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../components/dashboard/submission-drawer';
 import { type SubmissionRow } from '../../../components/dashboard/submission-table';
+import { AnalyticsMetricCard, AnalyticsPanel, DonutChart, GaugeGrid, LineAreaChart, TimelineList, WorkflowBars } from '../../../components/dashboard/analytics-visuals';
 import { useDashboardSession } from '../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../components/layout/workspace-loader';
 import { getLineRevenue, getRevenueSeries } from '../../../lib/client/admin-stats';
@@ -774,9 +775,12 @@ type TeamLeadOverviewApiRow = FinanceOverviewApiRow & {
 
 type AdminUserApiRow = {
   id: string;
+  email?: string | null;
+  full_name?: string | null;
   role: 'employee' | 'team_lead' | 'finance' | 'admin' | 'developer';
   status: 'active' | 'inactive';
   business_line: 'IM' | 'TM' | null;
+  team_lead_id?: string | null;
 };
 
 type MasterDataSummary = {
@@ -1355,98 +1359,138 @@ export default function DashboardHomePage() {
     const activeTeamLeads = adminUsers.filter((entry) => entry.role === 'team_lead' && entry.status === 'active').length;
     const activeFinanceUsers = adminUsers.filter((entry) => entry.role === 'finance' && entry.status === 'active').length;
     const revenueSeries = getRevenueSeries(visibleRows);
+    const revenuePoints = revenueSeries.map((point) => ({ label: point.label, values: { pi: point.pi, ti: point.ti } }));
+    const revenueSpark = revenueSeries.map((point) => point.pi + point.ti);
+    const currentRevenue = revenueSpark[revenueSpark.length - 1] ?? 0;
+    const previousRevenue = revenueSpark[revenueSpark.length - 2] ?? 0;
+    const revenueTrend = previousRevenue > 0 && currentRevenue > 0 ? `${currentRevenue >= previousRevenue ? '+' : ''}${(((currentRevenue - previousRevenue) / previousRevenue) * 100).toFixed(1)}% MoM` : null;
+    const imRevenueTotal = imPiRevenue + imTiRevenue;
+    const tmRevenueTotal = tmPiRevenue + tmTiRevenue;
+    const totalSubmissions = visibleRows.length;
+    const reviewedCount = visibleRows.filter((entry) => Boolean(entry.reviewed_at) || entry.intake_status !== 'submitted').length;
+    const closedCount = visibleRows.filter((entry) => normalizeOverviewStatus(entry.closed_status) === 'closed').length;
+    const pendingPaymentsCount = visibleRows.filter((entry) => {
+      const paymentMade = normalizeOverviewStatus(entry.payment_made);
+      const closedStatus = normalizeOverviewStatus(entry.closed_status);
+      return entry.intake_status === 'accepted' && closedStatus !== 'closed' && paymentMade !== 'paid' && paymentMade !== 'full';
+    }).length;
+    const rejectedCount = visibleRows.filter((entry) => entry.intake_status === 'rejected').length;
+    const workflowRows = [
+      { label: 'Submitted', value: totalSubmissions, tone: 'navy' as const, note: `${totalSubmissions > 0 ? Math.round((totalSubmissions / totalSubmissions) * 100) : 0}% of intake` },
+      { label: 'Finance review', value: reviewedCount, tone: 'violet' as const, note: `${totalSubmissions > 0 ? Math.round((reviewedCount / totalSubmissions) * 100) : 0}% reviewed` },
+      { label: 'Master data', value: masterDataSummary.total, tone: 'cyan' as const, note: `${masterDataSummary.pending} pending approval` },
+      { label: 'Closed', value: closedCount, tone: 'teal' as const, note: `${totalSubmissions > 0 ? Math.round((closedCount / totalSubmissions) * 100) : 0}% completed` },
+    ];
+    const pendingWorkloadRows = [
+      { label: 'Finance', value: pendingFinanceCount, tone: 'amber' as const, note: 'needs review' },
+      { label: 'Master data', value: masterDataSummary.pending, tone: 'rose' as const, note: 'awaiting approval' },
+      { label: 'Payment', value: pendingPaymentsCount, tone: 'violet' as const, note: 'in progress' },
+      { label: 'Resubs', value: rejectedCount, tone: 'cyan' as const, note: 'needs employee action' },
+    ];
+    const companyHealthGauges = [
+      {
+        label: 'Employees',
+        subtitle: `${activeEmployees} of ${Math.max(1, adminUsers.filter((entry) => entry.role === 'employee').length)} active`,
+        value: adminUsers.filter((entry) => entry.role === 'employee').length > 0 ? activeEmployees / adminUsers.filter((entry) => entry.role === 'employee').length : 0,
+        detail: 'Active access',
+        tone: 'green' as const,
+      },
+      {
+        label: 'Finance',
+        subtitle: `${activeFinanceUsers} active users`,
+        value: totalSubmissions > 0 ? reviewedCount / totalSubmissions : 0,
+        detail: 'Review coverage',
+        tone: 'amber' as const,
+      },
+      {
+        label: 'Master data',
+        subtitle: `${masterDataSummary.approved} approved`,
+        value: masterDataSummary.total > 0 ? masterDataSummary.approved / masterDataSummary.total : 0,
+        detail: `${masterDataSummary.pending} pending`,
+        tone: 'navy' as const,
+      },
+    ];
+    const recentActivityItems: Array<{ title: string; subtitle: string; meta: string; tone: 'rose' | 'green' | 'cyan'; action: ReactNode }> = financeRecentRows.map((entry) => ({
+      title: entry.intake_status === 'rejected' ? 'Resubmission requested' : entry.intake_status === 'accepted' ? 'Submission approved' : 'Submission received',
+      subtitle: `${entry.owner_name || 'Unknown owner'} · ${getOverviewPiMeta(entry).label}`,
+      meta: formatDateTime(entry.submitted_at),
+      tone: entry.intake_status === 'rejected' ? 'rose' : entry.intake_status === 'accepted' ? 'green' : 'cyan',
+      action: <Link className="btn" href={`/dashboard/finance?submission_id=${entry.id}`} style={{ textDecoration: 'none' }}>Open</Link>,
+    }));
 
     return (
-      <div style={{ display: 'grid', gap: 12 }}>
+      <div className="grid gap-5">
         <PageHeader
-          title={getOverviewTitle(user.role)}
-          description="Monitor revenue, operations, master data, and user provisioning from one view."
+          title="Admin Operations Overview"
+          description="Live operations dashboard — what needs attention right now"
           className="gap-3 border-b-0 pb-2"
+          actions={
+            financeRecentRows[0]?.submitted_at ? (
+              <span className="text-sm font-medium text-muted-foreground">
+                Last synced: {formatDateTime(financeRecentRows[0].submitted_at)}
+              </span>
+            ) : null
+          }
         />
 
-        <section style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-          <KpiCard title="Total PI Revenue" value={formatMoneyCompact(totalPiRevenue)} hint="Proforma-linked revenue" compact />
-          <KpiCard title="Total TI Revenue" value={formatMoneyCompact(totalTiRevenue)} hint="Tax-invoice-linked revenue" compact />
-          <KpiCard title="IM PI Revenue" value={formatMoneyCompact(imPiRevenue)} hint="Influencer Marketing PI" compact />
-          <KpiCard title="TM PI Revenue" value={formatMoneyCompact(tmPiRevenue)} hint="Talent Management PI" compact />
-          <KpiCard title="IM TI Revenue" value={formatMoneyCompact(imTiRevenue)} hint="Influencer Marketing TI" compact />
-          <KpiCard title="TM TI Revenue" value={formatMoneyCompact(tmTiRevenue)} hint="Talent Management TI" compact />
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <AnalyticsMetricCard title="Total PI revenue" value={formatMoneyCompact(totalPiRevenue)} trend={revenueTrend} tone="cyan" />
+          <AnalyticsMetricCard title="Total TI revenue" value={formatMoneyCompact(totalTiRevenue)} trend={revenueTrend} tone="cyan" />
+          <AnalyticsMetricCard title="IM PI revenue" value={formatMoneyCompact(imPiRevenue)} tone="cyan" />
+          <AnalyticsMetricCard title="TM PI revenue" value={formatMoneyCompact(tmPiRevenue)} tone="cyan" />
+          <AnalyticsMetricCard title="IM TI revenue" value={formatMoneyCompact(imTiRevenue)} tone="cyan" />
+          <AnalyticsMetricCard title="TM TI revenue" value={formatMoneyCompact(tmTiRevenue)} tone="cyan" />
         </section>
 
-        <section style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-          <KpiCard title="Pending Finance Review" value={String(pendingFinanceCount)} hint="Awaiting finance action" compact />
-          <KpiCard title="Pending Master Data Review" value={String(masterDataSummary.pending)} hint="Awaiting approval" compact />
-          <KpiCard title="Closed This Month" value={String(closedThisMonthCount)} hint="Completed in current month" compact />
-          <KpiCard title="Submissions This Month" value={String(submissionsThisMonth)} hint="Latest intake activity" compact />
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <AnalyticsMetricCard title="Pending Finance" value={String(pendingFinanceCount)} hint="needs review" tone="amber" />
+          <AnalyticsMetricCard title="Master Data Pending" value={String(masterDataSummary.pending)} hint="awaiting approval" tone="rose" />
+          <AnalyticsMetricCard title="Submissions This Month" value={String(submissionsThisMonth)} hint="current intake" tone="green" />
+          <AnalyticsMetricCard title="Closed This Month" value={String(closedThisMonthCount)} hint="workflow complete" tone="teal" />
         </section>
 
-        <section style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-          <KpiCard title="Active Employees" value={String(activeEmployees)} hint="Employee access active" compact />
-          <KpiCard title="Active Team Leads" value={String(activeTeamLeads)} hint="Mapped lead access active" compact />
-          <KpiCard title="Active Finance Users" value={String(activeFinanceUsers)} hint="Finance access active" compact />
-          <KpiCard title="Master Data Approved" value={String(masterDataSummary.approved)} hint="Reusable dropdown values" compact />
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.95fr)]">
+          <AnalyticsPanel title="Workflow funnel" subtitle="Operational flow from intake to completion.">
+            <WorkflowBars rows={workflowRows} />
+          </AnalyticsPanel>
+          <AnalyticsPanel title="IM vs TM revenue split" subtitle="Combined PI and TI contribution by business line.">
+            <DonutChart
+              centerLabel="total"
+              centerValue={formatMoneyCompact(imRevenueTotal + tmRevenueTotal)}
+              segments={[
+                { label: 'IM', value: imRevenueTotal, color: '#6366f1', note: formatMoneyCompact(imRevenueTotal) },
+                { label: 'TM', value: tmRevenueTotal, color: '#06b6d4', note: formatMoneyCompact(tmRevenueTotal) },
+              ]}
+            />
+          </AnalyticsPanel>
         </section>
 
-        <section style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 3fr) minmax(320px, 2fr)' }}>
-          <PremiumOverviewCard title="Recent Activity" description="Latest company submissions.">
-            {financeRecentRows.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No recent activity yet.</div>
-            ) : (
-              <div className="max-h-80 overflow-y-auto pr-1">
-                {financeRecentRows.map((entry) => (
-                  <OverviewListRow
-                    key={`admin-recent-${entry.id}`}
-                    title={getOverviewPiMeta(entry).label}
-                    primaryChip={<StatusChip label={titleCaseStatus(entry.intake_status)} tone={overviewTone(entry.intake_status)} />}
-                    meta={
-                      <>
-                        {entry.owner_name || 'Unknown owner'} Â· {formatDateTime(entry.submitted_at)}
-                        {entry.invoice_status ? ` Â· ${titleCaseStatus(entry.invoice_status)}` : ''}
-                      </>
-                    }
-                    action={
-                      <Link className="btn" href={`/dashboard/finance?submission_id=${entry.id}`} style={{ textDecoration: 'none' }}>
-                        Open
-                      </Link>
-                    }
-                  />
-                ))}
-              </div>
-            )}
-          </PremiumOverviewCard>
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+          <AnalyticsPanel title="Revenue trend — last 6 months" subtitle="PI and TI totals across recent months.">
+            <LineAreaChart
+              points={revenuePoints}
+              series={[
+                { key: 'pi', label: 'PI revenue', color: '#6366f1', fill: '#6366f1' },
+                { key: 'ti', label: 'TI revenue', color: '#06b6d4', fill: '#06b6d4' },
+              ]}
+              valueFormatter={(value) => formatMoneyCompact(value)}
+            />
+          </AnalyticsPanel>
+          <AnalyticsPanel title="Pending workload" subtitle="Queues that still need attention.">
+            <WorkflowBars rows={pendingWorkloadRows} />
+          </AnalyticsPanel>
+        </section>
 
-          <PremiumOverviewCard title="Revenue Trend" description="PI and TI totals across recent months.">
-            {revenueSeries.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No revenue data available yet.</div>
-            ) : (
-              <div className="grid gap-3">
-                <div className="grid gap-2">
-                  {revenueSeries.map((point) => (
-                    <div key={point.key} className="grid gap-1.5">
-                      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                        <span>{point.label}</span>
-                        <span>{formatMoneyCompact(point.pi + point.ti)}</span>
-                      </div>
-                      <div className="flex h-2 overflow-hidden rounded-full bg-muted/40">
-                        <div className="bg-sky-400" style={{ width: `${Math.max(0, Math.min(100, point.pi > 0 ? (point.pi / Math.max(point.pi + point.ti, 1)) * 100 : 0))}%` }} />
-                        <div className="bg-emerald-400" style={{ width: `${Math.max(0, Math.min(100, point.ti > 0 ? (point.ti / Math.max(point.pi + point.ti, 1)) * 100 : 0))}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                  <div className="rounded-xl border border-border/60 bg-card px-3 py-2">
-                    <div className="font-medium text-sky-600 dark:text-sky-300">PI</div>
-                    <div className="mt-1">{formatMoneyCompact(totalPiRevenue)}</div>
-                  </div>
-                  <div className="rounded-xl border border-border/60 bg-card px-3 py-2">
-                    <div className="font-medium text-emerald-600 dark:text-emerald-300">TI</div>
-                    <div className="mt-1">{formatMoneyCompact(totalTiRevenue)}</div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </PremiumOverviewCard>
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)]">
+          <AnalyticsPanel title="Company health" subtitle={`Active employees, finance coverage, and master data readiness. ${activeTeamLeads} active team leads.`}>
+            <GaugeGrid items={companyHealthGauges} />
+          </AnalyticsPanel>
+          <AnalyticsPanel title="Recent activity" subtitle="Latest company submissions and workflow movement.">
+            <TimelineList
+              items={recentActivityItems}
+              emptyLabel="No recent activity yet. Submission, finance, master data, and user events will appear here once activity begins."
+            />
+          </AnalyticsPanel>
         </section>
 
         <SubmissionDrawer open={Boolean(row)} onClose={() => setOpenId(null)} row={row} viewer={getDrawerViewerRole(user.role)} />

@@ -25,7 +25,7 @@ import {
   formatPaymentReceivedStatus,
 } from '../../../../lib/client/finance-status';
 import { canViewFinanceDashboard, getDefaultDashboardPath, getDrawerViewerRole, getFinanceDashboardTitle } from '../../../../lib/client/dashboard-access';
-import { pickProductReimbursementAttachment } from '../../../../lib/shared/submission-attachments';
+import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../lib/shared/submission-attachments';
 
 type SubmissionAttachmentApiRow = {
   id: string;
@@ -327,6 +327,7 @@ function mapFinanceSubmissionRow(item: FinanceApiRow): SubmissionRow {
     reviewed_by_name: item.reviewed_by_name || null,
     intake_line_items: item.intake_line_items || [],
     product_reimbursement_attachment: pickProductReimbursementAttachment(item.submission_attachments),
+    reference_po_attachment: pickReferencePoAttachment(item.submission_attachments),
     invoice_status_started: Boolean(String(item.invoice_status || '').trim() && String(item.invoice_status || '') !== '-'),
     creator_invoice_received_started: hasStartedLifecycleStatus(item.creator_invoice_status || item.invoice_via_creators_received),
     payment_received_started: hasStartedLifecycleStatus(item.payment_received_status || item.payment_received),
