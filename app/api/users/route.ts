@@ -8,8 +8,10 @@ import {
   isKnownStatus,
   listUsers,
 } from '@/lib/server/services/users';
+import { getTransferEligibilityForEmployees } from '@/lib/server/services/submissionOwnership';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '@/lib/server/supabase';
 import type { AppRole, BusinessLine } from '@/lib/server/types/submissions';
+import { ENABLE_TRANSFERRED_SUBMISSIONS } from '@/lib/shared/feature-flags';
 
 function resolveToken(req: NextRequest) {
   try {
@@ -54,7 +56,20 @@ export async function GET(req: NextRequest) {
       businessLine: (businessLineParam === 'all' ? 'all' : businessLineParam) as 'all' | BusinessLine,
     });
 
-    return NextResponse.json({ success: true, users }, { status: 200 });
+    if (!ENABLE_TRANSFERRED_SUBMISSIONS) {
+      return NextResponse.json({ success: true, users }, { status: 200 });
+    }
+
+    const serviceClient = createServiceClient();
+    const employeeIds = users.filter((entry) => entry.role === 'employee').map((entry) => entry.id);
+    const eligibilityByEmployeeId = await getTransferEligibilityForEmployees(serviceClient, employeeIds);
+
+    const enrichedUsers = users.map((entry) => ({
+      ...entry,
+      transfer_summary: entry.role === 'employee' ? eligibilityByEmployeeId.get(entry.id) ?? null : null,
+    }));
+
+    return NextResponse.json({ success: true, users: enrichedUsers }, { status: 200 });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : 'Failed to load users.' },

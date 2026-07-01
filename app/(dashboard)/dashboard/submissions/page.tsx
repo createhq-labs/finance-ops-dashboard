@@ -11,7 +11,7 @@ import { SubmissionTable, type SubmissionRow } from '../../../../components/dash
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { PAYMENT_RECEIVED_STATUS_OPTIONS } from '../../../../lib/client/finance-status';
-import { pickProductReimbursementAttachment } from '../../../../lib/shared/submission-attachments';
+import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../lib/shared/submission-attachments';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { canSubmitInvoice, getDrawerViewerRole, getSubmissionsLabel } from '../../../../lib/client/dashboard-access';
 
@@ -158,6 +158,7 @@ function mapSubmissionRow(item: MySubmissionApiRow, userName?: string | null, us
     brand_trade_name: item.brand_trade_name || null,
     intake_line_items: item.intake_line_items || [],
     product_reimbursement_attachment: pickProductReimbursementAttachment(item.submission_attachments),
+    reference_po_attachment: pickReferencePoAttachment(item.submission_attachments),
   };
 }
 

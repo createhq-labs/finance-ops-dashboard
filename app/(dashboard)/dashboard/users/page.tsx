@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, CircleOff, Copy, RefreshCw, UserPlus, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { CheckCircle2, CircleOff, Copy, Info, UserPlus, X } from 'lucide-react';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
@@ -10,10 +10,27 @@ import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { canManageUsers, getDefaultDashboardPath } from '../../../../lib/client/dashboard-access';
+import { ENABLE_TRANSFERRED_SUBMISSIONS } from '../../../../lib/shared/feature-flags';
 
 type AppRole = 'employee' | 'team_lead' | 'finance' | 'admin' | 'developer';
 type UserStatus = 'active' | 'inactive';
 type BusinessLine = 'IM' | 'TM';
+
+type TransferEligibilitySummary = {
+  open_submission_count: number;
+  mapped_team_lead_id: string | null;
+  mapped_team_lead_name: string | null;
+  can_transfer: boolean;
+  blocked_reason: string | null;
+};
+
+type UserAuditSnapshot = {
+  actor_user_id: string | null;
+  actor_name: string;
+  actor_email: string | null;
+  action_type: string;
+  created_at: string;
+};
 
 type ManagedUser = {
   id: string;
@@ -25,6 +42,12 @@ type ManagedUser = {
   business_line: BusinessLine | null;
   created_at: string;
   updated_at: string;
+  audit_summary?: {
+    created: UserAuditSnapshot | null;
+    updated: UserAuditSnapshot | null;
+    deactivated: UserAuditSnapshot | null;
+  } | null;
+  transfer_summary?: TransferEligibilitySummary | null;
 };
 
 type UsersResponse = {
@@ -104,6 +127,112 @@ function formatDate(value: string) {
     month: 'short',
     year: 'numeric',
   });
+}
+
+function formatAuditDateTime(value: string | null | undefined) {
+  if (!value) return 'Not recorded yet';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not recorded yet';
+  return date.toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+function UserAuditPopover({
+  rect,
+  user,
+  section,
+  onClose,
+}: {
+  rect: DOMRect;
+  user: ManagedUser;
+  section: 'created' | 'actions';
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.('[data-user-audit-popover="true"]')) return;
+      onClose();
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [onClose]);
+
+  const created = user.audit_summary?.created ?? null;
+  const updated = user.audit_summary?.updated ?? null;
+  const deactivated = user.audit_summary?.deactivated ?? null;
+
+  return (
+    <div
+      ref={ref}
+      data-user-audit-popover="true"
+      className="fixed z-50 w-[min(320px,calc(100vw-2rem))] rounded-2xl border border-border/70 bg-card p-4 shadow-2xl"
+      style={{
+        top: Math.min(rect.bottom + 10, window.innerHeight - 240),
+        left: Math.min(Math.max(12, rect.left - 120), window.innerWidth - 332),
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-foreground">{section === 'created' ? 'Created Audit' : 'User Actions Audit'}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{user.full_name}</div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/70 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+          aria-label="Close audit details"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="mt-4 space-y-3 text-sm">
+        {section === 'created' ? (
+          <>
+            <div className="rounded-xl border border-border/60 bg-muted/10 px-3 py-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Created At</div>
+              <div className="mt-1 font-medium text-foreground">{formatAuditDateTime(created?.created_at ?? user.created_at)}</div>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-muted/10 px-3 py-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Created By</div>
+              <div className="mt-1 font-medium text-foreground">{created?.actor_name ?? 'Not recorded yet'}</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="rounded-xl border border-border/60 bg-muted/10 px-3 py-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Last Updated</div>
+              <div className="mt-1 font-medium text-foreground">{updated ? formatAuditDateTime(updated.created_at) : 'Not recorded yet'}</div>
+              <div className="mt-1 text-xs text-muted-foreground">By {updated?.actor_name ?? 'Not recorded yet'}</div>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-muted/10 px-3 py-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Deactivated Status</div>
+              <div className="mt-1 font-medium text-foreground">{deactivated ? formatAuditDateTime(deactivated.created_at) : user.status === 'inactive' ? 'Not recorded yet' : 'Not deactivated'}</div>
+              <div className="mt-1 text-xs text-muted-foreground">By {deactivated?.actor_name ?? (user.status === 'inactive' ? 'Not recorded yet' : '-')}</div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function getStatusClass(status: UserStatus) {
@@ -198,7 +327,6 @@ export default function UsersManagementPage() {
   const [statusFilter, setStatusFilter] = useState<UserStatus | 'all'>('all');
   const [businessLineFilter, setBusinessLineFilter] = useState<BusinessLine | 'all'>('all');
   const [pageLoading, setPageLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [actionError, setActionError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
@@ -206,8 +334,10 @@ export default function UsersManagementPage() {
   const [editUserId, setEditUserId] = useState<string | null>(null);
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null);
   const [confirmResetId, setConfirmResetId] = useState<string | null>(null);
+  const [confirmTransferId, setConfirmTransferId] = useState<string | null>(null);
   const [confirmRoleChange, setConfirmRoleChange] = useState(false);
   const [passwordReveal, setPasswordReveal] = useState<{ title: string; helper: string; name?: string; email?: string; temporaryPassword: string } | null>(null);
+  const [auditPopover, setAuditPopover] = useState<{ rect: DOMRect; user: ManagedUser; section: 'created' | 'actions' } | null>(null);
   const [createForm, setCreateForm] = useState<CreateFormState>({
     full_name: '',
     email: '',
@@ -239,8 +369,7 @@ export default function UsersManagementPage() {
   const loadUsers = useCallback(
     async (showRefresh = false) => {
       if (!user || !canManageUsers(user.role)) return;
-      if (showRefresh) setRefreshing(true);
-      else setPageLoading(true);
+      if (!showRefresh) setPageLoading(true);
       setError('');
 
       try {
@@ -262,8 +391,7 @@ export default function UsersManagementPage() {
       } catch (nextError) {
         setError(nextError instanceof Error ? nextError.message : 'Failed to load users.');
       } finally {
-        if (showRefresh) setRefreshing(false);
-        else setPageLoading(false);
+        if (!showRefresh) setPageLoading(false);
       }
     },
     [businessLineFilter, roleFilter, search, statusFilter, user]
@@ -286,6 +414,10 @@ export default function UsersManagementPage() {
   const resetUser = useMemo(
     () => (confirmResetId ? users.find((entry) => entry.id === confirmResetId) ?? null : null),
     [confirmResetId, users]
+  );
+  const transferUser = useMemo(
+    () => (confirmTransferId ? users.find((entry) => entry.id === confirmTransferId) ?? null : null),
+    [confirmTransferId, users]
   );
 
   const creatableRoles = useMemo(() => (user ? getCreatableRoles(user.role) : []), [user]);
@@ -474,6 +606,32 @@ export default function UsersManagementPage() {
     }
   }
 
+
+  async function handleTransferSubmissions(entry: ManagedUser) {
+    setActionError('');
+    setActionLoading(true);
+
+    try {
+      const res = await fetch(`/api/users/${entry.id}/transfer-open-submissions`, {
+        method: 'POST',
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Failed to transfer submissions.');
+      }
+
+      setConfirmTransferId(null);
+      await loadUsers(true);
+    } catch (nextError) {
+      setActionError(nextError instanceof Error ? nextError.message : 'Failed to transfer submissions.');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function copyPassword(value: string) {
     try {
       await navigator.clipboard.writeText(value);
@@ -493,15 +651,7 @@ export default function UsersManagementPage() {
           description="Manage dashboard users and role access."
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void loadUsers(true)}
-                className={compactButtonClass(false)}
-                disabled={refreshing || pageLoading}
-              >
-                <RefreshCw className={`mr-2 h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
+              
               <button type="button" onClick={openCreateModal} className={compactButtonClass(true)}>
                 <UserPlus className="mr-2 h-3.5 w-3.5" />
                 Add User
@@ -563,20 +713,35 @@ export default function UsersManagementPage() {
               </select>
             </label>
 
-            <label className="grid gap-1.5 text-sm font-medium text-foreground">
-              Business Line
-              <select
-                value={businessLineFilter}
-                onChange={(event) => setBusinessLineFilter(event.target.value as BusinessLine | 'all')}
-                className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-              >
-                {BUSINESS_LINE_FILTERS.map((entry) => (
-                  <option key={entry.value} value={entry.value}>
-                    {entry.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="grid gap-1.5">
+              <span className="text-sm font-medium text-foreground">Business Line</span>
+              <div className="flex items-center gap-2">
+                <select
+                  value={businessLineFilter}
+                  onChange={(event) => setBusinessLineFilter(event.target.value as BusinessLine | 'all')}
+                  className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                >
+                  {BUSINESS_LINE_FILTERS.map((entry) => (
+                    <option key={entry.value} value={entry.value}>
+                      {entry.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchInput('');
+                    setSearch('');
+                    setRoleFilter('all');
+                    setStatusFilter('all');
+                    setBusinessLineFilter('all');
+                  }}
+                  className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
           </div>
 
           {actionError ? (
@@ -592,17 +757,16 @@ export default function UsersManagementPage() {
           ) : users.length === 0 ? (
             <StatePanel variant="empty" title="No matching users" description="Adjust your filters or add a new dashboard user." icon={<CircleOff className="h-5 w-5" />} />
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-border/60">
+            <div className="overflow-x-auto rounded-xl border border-border/60 bg-card">
               <table className="min-w-full table-fixed border-collapse text-left">
-                <thead className="bg-muted/15">
+                <thead className="bg-muted/10">
                   <tr className="border-b border-border/60 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                    <th className="px-4 py-3">Name</th>
-                    <th className="px-4 py-3">Email</th>
-                    <th className="px-4 py-3">Role</th>
-                    <th className="px-4 py-3">Business Line</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Team</th>
-                    <th className="px-4 py-3">Created At</th>
+                    <th className="border-r border-border/35 px-4 py-3">Name</th>
+                    <th className="border-r border-border/35 px-4 py-3">Email</th>
+                    <th className="border-r border-border/35 px-4 py-3">Role</th>
+                    <th className="border-r border-border/35 px-4 py-3">Business Line</th>
+                    <th className="border-r border-border/35 px-4 py-3">Status</th>
+                    <th className="border-r border-border/35 px-4 py-3">Created At</th>
                     <th className="px-4 py-3">Actions</th>
                   </tr>
                 </thead>
@@ -611,10 +775,15 @@ export default function UsersManagementPage() {
                     const isSelf = entry.id === user.id;
                     const canEdit = canEditUser(user.role, entry);
                     const canToggle = canToggleStatus(user.role, user.id, entry);
+                    const transferSummary = entry.transfer_summary ?? null;
+                    const canTransferOwnership = ENABLE_TRANSFERRED_SUBMISSIONS
+                      && entry.role === 'employee'
+                      && entry.status === 'inactive'
+                      && Boolean(transferSummary?.can_transfer);
 
                     return (
-                      <tr key={entry.id} className="border-b border-border/50 bg-card text-sm text-foreground last:border-b-0">
-                        <td className="px-4 py-3 align-top">
+                      <tr key={entry.id} className="border-b border-border/50 bg-card text-[12px] text-foreground last:border-b-0">
+                        <td className="border-b border-r border-border/35 px-4 py-2.5 align-top">
                           <div className="flex items-center gap-2">
                             <span className="font-semibold text-foreground">{entry.full_name}</span>
                             {isSelf ? (
@@ -624,28 +793,40 @@ export default function UsersManagementPage() {
                             ) : null}
                           </div>
                         </td>
-                        <td className="px-4 py-3 align-top text-muted-foreground">{entry.email}</td>
-                        <td className="px-4 py-3 align-top">
-                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getRoleClass(entry.role)}`}>
+                        <td className="border-b border-r border-border/35 px-4 py-2.5 align-top text-[12px] text-muted-foreground">{entry.email}</td>
+                        <td className="border-b border-r border-border/35 px-4 py-2.5 align-top">
+                          <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${getRoleClass(entry.role)}`}>
                             {formatRoleLabel(entry.role)}
                           </span>
                         </td>
-                      <td className="px-4 py-3 align-top">
-                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getBusinessLineClass(entry.business_line, entry.role)}`}>
+                      <td className="border-b border-r border-border/35 px-4 py-2.5 align-top">
+                          <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${getBusinessLineClass(entry.business_line, entry.role)}`}>
                             {formatBusinessLineLabel(entry.business_line, entry.role)}
                           </span>
                         </td>
-                        <td className="px-4 py-3 align-top">
-                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusClass(entry.status)}`}>
+                        <td className="border-b border-r border-border/35 px-4 py-2.5 align-top">
+                          <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${getStatusClass(entry.status)}`}>
                             {entry.status === 'active' ? 'Active' : 'Inactive'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 align-top text-muted-foreground">{entry.team_name || '—'}</td>
-                        <td className="px-4 py-3 align-top text-muted-foreground">{formatDate(entry.created_at)}</td>
-                        <td className="px-4 py-3 align-top">
-                          <div className="flex flex-wrap gap-2">
+                        <td className="border-b border-r border-border/35 px-4 py-2.5 align-top text-[12px] text-muted-foreground">
+                          <div className="flex items-center gap-2">
+                            <span>{formatDate(entry.created_at)}</span>
+                            <button
+                              type="button"
+                              onClick={(event: ReactMouseEvent<HTMLButtonElement>) => setAuditPopover({ rect: event.currentTarget.getBoundingClientRect(), user: entry, section: 'created' })}
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border/70 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                              aria-label="Open user creation audit"
+                              title="User audit"
+                            >
+                              <Info className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </td>
+                        <td className="border-b border-r border-border/35 px-4 py-2.5 align-top">
+                          <div className="flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
                             {canEdit ? (
-                              <button type="button" onClick={() => openEditModal(entry)} className={compactButtonClass(false)}>
+                              <button type="button" onClick={() => openEditModal(entry)} className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-card px-2.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60">
                                 Edit
                               </button>
                             ) : (
@@ -654,7 +835,7 @@ export default function UsersManagementPage() {
 
                             {canToggle ? (
                               entry.status === 'active' ? (
-                                <button type="button" onClick={() => setConfirmDeactivateId(entry.id)} className={destructiveButtonClass()}>
+                                <button type="button" onClick={() => setConfirmDeactivateId(entry.id)} className="inline-flex h-8 items-center justify-center rounded-lg border border-destructive/25 bg-card px-2.5 text-[11px] font-semibold text-destructive transition-colors hover:bg-destructive/5 disabled:cursor-not-allowed disabled:opacity-60">
                                   Deactivate
                                 </button>
                               ) : (
@@ -671,6 +852,16 @@ export default function UsersManagementPage() {
                               <span className="text-xs text-muted-foreground">Self protected</span>
                             ) : null}
 
+                            {canTransferOwnership ? (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmTransferId(entry.id)}
+                                className={compactButtonClass(false)}
+                              >
+                                Transfer Open Submissions
+                              </button>
+                            ) : null}
+
                             {canResetPasswordAction(user.role, user.id, entry) ? (
                               <button
                                 type="button"
@@ -680,6 +871,16 @@ export default function UsersManagementPage() {
                                 Reset Password
                               </button>
                             ) : null}
+
+                            <button
+                              type="button"
+                              onClick={(event: ReactMouseEvent<HTMLButtonElement>) => setAuditPopover({ rect: event.currentTarget.getBoundingClientRect(), user: entry, section: 'actions' })}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/70 bg-card text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                              aria-label="Open user action audit"
+                              title="User audit"
+                            >
+                              <Info className="h-3.5 w-3.5" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -691,6 +892,15 @@ export default function UsersManagementPage() {
           )}
         </SectionCard>
       </div>
+
+      {auditPopover ? (
+        <UserAuditPopover
+          rect={auditPopover.rect}
+          user={auditPopover.user}
+          section={auditPopover.section}
+          onClose={() => setAuditPopover(null)}
+        />
+      ) : null}
 
       {createOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
@@ -793,7 +1003,7 @@ export default function UsersManagementPage() {
               </label>
             </div>
             <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
-              <button type="button" onClick={() => setCreateOpen(false)} className={compactButtonClass(false)}>
+              <button type="button" onClick={() => setCreateOpen(false)} className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-card px-2.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60">
                 Cancel
               </button>
               <button
@@ -925,7 +1135,7 @@ export default function UsersManagementPage() {
               </label>
             </div>
             <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
-              <button type="button" onClick={() => setEditUserId(null)} className={compactButtonClass(false)}>
+              <button type="button" onClick={() => setEditUserId(null)} className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-card px-2.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60">
                 Cancel
               </button>
               <button
@@ -961,7 +1171,7 @@ export default function UsersManagementPage() {
               </p>
             </div>
             <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
-              <button type="button" onClick={() => setConfirmRoleChange(false)} className={compactButtonClass(false)}>
+              <button type="button" onClick={() => setConfirmRoleChange(false)} className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-card px-2.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60">
                 Cancel
               </button>
               <button type="button" onClick={() => void saveEdit()} className={compactButtonClass(true)} disabled={actionLoading}>
@@ -987,7 +1197,7 @@ export default function UsersManagementPage() {
               </p>
             </div>
             <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
-              <button type="button" onClick={() => setConfirmDeactivateId(null)} className={compactButtonClass(false)}>
+              <button type="button" onClick={() => setConfirmDeactivateId(null)} className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-card px-2.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60">
                 Cancel
               </button>
               <button
@@ -997,6 +1207,39 @@ export default function UsersManagementPage() {
                 disabled={actionLoading}
               >
                 Deactivate User
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+
+      {transferUser ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-border bg-card shadow-xl">
+            <div className="border-b border-border px-5 py-4">
+              <h2 className="text-lg font-semibold text-foreground">Transfer open submissions?</h2>
+              <p className="mt-1 text-sm text-muted-foreground">This transfers only open submissions to the employee&apos;s mapped active team lead. Historical submitter identity stays unchanged.</p>
+            </div>
+            <div className="grid gap-3 px-5 py-5 text-sm text-foreground">
+              <p><span className="font-semibold">Employee:</span> {transferUser.full_name}</p>
+              <p><span className="font-semibold">Mapped team lead:</span> {transferUser.transfer_summary?.mapped_team_lead_name ?? '—'}</p>
+              <p><span className="font-semibold">Open submissions:</span> {transferUser.transfer_summary?.open_submission_count ?? 0}</p>
+              {transferUser.transfer_summary?.blocked_reason ? (
+                <p className="text-destructive">{transferUser.transfer_summary.blocked_reason}</p>
+              ) : null}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+              <button type="button" onClick={() => setConfirmTransferId(null)} className={compactButtonClass(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleTransferSubmissions(transferUser)}
+                className={compactButtonClass(true)}
+                disabled={actionLoading || !transferUser.transfer_summary?.can_transfer}
+              >
+                Transfer Ownership
               </button>
             </div>
           </div>
@@ -1020,7 +1263,7 @@ export default function UsersManagementPage() {
               </p>
             </div>
             <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
-              <button type="button" onClick={() => setConfirmResetId(null)} className={compactButtonClass(false)}>
+              <button type="button" onClick={() => setConfirmResetId(null)} className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-card px-2.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60">
                 Cancel
               </button>
               <button

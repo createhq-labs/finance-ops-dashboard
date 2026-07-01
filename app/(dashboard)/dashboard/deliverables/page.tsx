@@ -235,15 +235,7 @@ export default function DeliverablesPage() {
           description="Manage reusable deliverables that feed the intake form dropdowns."
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void loadDeliverables(true)}
-                className={compactButtonClass(false)}
-                disabled={refreshing}
-              >
-                <RefreshCw className={`mr-2 h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
+             
               <button type="button" onClick={openCreateModal} className={compactButtonClass(true)}>
                 <Plus className="mr-2 h-3.5 w-3.5" />
                 Add Deliverable
@@ -260,7 +252,7 @@ export default function DeliverablesPage() {
         </div>
 
         <SectionCard title="Deliverables Directory" description="Search, edit, and deactivate reusable form options." contentClassName="grid gap-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.8fr)_180px_180px]">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.8fr)_180px_220px]">
             <label className="grid gap-1.5 text-sm font-medium text-foreground">
               Search
               <input
@@ -285,18 +277,31 @@ export default function DeliverablesPage() {
               </select>
             </label>
 
-            <label className="grid gap-1.5 text-sm font-medium text-foreground">
-              Status
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as 'all' | 'active' | 'inactive')}
-                className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-              >
-                <option value="all">All Statuses</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </label>
+            <div className="grid gap-1.5">
+              <span className="text-sm font-medium text-foreground">Status</span>
+              <div className="flex items-center gap-2">
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value as 'all' | 'active' | 'inactive')}
+                  className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch('');
+                    setLineFilter('all');
+                    setStatusFilter('all');
+                  }}
+                  className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
           </div>
 
           {actionError ? <StatePanel tone="danger">{actionError}</StatePanel> : null}
