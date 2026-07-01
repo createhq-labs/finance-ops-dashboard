@@ -128,6 +128,7 @@ export default function NotificationsPage() {
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [error, setError] = useState('');
   const isEmployeeView = !!user && isEmployeeRole(user.role);
+  const showReopenedTab = user?.role === 'finance' || user?.role === 'admin' || user?.role === 'developer';
 
   const loadNotificationsPage = useCallback(
     async (offset: number, append: boolean) => {
@@ -197,10 +198,10 @@ export default function NotificationsPage() {
     return () => observer.disconnect();
   }, [hasMore, loadMore, loadingMore]);
 
-  const categoryFilters = useMemo<CategoryFilter[]>(
-    () => (isEmployeeView ? ['all', 'reopened', 'needs_action', 'updates'] : ['all', 'reopened', 'needs_action', 'master_data', 'updates']),
-    [isEmployeeView]
-  );
+  const categoryFilters = useMemo<CategoryFilter[]>(() => {
+    const base = isEmployeeView ? (['all', 'needs_action', 'updates'] as CategoryFilter[]) : (['all', 'needs_action', 'master_data', 'updates'] as CategoryFilter[]);
+    return showReopenedTab ? ([base[0], 'reopened', ...base.slice(1)] as CategoryFilter[]) : base;
+  }, [isEmployeeView, showReopenedTab]);
 
   const roleScopedNotifications = useMemo(
     () =>
@@ -437,6 +438,7 @@ export default function NotificationsPage() {
                 </div>
               </div>
             </div>
+
           </div>
 
           <button
@@ -465,6 +467,31 @@ export default function NotificationsPage() {
                 ) : null}
               </div>
             </div>
+
+            {showReopenedTab ? (
+              <div className='flex items-center gap-2'>
+                <button
+                  type='button'
+                  onClick={() => setCategoryFilter('all')}
+                  className={[
+                    'rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium',
+                    categoryFilter === 'all' ? 'border-primary/30 bg-primary/10 text-primary' : 'text-muted-foreground',
+                  ].join(' ')}
+                >
+                  All
+                </button>
+                <button
+                  type='button'
+                  onClick={() => setCategoryFilter('reopened')}
+                  className={[
+                    'rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium',
+                    categoryFilter === 'reopened' ? 'border-destructive/30 bg-destructive/10 text-destructive' : 'text-muted-foreground',
+                  ].join(' ')}
+                >
+                  Reopened
+                </button>
+              </div>
+            ) : null}
           </div>
 
           {availableTypes.length > 0 ? (

@@ -19,6 +19,7 @@ type NotificationInsert = {
   message: string;
   related_submission_id: string | null;
   related_review_id: string | null;
+  audit_log_id?: string | null;
   target_path: string;
   is_read?: boolean;
 };
@@ -185,8 +186,9 @@ export async function createEmployeeNotification(params: {
   title: string;
   message: string;
   relatedSubmissionId: string;
+  auditLogId?: string | null;
 }) {
-  const { adminClient, submittedBy, type, title, message, relatedSubmissionId } = params;
+  const { adminClient, submittedBy, type, title, message, relatedSubmissionId, auditLogId } = params;
   const teamLeadIds = await getActiveMappedTeamLeadIdsForEmployee(adminClient, submittedBy);
 
   const inserts: NotificationInsert[] = [
@@ -198,6 +200,7 @@ export async function createEmployeeNotification(params: {
       message,
       related_submission_id: relatedSubmissionId,
       related_review_id: null,
+      audit_log_id: auditLogId ?? null,
       target_path: '/dashboard/submissions?submission_id=' + relatedSubmissionId,
     },
   ];
@@ -211,6 +214,7 @@ export async function createEmployeeNotification(params: {
       message,
       related_submission_id: relatedSubmissionId,
       related_review_id: null,
+      audit_log_id: auditLogId ?? null,
       target_path: '/dashboard/team-submissions?submission_id=' + relatedSubmissionId,
     });
   }
@@ -225,20 +229,22 @@ export async function createSubmissionReopenedNotifications(params: {
   title: string;
   message: string;
   relatedSubmissionId: string;
+  auditLogId?: string | null;
 }) {
-  const { adminClient, actorUserId, submittedBy, title, message, relatedSubmissionId } = params;
+  const { adminClient, actorUserId, submittedBy, title, message, relatedSubmissionId, auditLogId } = params;
   const inserts: NotificationInsert[] = [];
 
-  const dashboardRecipients = await getActiveUsersByRoles(adminClient, ['finance', 'admin'], [actorUserId]);
+  const dashboardRecipients = await getActiveUsersByRoles(adminClient, ['finance', 'admin']);
   for (const recipient of dashboardRecipients) {
     inserts.push({
       user_id: String(recipient.id),
       role_target: recipient.role as AppRole,
-      type: 'invoice_updated',
+      type: 'submission_reopened',
       title,
       message,
       related_submission_id: relatedSubmissionId,
       related_review_id: null,
+      audit_log_id: auditLogId ?? null,
       target_path: '/dashboard/finance?submission_id=' + relatedSubmissionId,
     });
   }
@@ -251,6 +257,7 @@ export async function createSubmissionReopenedNotifications(params: {
     message,
     related_submission_id: relatedSubmissionId,
     related_review_id: null,
+    audit_log_id: auditLogId ?? null,
     target_path: '/dashboard/submissions?submission_id=' + relatedSubmissionId,
   });
 
@@ -259,11 +266,12 @@ export async function createSubmissionReopenedNotifications(params: {
     inserts.push({
       user_id: teamLeadId,
       role_target: 'team_lead',
-      type: 'invoice_updated',
+      type: 'submission_reopened',
       title,
       message,
       related_submission_id: relatedSubmissionId,
       related_review_id: null,
+      audit_log_id: auditLogId ?? null,
       target_path: '/dashboard/team-submissions?submission_id=' + relatedSubmissionId,
     });
   }

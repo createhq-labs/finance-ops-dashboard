@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
 
     const { data: submission, error: submissionError } = await userClient
       .from('intake_submissions')
-      .select('id, submitted_by, proforma_invoice, agency_brand_name, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closed, closure_status, rejection_note')
+      .select('id, submitted_by, proforma_invoice, agency_brand_name, business_line, financial_year, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closed, closure_status, rejection_note, reviewed_at')
       .eq('id', body.submission_id)
       .single();
 
@@ -140,10 +140,14 @@ export async function POST(req: NextRequest) {
     }
     const currentSubmission = submission;
     const submissionLabel = submissionPiLabel(currentSubmission.proforma_invoice);
+    const actorDisplayName = String(((appUser as { full_name?: string | null }).full_name ?? '').trim() || appUser.email);
 
     const patch: Record<string, unknown> = {};
     const now = new Date().toISOString();
     let activityAction: string = body.action;
+    let activityFromStatus: string | null = null;
+    let activityToStatus: string | null = null;
+    let notificationAuditAction: string | null = null;
     let notificationTitle = '';
     let notificationMessage = '';
     let notificationType: 'submission_rejected' | 'resubmission_requested' | 'submission_reopened' | 'invoice_updated' | null = null;
@@ -180,7 +184,10 @@ export async function POST(req: NextRequest) {
       patch.rejection_note = null;
       patch.finance_comment = null;
       activityAction = 'submission_approved';
+      activityFromStatus = currentSubmission.intake_status ?? null;
+      activityToStatus = 'accepted';
       notificationType = 'invoice_updated';
+      notificationAuditAction = 'submission_approved';
       notificationTitle = 'Submission approved';
       notificationMessage = `${submissionLabel} has been approved by finance.`;
       changed = true;
@@ -199,7 +206,10 @@ export async function POST(req: NextRequest) {
       patch.rejection_note = note;
       patch.finance_comment = note;
       activityAction = 'submission_rejected';
+      activityFromStatus = currentSubmission.intake_status ?? null;
+      activityToStatus = 'rejected';
       notificationType = 'submission_rejected';
+      notificationAuditAction = 'submission_rejected';
       notificationTitle = 'Submission rejected';
       notificationMessage = `${submissionLabel} was rejected: ${note}`;
       changed = true;
@@ -218,7 +228,10 @@ export async function POST(req: NextRequest) {
       patch.rejection_note = note;
       patch.finance_comment = note;
       activityAction = 'resubmission_requested';
+      activityFromStatus = currentSubmission.intake_status ?? null;
+      activityToStatus = 'rejected';
       notificationType = 'resubmission_requested';
+      notificationAuditAction = 'resubmission_requested';
       notificationTitle = 'Resubmission requested';
       notificationMessage = `Resubmission requested for ${submissionLabel}: ${note}`;
       changed = true;
@@ -241,7 +254,10 @@ export async function POST(req: NextRequest) {
       if (body.invoice_number !== undefined) patch.invoice_number = body.invoice_number.trim() || null;
       if (body.debit_note_number !== undefined) patch.debit_note_number = body.debit_note_number.trim() || null;
       activityAction = 'invoice_created';
+      activityFromStatus = currentSubmission.invoice_status ?? null;
+      activityToStatus = nextInvoiceStatus ?? null;
       notificationType = 'invoice_updated';
+      notificationAuditAction = 'invoice_created';
       notificationTitle = 'Invoice status updated';
       notificationMessage = body.invoice_status
         ? `${submissionLabel} is now marked as ${invoiceStatusLabel(nextInvoiceStatus)}.`
@@ -267,7 +283,10 @@ export async function POST(req: NextRequest) {
       patch.reviewed_by = appUser.id;
       patch.reviewed_at = now;
       activityAction = 'debit_note_added';
+      activityFromStatus = currentSubmission.invoice_status ?? null;
+      activityToStatus = nextInvoiceStatus ?? null;
       notificationType = 'invoice_updated';
+      notificationAuditAction = 'debit_note_added';
       notificationTitle = 'Debit note added';
       notificationMessage = `${submissionLabel} invoice status is now ${invoiceStatusLabel(nextInvoiceStatus)}.`;
       changed = true;
@@ -318,7 +337,16 @@ export async function POST(req: NextRequest) {
       patch.reviewed_by = appUser.id;
       patch.reviewed_at = now;
       activityAction = 'payment_status_updated';
+      activityFromStatus = currentSubmission.payment_made_status ?? currentSubmission.payment_received_status ?? currentSubmission.creator_invoice_status ?? null;
+      activityToStatus = body.payment_made_status ?? body.payment_received_status ?? body.creator_invoice_status ?? null;
       notificationType = 'invoice_updated';
+      notificationAuditAction = body.payment_received_status
+        ? 'payment_received'
+        : body.creator_invoice_status
+          ? 'creator_invoice_received'
+          : body.payment_made_status
+            ? 'payment_made'
+            : 'payment_status_updated';
       notificationTitle = 'Payment status updated';
       notificationMessage = `${submissionLabel} finance tracking was updated by finance.`;
       changed = true;
@@ -336,14 +364,17 @@ export async function POST(req: NextRequest) {
       patch.reviewed_at = now;
       const reopeningClosedSubmission = currentClosureStatus === 'closed' && closureStatus === 'open';
       activityAction = reopeningClosedSubmission ? 'submission_reopened' : 'submission_closed';
+      activityFromStatus = currentClosureStatus;
+      activityToStatus = closureStatus;
       notificationType = reopeningClosedSubmission ? 'submission_reopened' : 'invoice_updated';
+      notificationAuditAction = reopeningClosedSubmission ? 'submission_reopened' : 'submission_closed';
       notificationTitle = reopeningClosedSubmission
-        ? 'Submission reopened'
+        ? 'Closed submission reopened'
         : closureStatus === 'cancelled'
           ? 'Submission cancelled'
           : 'Submission closed';
       notificationMessage = reopeningClosedSubmission
-        ? `${submissionLabel} was reopened by finance.`
+        ? submissionLabel + ' was reopened by ' + actorDisplayName + '. Previous status: ' + currentClosureStatus + '. Current status: ' + closureStatus + '.'
         : `${submissionLabel} is now ${closureStatus}.`;
       changed = true;
     }
@@ -363,43 +394,210 @@ export async function POST(req: NextRequest) {
       throw new Error(updateError?.message ?? 'Failed to update submission');
     }
 
-    await Promise.all([
-      logSubmissionAction(userClient, appUser.id, body.submission_id, activityAction, {
-        actor_role: appUser.role,
-        previous: {
-          intake_status: submission.intake_status,
-          invoice_status: submission.invoice_status,
-          invoice_number: submission.invoice_number,
-          debit_note_number: submission.debit_note_number,
-          payment_received_status: submission.payment_received_status,
-          payment_made_status: submission.payment_made_status,
-          closure_status: submission.closure_status,
-          rejection_note: submission.rejection_note,
-          finance_notes: submission.finance_notes,
-          finance_external_notes: submission.finance_external_notes,
+    const activityEntries: Array<{
+      action: string;
+      details: Record<string, unknown>;
+      structured: {
+        action_type: string;
+        from_status?: string | null;
+        to_status?: string | null;
+        entity_type: 'submission';
+        entity_id: string;
+        metadata: Record<string, unknown>;
+      };
+    }> = [];
+
+    if (!currentSubmission.reviewed_at) {
+      activityEntries.push({
+        action: 'finance_review_started',
+        details: {
+          message: `Finance review started for ${submissionLabel}.`,
+          pi_number: currentSubmission.proforma_invoice,
+          business_line: currentSubmission.business_line ?? null,
         },
-        next: patch,
-      }),
-      notificationType
-        ? notificationType === 'submission_reopened'
-          ? createSubmissionReopenedNotifications({
-              adminClient,
-              actorUserId: appUser.id,
-              submittedBy: String(currentSubmission.submitted_by),
-              title: notificationTitle,
-              message: notificationMessage,
-              relatedSubmissionId: body.submission_id,
-            })
-          : createEmployeeNotification({
-              adminClient,
-              submittedBy: String(currentSubmission.submitted_by),
-              type: notificationType,
-              title: notificationTitle,
-              message: notificationMessage,
-              relatedSubmissionId: body.submission_id,
-            })
-        : Promise.resolve({ success: true, created: 0 }),
-    ]);
+        structured: {
+          action_type: 'finance_review_started',
+          from_status: null,
+          to_status: currentSubmission.intake_status ?? 'under_review',
+          entity_type: 'submission',
+          entity_id: body.submission_id,
+          metadata: {
+            pi_number: currentSubmission.proforma_invoice,
+            business_line: currentSubmission.business_line ?? null,
+            actor_role: appUser.role,
+            actor_name: actorDisplayName,
+          },
+        },
+      });
+    }
+
+    if (body.action === 'update_payment_status') {
+      const statusEvents = [
+        {
+          changed: Boolean(body.payment_received_status) && currentSubmission.payment_received_status !== body.payment_received_status,
+          action: 'payment_received',
+          fromStatus: currentSubmission.payment_received_status ?? null,
+          toStatus: body.payment_received_status ?? null,
+          message: `Payment received status updated for ${submissionLabel}.`,
+          oldValue: currentSubmission.payment_received_status ?? null,
+          newValue: body.payment_received_status ?? null,
+        },
+        {
+          changed: Boolean(body.creator_invoice_status) && currentSubmission.creator_invoice_status !== body.creator_invoice_status,
+          action: 'creator_invoice_received',
+          fromStatus: currentSubmission.creator_invoice_status ?? null,
+          toStatus: body.creator_invoice_status ?? null,
+          message: `Creator invoice status updated for ${submissionLabel}.`,
+          oldValue: currentSubmission.creator_invoice_status ?? null,
+          newValue: body.creator_invoice_status ?? null,
+        },
+        {
+          changed: Boolean(body.payment_made_status) && currentSubmission.payment_made_status !== body.payment_made_status,
+          action: 'payment_made',
+          fromStatus: currentSubmission.payment_made_status ?? null,
+          toStatus: body.payment_made_status ?? null,
+          message: `Payment made status updated for ${submissionLabel}.`,
+          oldValue: currentSubmission.payment_made_status ?? null,
+          newValue: body.payment_made_status ?? null,
+        },
+      ];
+
+      for (const event of statusEvents) {
+        if (!event.changed) continue;
+        activityEntries.push({
+          action: event.action,
+          details: {
+            message: event.message,
+            old_value: event.oldValue,
+            new_value: event.newValue,
+          },
+          structured: {
+            action_type: event.action,
+            from_status: event.fromStatus,
+            to_status: event.toStatus,
+            entity_type: 'submission',
+            entity_id: body.submission_id,
+            metadata: {
+              pi_number: currentSubmission.proforma_invoice,
+              business_line: currentSubmission.business_line ?? null,
+              old_value: event.oldValue,
+              new_value: event.newValue,
+              actor_role: appUser.role,
+              financial_year: currentSubmission.financial_year ?? null,
+              module: 'finance',
+            },
+          },
+        });
+      }
+
+      if (activityEntries.length === 0 || (activityEntries.length === 1 && activityEntries[0].action === 'finance_review_started')) {
+        activityEntries.push({
+          action: activityAction,
+          details: {
+            message: `Finance tracking updated for ${submissionLabel}.`,
+            actor_role: appUser.role,
+            actor_name: actorDisplayName,
+            previous: {
+              finance_notes: submission.finance_notes,
+              finance_external_notes: submission.finance_external_notes,
+            },
+            next: patch,
+          },
+          structured: {
+            action_type: activityAction,
+            from_status: activityFromStatus,
+            to_status: activityToStatus,
+            entity_type: 'submission',
+            entity_id: body.submission_id,
+            metadata: {
+              pi_number: currentSubmission.proforma_invoice,
+              submission_id: body.submission_id,
+              actor_role: appUser.role,
+              previous_intake_status: submission.intake_status,
+              previous_closure_status: submission.closure_status ?? submission.closed,
+              financial_year: currentSubmission.financial_year ?? null,
+              module: 'finance',
+            },
+          },
+        });
+      }
+    } else {
+      activityEntries.push({
+        action: activityAction,
+        details: {
+          message: `${activityAction} applied to ${submissionLabel}.`,
+          actor_role: appUser.role,
+          previous: {
+            intake_status: submission.intake_status,
+            invoice_status: submission.invoice_status,
+            invoice_number: submission.invoice_number,
+            debit_note_number: submission.debit_note_number,
+            payment_received_status: submission.payment_received_status,
+            payment_made_status: submission.payment_made_status,
+            closure_status: submission.closure_status,
+            rejection_note: submission.rejection_note,
+            finance_notes: submission.finance_notes,
+            finance_external_notes: submission.finance_external_notes,
+          },
+          next: patch,
+        },
+        structured: {
+          action_type: activityAction,
+          from_status: activityFromStatus,
+          to_status: activityToStatus,
+          entity_type: 'submission',
+          entity_id: body.submission_id,
+          metadata: {
+            pi_number: currentSubmission.proforma_invoice,
+            submission_id: body.submission_id,
+            actor_role: appUser.role,
+            actor_name: actorDisplayName,
+            business_line: currentSubmission.business_line ?? null,
+            previous_intake_status: submission.intake_status,
+            previous_closure_status: submission.closure_status ?? submission.closed,
+          },
+        },
+      });
+    }
+
+    let auditLogId = '';
+    for (const entry of activityEntries) {
+      const createdLogId = await logSubmissionAction(
+        userClient,
+        appUser.id,
+        body.submission_id,
+        entry.action,
+        entry.details,
+        entry.structured
+      );
+      if (!auditLogId && (!notificationAuditAction || entry.structured.action_type === notificationAuditAction)) {
+        auditLogId = createdLogId;
+      }
+    }
+
+    if (notificationType) {
+      if (notificationType === 'submission_reopened') {
+        await createSubmissionReopenedNotifications({
+          adminClient,
+          actorUserId: appUser.id,
+          submittedBy: String(currentSubmission.submitted_by),
+          title: notificationTitle,
+          message: notificationMessage,
+          relatedSubmissionId: body.submission_id,
+          auditLogId,
+        });
+      } else {
+        await createEmployeeNotification({
+          adminClient,
+          submittedBy: String(currentSubmission.submitted_by),
+          type: notificationType,
+          title: notificationTitle,
+          message: notificationMessage,
+          relatedSubmissionId: body.submission_id,
+          auditLogId,
+        });
+      }
+    }
 
     return NextResponse.json({ success: true, changed: true, submission: updated }, { status: 200 });
   } catch (error) {
