@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ENTITY_TYPES } from "../constants";
 import { SearchableSelect } from "../searchable-select";
 import type { InvoiceIntakeFormValues } from "../types";
@@ -13,6 +13,8 @@ type Props = {
   brandTradeNameOptions: string[];
   agencyTradeNameMap: Record<string, string>;
   brandTradeNameMap: Record<string, string>;
+  agencyNameMap: Record<string, string>;
+  brandNameMap: Record<string, string>;
 };
 
 export function BillingEntitySection({
@@ -25,12 +27,13 @@ export function BillingEntitySection({
   brandTradeNameOptions,
   agencyTradeNameMap,
   brandTradeNameMap,
+  agencyNameMap,
+  brandNameMap,
 }: Props) {
   const [gstTouched, setGstTouched] = useState(false);
   const [pincodeTouched, setPincodeTouched] = useState(false);
   const [cityTouched, setCityTouched] = useState(false);
   const [stateTouched, setStateTouched] = useState(false);
-  const [tradeNameOverridden, setTradeNameOverridden] = useState(false);
   const gstInputRef = useRef<HTMLInputElement | null>(null);
   const gst = (values.gstNumber || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const isIndianClient = values.clientType === "Indian";
@@ -98,10 +101,10 @@ export function BillingEntitySection({
     () => (values.entityType === "Agency" ? agencyTradeNameMap : brandTradeNameMap),
     [agencyTradeNameMap, brandTradeNameMap, values.entityType]
   );
-
-  useEffect(() => {
-    setTradeNameOverridden(false);
-  }, [values.entityType]);
+  const entityNameMap = useMemo(
+    () => (values.entityType === "Agency" ? agencyNameMap : brandNameMap),
+    [agencyNameMap, brandNameMap, values.entityType]
+  );
 
   function formatGst(raw: string) {
     const p1 = raw.slice(0, 2);
@@ -216,8 +219,8 @@ export function BillingEntitySection({
             panelMaxHeight={160}
             onChange={(next) => {
               onChange("agencyBrandName", next);
-              if (!tradeNameOverridden) {
-                const mappedTradeName = tradeNameMap[next.trim().toLowerCase()] ?? "";
+              const mappedTradeName = tradeNameMap[next.trim().toLowerCase()];
+              if (mappedTradeName) {
                 onChange("agencyBrandTradeName", mappedTradeName);
               }
             }}
@@ -238,8 +241,11 @@ export function BillingEntitySection({
             allowCustom
             panelMaxHeight={160}
             onChange={(next) => {
-              setTradeNameOverridden(true);
               onChange("agencyBrandTradeName", next);
+              const mappedEntityName = entityNameMap[next.trim().toLowerCase()];
+              if (mappedEntityName) {
+                onChange("agencyBrandName", mappedEntityName);
+              }
             }}
             placeholder={`Select ${values.entityType.toLowerCase()} trade name`}
             data-field="agencyBrandTradeName"
@@ -354,3 +360,7 @@ export function BillingEntitySection({
     </section>
   );
 }
+
+
+
+

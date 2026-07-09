@@ -4,6 +4,7 @@ import type { AppUser, SanitizedLineItemPayload, SanitizedSubmissionPayload } fr
 type CreateSubmissionResult =
   | {
       success: true;
+      pi_allocation_pending: boolean;
       submission: { id: string; proforma_invoice: string | null; sync_status: string | null; currency: string | null; financial_year: string | null };
     }
   | {
@@ -104,9 +105,10 @@ export async function createSubmissionWithLineItems(params: {
     financial_year: getFinancialYearLabel(submissionPayload.submitted_at),
     ...(submissionPayload.previous_submission_id
       ? { proforma_invoice: carryForwardPi ?? null }
-      : shouldSkipPi
-        ? { proforma_invoice: null }
-        : {}),
+      : {
+          // New submissions stay PI-null until the final gap-free transactional allocation step.
+          proforma_invoice: null,
+        }),
   };
 
   const { data: submission, error: submissionError } = await userClient
@@ -156,5 +158,26 @@ export async function createSubmissionWithLineItems(params: {
     }
   }
 
-  return { success: true, submission };
+  return {
+    success: true,
+    pi_allocation_pending: !submissionPayload.previous_submission_id && !shouldSkipPi,
+    submission,
+  };
+}
+
+export async function allocateGapFreePiForSubmission(adminClient: SupabaseClient, submissionId: string) {
+  const { data, error } = await adminClient.rpc('allocate_gap_free_pi', {
+    p_submission_id: submissionId,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const piNumber = String(data ?? '').trim();
+  if (!piNumber) {
+    throw new Error('Failed to allocate PI number.');
+  }
+
+  return piNumber;
 }

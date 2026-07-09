@@ -30,3 +30,7 @@ export function clearAuthCookies(res: NextResponse) {
 export function getAccessTokenFromCookieHeader(cookieStore: { get(name: string): { value: string } | undefined }) {
   return cookieStore.get(ACCESS_COOKIE)?.value ?? null;
 }
+
+export function getRefreshTokenFromCookieHeader(cookieStore: { get(name: string): { value: string } | undefined }) {
+  return cookieStore.get(REFRESH_COOKIE)?.value ?? null;
+}

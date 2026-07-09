@@ -5,7 +5,7 @@ import { logActivityEvent, logSubmissionCreated } from '../../../../lib/server/s
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
 import { createPendingMasterDataReviews } from '../../../../lib/server/services/masterDataReviews';
 import { createFinanceAndAdminSubmissionNotifications, createPendingMasterReviewNotifications } from '../../../../lib/server/services/notifications';
-import { createSubmissionWithLineItems } from '../../../../lib/server/services/submissions';
+import { allocateGapFreePiForSubmission, createSubmissionWithLineItems } from '../../../../lib/server/services/submissions';
 import {
   uploadProductReimbursementAttachment,
   uploadReferencePoAttachment,
@@ -51,6 +51,14 @@ async function cleanupFailedSubmission(adminClient: ReturnType<typeof createServ
         superseded_at: null,
       })
       .eq('id', previousSubmissionId);
+  }
+}
+
+async function runNonCriticalSideEffect(label: string, effect: () => Promise<void>) {
+  try {
+    await effect();
+  } catch (error) {
+    console.error(label, error);
   }
 }
 
@@ -194,140 +202,176 @@ export async function POST(req: NextRequest) {
       lineItemsPayload,
     });
 
-    await createFinanceAndAdminSubmissionNotifications({
-      adminClient,
-      appUser,
-      submissionId: result.submission.id,
-      piNumber: result.submission.proforma_invoice ?? 'No PI Required',
-      entityName: submissionPayload.agency_brand_name,
-      isResubmission: Boolean(submissionPayload.previous_submission_id),
-    });
+    let assignedPiNumber = result.submission.proforma_invoice;
 
-    if (masterReviewResult.success && masterReviewResult.createdReviews.length > 0) {
-      await createPendingMasterReviewNotifications({
+    if (result.pi_allocation_pending) {
+      try {
+        assignedPiNumber = await allocateGapFreePiForSubmission(adminClient, result.submission.id);
+      } catch (piError) {
+        await cleanupFailedSubmission(adminClient, result.submission.id, submissionPayload.previous_submission_id);
+        const message = piError instanceof Error ? piError.message : 'Failed to allocate PI number.';
+        return NextResponse.json(
+          {
+            success: false,
+            stage: 'assign_pi',
+            error: message,
+            sync_status: { supabase: 'failed', sheets: 'pending_sheet_sync' },
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    const resolvedPiNumber = assignedPiNumber ?? 'No PI Required';
+
+    await runNonCriticalSideEffect('createFinanceAndAdminSubmissionNotifications failed', async () => {
+      await createFinanceAndAdminSubmissionNotifications({
         adminClient,
         appUser,
         submissionId: result.submission.id,
-        createdReviews: masterReviewResult.createdReviews,
+        piNumber: resolvedPiNumber,
+        entityName: submissionPayload.agency_brand_name,
+        isResubmission: Boolean(submissionPayload.previous_submission_id),
+      });
+    });
+
+    if (masterReviewResult.success && masterReviewResult.createdReviews.length > 0) {
+      await runNonCriticalSideEffect('createPendingMasterReviewNotifications failed', async () => {
+        await createPendingMasterReviewNotifications({
+          adminClient,
+          appUser,
+          submissionId: result.submission.id,
+          createdReviews: masterReviewResult.createdReviews,
+        });
       });
     }
 
-    await logSubmissionCreated(userClient, appUser.id, result.submission.id, {
-      role: appUser.role,
-      line_items_count: lineItemsPayload.length,
-      intake_status: 'submitted',
-      sync_status: 'pending_sheet_sync',
-      pending_master_reviews_created: masterReviewResult.success ? masterReviewResult.created : 0,
-    financial_year: result.submission.financial_year ?? null,
+    await runNonCriticalSideEffect('logSubmissionCreated failed', async () => {
+      await logSubmissionCreated(userClient, appUser.id, result.submission.id, {
+        role: appUser.role,
+        line_items_count: lineItemsPayload.length,
+        intake_status: 'submitted',
+        sync_status: 'pending_sheet_sync',
+        pending_master_reviews_created: masterReviewResult.success ? masterReviewResult.created : 0,
+        financial_year: result.submission.financial_year ?? null,
+      });
     });
 
     if (submissionPayload.previous_submission_id) {
-      await logActivityEvent(userClient, {
-        actorUserId: appUser.id,
-        submissionId: result.submission.id,
-        action: 'submission_resubmitted',
-        details: {
-          message: `Submission ${result.submission.id} was resubmitted.`,
-          previous_submission_id: submissionPayload.previous_submission_id,
-          pi_number: result.submission.proforma_invoice,
-          business_line: submissionPayload.business_line,
-        financial_year: result.submission.financial_year ?? null,
-        module: 'finance',
-        },
-        structured: {
-          action_type: 'submission_resubmitted',
-          entity_type: 'submission',
-          entity_id: result.submission.id,
-          metadata: {
+      await runNonCriticalSideEffect('submission_resubmitted activity log failed', async () => {
+        await logActivityEvent(userClient, {
+          actorUserId: appUser.id,
+          submissionId: result.submission.id,
+          action: 'submission_resubmitted',
+          details: {
+            message: 'Submission ' + result.submission.id + ' was resubmitted.',
             previous_submission_id: submissionPayload.previous_submission_id,
-            pi_number: result.submission.proforma_invoice,
+            pi_number: assignedPiNumber,
             business_line: submissionPayload.business_line,
             financial_year: result.submission.financial_year ?? null,
             module: 'finance',
           },
-        },
+          structured: {
+            action_type: 'submission_resubmitted',
+            entity_type: 'submission',
+            entity_id: result.submission.id,
+            metadata: {
+              previous_submission_id: submissionPayload.previous_submission_id,
+              pi_number: assignedPiNumber,
+              business_line: submissionPayload.business_line,
+              financial_year: result.submission.financial_year ?? null,
+              module: 'finance',
+            },
+          },
+        });
       });
 
-      await logActivityEvent(userClient, {
-        actorUserId: appUser.id,
-        submissionId: submissionPayload.previous_submission_id,
-        action: 'submission_superseded',
-        details: {
-          message: `Submission ${submissionPayload.previous_submission_id} was superseded.`,
-          new_submission_id: result.submission.id,
-          pi_number: result.submission.proforma_invoice,
-          business_line: submissionPayload.business_line,
-        financial_year: result.submission.financial_year ?? null,
-        module: 'finance',
-        },
-        structured: {
-          action_type: 'submission_superseded',
-          entity_type: 'submission',
-          entity_id: submissionPayload.previous_submission_id,
-          metadata: {
+      await runNonCriticalSideEffect('submission_superseded activity log failed', async () => {
+        await logActivityEvent(userClient, {
+          actorUserId: appUser.id,
+          submissionId: submissionPayload.previous_submission_id,
+          action: 'submission_superseded',
+          details: {
+            message: 'Submission ' + submissionPayload.previous_submission_id + ' was superseded.',
             new_submission_id: result.submission.id,
-            pi_number: result.submission.proforma_invoice,
+            pi_number: assignedPiNumber,
             business_line: submissionPayload.business_line,
             financial_year: result.submission.financial_year ?? null,
             module: 'finance',
           },
-        },
+          structured: {
+            action_type: 'submission_superseded',
+            entity_type: 'submission',
+            entity_id: submissionPayload.previous_submission_id,
+            metadata: {
+              new_submission_id: result.submission.id,
+              pi_number: assignedPiNumber,
+              business_line: submissionPayload.business_line,
+              financial_year: result.submission.financial_year ?? null,
+              module: 'finance',
+            },
+          },
+        });
       });
     }
 
     if (productReimbursementAttachment) {
-      await logActivityEvent(userClient, {
-        actorUserId: appUser.id,
-        submissionId: result.submission.id,
-        action: 'reimbursement_uploaded',
-        details: {
-          message: `Product reimbursement file ${productReimbursementAttachment.file_name} was uploaded.`,
-          document_type: productReimbursementAttachment.document_type,
-          file_name: productReimbursementAttachment.file_name,
-          financial_year: result.submission.financial_year ?? null,
-          module: 'attachments',
-        },
-        structured: {
-          action_type: 'reimbursement_uploaded',
-          entity_type: 'submission_attachment',
-          entity_id: productReimbursementAttachment.id,
-          metadata: {
-            pi_number: result.submission.proforma_invoice,
-            business_line: submissionPayload.business_line,
+      await runNonCriticalSideEffect('reimbursement_uploaded activity log failed', async () => {
+        await logActivityEvent(userClient, {
+          actorUserId: appUser.id,
+          submissionId: result.submission.id,
+          action: 'reimbursement_uploaded',
+          details: {
+            message: 'Product reimbursement file ' + productReimbursementAttachment.file_name + ' was uploaded.',
             document_type: productReimbursementAttachment.document_type,
             file_name: productReimbursementAttachment.file_name,
             financial_year: result.submission.financial_year ?? null,
             module: 'attachments',
           },
-        },
+          structured: {
+            action_type: 'reimbursement_uploaded',
+            entity_type: 'submission_attachment',
+            entity_id: productReimbursementAttachment.id,
+            metadata: {
+              pi_number: assignedPiNumber,
+              business_line: submissionPayload.business_line,
+              document_type: productReimbursementAttachment.document_type,
+              file_name: productReimbursementAttachment.file_name,
+              financial_year: result.submission.financial_year ?? null,
+              module: 'attachments',
+            },
+          },
+        });
       });
     }
 
     if (referencePoAttachment) {
-      await logActivityEvent(userClient, {
-        actorUserId: appUser.id,
-        submissionId: result.submission.id,
-        action: 'reference_po_uploaded',
-        details: {
-          message: `Reference PO file ${referencePoAttachment.file_name} was uploaded.`,
-          document_type: referencePoAttachment.document_type,
-          file_name: referencePoAttachment.file_name,
-          financial_year: result.submission.financial_year ?? null,
-          module: 'attachments',
-        },
-        structured: {
-          action_type: 'reference_po_uploaded',
-          entity_type: 'submission_attachment',
-          entity_id: referencePoAttachment.id,
-          metadata: {
-            pi_number: result.submission.proforma_invoice,
-            business_line: submissionPayload.business_line,
+      await runNonCriticalSideEffect('reference_po_uploaded activity log failed', async () => {
+        await logActivityEvent(userClient, {
+          actorUserId: appUser.id,
+          submissionId: result.submission.id,
+          action: 'reference_po_uploaded',
+          details: {
+            message: 'Reference PO file ' + referencePoAttachment.file_name + ' was uploaded.',
             document_type: referencePoAttachment.document_type,
             file_name: referencePoAttachment.file_name,
             financial_year: result.submission.financial_year ?? null,
             module: 'attachments',
           },
-        },
+          structured: {
+            action_type: 'reference_po_uploaded',
+            entity_type: 'submission_attachment',
+            entity_id: referencePoAttachment.id,
+            metadata: {
+              pi_number: assignedPiNumber,
+              business_line: submissionPayload.business_line,
+              document_type: referencePoAttachment.document_type,
+              file_name: referencePoAttachment.file_name,
+              financial_year: result.submission.financial_year ?? null,
+              module: 'attachments',
+            },
+          },
+        });
       });
     }
 
@@ -335,7 +379,7 @@ export async function POST(req: NextRequest) {
       {
         success: true,
         submission_id: result.submission.id,
-        pi_number: result.submission.proforma_invoice,
+        pi_number: assignedPiNumber,
         currency: result.submission.currency ?? submissionPayload.currency,
         master_data_reviews: masterReviewResult,
         sync_status: {
