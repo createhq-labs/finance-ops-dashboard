@@ -522,6 +522,40 @@ export function InvoiceIntakeForm({
       }, {}),
     [masters.brands]
   );
+  const agencyNameMap = useMemo(() => {
+    const grouped = masters.agencies.reduce<Record<string, Set<string>>>((acc, row) => {
+      if (!row.name || !row.tradeName) return acc;
+      const key = row.tradeName.trim().toLowerCase();
+      if (!key) return acc;
+      acc[key] ??= new Set();
+      acc[key].add(row.name.trim());
+      return acc;
+    }, {});
+
+    return Object.entries(grouped).reduce<Record<string, string>>((acc, [key, names]) => {
+      if (names.size === 1) {
+        acc[key] = Array.from(names)[0];
+      }
+      return acc;
+    }, {});
+  }, [masters.agencies]);
+  const brandNameMap = useMemo(() => {
+    const grouped = masters.brands.reduce<Record<string, Set<string>>>((acc, row) => {
+      if (!row.name || !row.tradeName) return acc;
+      const key = row.tradeName.trim().toLowerCase();
+      if (!key) return acc;
+      acc[key] ??= new Set();
+      acc[key].add(row.name.trim());
+      return acc;
+    }, {});
+
+    return Object.entries(grouped).reduce<Record<string, string>>((acc, [key, names]) => {
+      if (names.size === 1) {
+        acc[key] = Array.from(names)[0];
+      }
+      return acc;
+    }, {});
+  }, [masters.brands]);
 
   function clearErrors(keys: string[]) {
     setFieldErrors((prev) => {
@@ -1179,6 +1213,8 @@ export function InvoiceIntakeForm({
         brandTradeNameOptions={brandTradeNameOptions}
         agencyTradeNameMap={agencyTradeNameMap}
         brandTradeNameMap={brandTradeNameMap}
+        agencyNameMap={agencyNameMap}
+        brandNameMap={brandNameMap}
       />
       <InvoiceDetailsSection values={values} onChange={update} errors={fieldErrors} />
       <CreatorDeliverablesSection
@@ -1218,3 +1254,4 @@ export function InvoiceIntakeForm({
     </form>
   );
 }
+

@@ -138,6 +138,11 @@ export function CreatorDeliverablesSection({
             gap: 12px;
             grid-template-columns: repeat(1, minmax(0, 1fr));
           }
+          .campaign-grid-foreign {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(1, minmax(0, 1fr));
+          }
           .campaign-extra-grid {
             display: grid;
             gap: 12px;
@@ -148,17 +153,23 @@ export function CreatorDeliverablesSection({
             .campaign-grid {
               grid-template-columns: repeat(2, minmax(0, 1fr));
             }
+            .campaign-grid-foreign {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
           }
           @media (min-width: 1024px) {
             .campaign-grid {
-              grid-template-columns: repeat(5, minmax(0, 1fr));
+              grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+            }
+            .campaign-grid-foreign {
+              grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 160px minmax(0, 1fr);
             }
             .campaign-extra-grid {
               grid-template-columns: repeat(3, minmax(0, 1fr));
             }
           }
         `}</style>
-        <div className="campaign-grid">
+        <div className={showCurrency ? "campaign-grid-foreign" : "campaign-grid"}>
           <label className="intake-field">
             <span className="intake-label">Campaign Code *</span>
             <input className="intake-input" value={values.campaignCode} onChange={(e) => onChange("campaignCode", e.target.value)} data-field="campaignCode" autoComplete="off" />
