@@ -8,6 +8,7 @@ import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
+import { SearchableSelect } from '../../../../components/forms/searchable-select';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { getDefaultDashboardPath, getDrawerViewerRole } from '../../../../lib/client/dashboard-access';
@@ -413,16 +414,16 @@ export default function TransferredSubmissionsClient() {
               </label>
               <label className="grid gap-1">
                 <span className="text-xs font-medium text-muted-foreground">Status</span>
-                <select
-                  className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
+                <SearchableSelect
                   value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value as 'all' | SubmissionRow['intake_status'])}
-                >
-                  <option value="all">All</option>
-                  <option value="submitted">Submitted</option>
-                  <option value="accepted">Accepted</option>
-                  <option value="rejected">Rejected</option>
-                </select>
+                  onChange={(next) => setStatusFilter(next as 'all' | SubmissionRow['intake_status'])}
+                  options={[
+                    { value: 'all', label: 'All' },
+                    { value: 'submitted', label: 'Submitted' },
+                    { value: 'accepted', label: 'Accepted' },
+                    { value: 'rejected', label: 'Rejected' },
+                  ]}
+                />
               </label>
               <label className="grid gap-1">
                 <span className="text-xs font-medium text-muted-foreground">Transferred From</span>
