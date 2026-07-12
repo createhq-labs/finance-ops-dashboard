@@ -1,7 +1,7 @@
 import { MultiCreatorRows, ProductReimbursementField, SingleCreatorRows } from "../invoice-line-items";
 import { SearchableSelect } from "../searchable-select";
 import type { InvoiceIntakeFormValues } from "../types";
-import { CURRENCY_OPTIONS } from "../../../lib/shared/currency";
+import { CURRENCY_OPTIONS, CURRENCY_SEARCH_TEXT_BY_OPTION } from "../../../lib/shared/currency";
 
 type Props = {
   values: InvoiceIntakeFormValues;
@@ -46,6 +46,7 @@ function CurrencyField({
         placeholder="Select currency"
         dataField="currency"
         panelMaxHeight={160}
+        searchTextByOption={CURRENCY_SEARCH_TEXT_BY_OPTION}
       />
     </label>
   );
@@ -266,12 +267,6 @@ export function CreatorDeliverablesSection({
             {errors.creatorDeliverables ? <p className="text-danger intake-inline-error">{errors.creatorDeliverables}</p> : null}
           </div>
         </div>
-
-        <label className="intake-field intake-field-wide">
-          <span className="intake-label">Campaign Notes</span>
-          <textarea className="intake-input intake-textarea" rows={1} value={values.campaignNotes} onChange={(e) => onChange("campaignNotes", e.target.value)} data-field="campaignNotes" style={{ minHeight: 36, maxHeight: 140, overflowY: "auto" }} />
-          <div style={{ minHeight: 16 }} />
-        </label>
       </div>
     </section>
   );

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DeliverableAmountRow, MultiCreatorRow } from "./types";
-import { CURRENCY_OPTIONS } from "../../lib/shared/currency";
+import { CURRENCY_OPTIONS, CURRENCY_SEARCH_TEXT_BY_OPTION } from "../../lib/shared/currency";
 import { SearchableSelect } from "./searchable-select";
 
 function CurrencyField({
@@ -18,6 +18,7 @@ function CurrencyField({
         onChange={onChange}
         placeholder="INR"
         dataField="currency"
+        searchTextByOption={CURRENCY_SEARCH_TEXT_BY_OPTION}
       />
       <div style={{ minHeight: 16 }} />
     </div>
@@ -275,9 +276,10 @@ export function SingleCreatorRows({
                 <div className="grid gap-1">
                   <input
                     className="intake-input"
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
                     placeholder={`Amount ${currency}`}
                     value={row.amount}
                     onChange={(e) => onRowChange(idx, { amount: e.target.value })}
@@ -421,9 +423,10 @@ export function MultiCreatorRows({
                 <div className="grid gap-1">
                   <input
                     className="intake-input"
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
                     placeholder={`Amount ${currency}`}
                     value={row.amount}
                     onChange={(e) => onRowChange(idx, { amount: e.target.value })}
