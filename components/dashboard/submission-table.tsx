@@ -190,16 +190,16 @@ type SheetColumnId =
   | 'creator_brand'
   | 'deliverables'
   | 'line_amounts'
-  | 'campaign_code'
   | 'campaign_name'
   | 'campaign_brand'
-  | 'campaign_notes'
+  | 'campaign_code'
+  | 'commercials'
   | 'product_reimbursement_upload'
+  | 'additional_agency_commission'
+  | 'gross_amount'
+  | 'additional_information'
   | 'product_reimbursement_file'
   | 'reference_po_file'
-  | 'commercials'
-  | 'additional_agency_commission'
-  | 'additional_information'
   | 'invoice_number'
   | 'debit_note_number'
   | 'creator_invoice_received'
@@ -244,16 +244,16 @@ const COLUMN_TITLES: Record<SheetColumnId, string> = {
   creator_brand: 'Creator Brand / Brand(s)',
   deliverables: 'Deliverable(s)',
   line_amounts: 'Amount(s)',
-  campaign_code: 'Campaign Code',
   campaign_name: 'Campaign Name',
   campaign_brand: 'Campaign Brand',
-  campaign_notes: 'Campaign Notes',
+  campaign_code: 'Campaign Code',
+  commercials: 'Deal Amount',
   product_reimbursement_upload: 'Product Reimbursement',
+  additional_agency_commission: 'Additional Agency Commission',
+  gross_amount: 'Total/Gross Amount',
+  additional_information: 'Additional Information',
   product_reimbursement_file: 'Product Reimbursement File',
   reference_po_file: 'Reference PO File',
-  commercials: 'Amount',
-  additional_agency_commission: 'Additional Agency Commission',
-  additional_information: 'Additional Information',
   invoice_number: 'Invoice Number',
   debit_note_number: 'Debit Note Number',
   creator_invoice_received: 'Creator Invoice',
@@ -293,16 +293,16 @@ const COLUMN_WIDTHS: Record<SheetColumnId, number> = {
   creator_brand: 150,
   deliverables: 152,
   line_amounts: 168,
-  campaign_code: 108,
   campaign_name: 126,
   campaign_brand: 126,
-  campaign_notes: 144,
-  product_reimbursement_upload: 124,
+  campaign_code: 108,
+  commercials: 170,
+  product_reimbursement_upload: 132,
+  additional_agency_commission: 156,
+  gross_amount: 182,
+  additional_information: 144,
   product_reimbursement_file: 156,
   reference_po_file: 156,
-  commercials: 170,
-  additional_agency_commission: 94,
-  additional_information: 144,
   invoice_number: 104,
   debit_note_number: 104,
   creator_invoice_received: 146,
@@ -721,18 +721,17 @@ function getColumns(
     'bill_due',
     'creator_name',
     'creator_brand',
-    'deliverables',
-    'line_amounts',
-    'product_reimbursement_upload',
-    'product_reimbursement_file',
-    'reference_po_file',
-    'campaign_code',
     'campaign_name',
     'campaign_brand',
-    'campaign_notes',
+    'campaign_code',
     'commercials',
+    'product_reimbursement_upload',
     'additional_agency_commission',
+    'gross_amount',
     'additional_information',
+    'product_reimbursement_file',
+    'reference_po_file',
+    'deliverables',
   ];
   const financeSharedFields: SheetColumnId[] = [
     'email_address',
@@ -752,17 +751,16 @@ function getColumns(
     'deliverables',
     'creator_name',
     'creator_brand',
-    'line_amounts',
-    'product_reimbursement_upload',
-    'product_reimbursement_file',
-    'reference_po_file',
-    'campaign_code',
     'campaign_name',
     'campaign_brand',
-    'campaign_notes',
+    'campaign_code',
     'commercials',
+    'product_reimbursement_upload',
     'additional_agency_commission',
+    'gross_amount',
     'additional_information',
+    'product_reimbursement_file',
+    'reference_po_file',
   ];
 
   if (viewer === 'employee' || viewer === 'team_lead') {
@@ -798,23 +796,67 @@ function getColumns(
         'bill_due',
         'creator_name',
         'creator_brand',
-        'deliverables',
-        'line_amounts',
+        'campaign_name',
+        'campaign_brand',
+        'campaign_code',
+        'commercials',
         'product_reimbursement_upload',
-        'product_reimbursement_file',
-    'reference_po_file',
         'additional_agency_commission',
+        'gross_amount',
         'additional_information',
+        'product_reimbursement_file',
+        'reference_po_file',
+        'deliverables',
         'actions',
       ] satisfies SheetColumnId[];
     }
 
-    if ((viewer === 'employee' || viewer === 'team_lead') && viewerBusinessLine === 'IM') {
+    if (viewer === 'employee' && viewerBusinessLine === 'IM') {
       return [
         ...baseColumns,
         ...invoiceFields,
         'intake_status',
         ...(showImCampaignColumns ? (['campaign_code', 'campaign_name'] as SheetColumnId[]) : []),
+        'submitted_at',
+        'rejection_note',
+        'finance_external_notes',
+        'invoice_status',
+        'payment_received',
+        'creator_invoice_received',
+        'payment_made',
+        'closed_status',
+        'email_address',
+        'business_line',
+        'entity_type',
+        'client_type',
+        'agency_name',
+        'agency_trade_name',
+        'brand_name',
+        'brand_trade_name',
+        'gst_number',
+        'address',
+        ...addressFields,
+        'invoice_type',
+        'bill_due',
+        'creator_brand',
+        'campaign_brand',
+        'deliverables',
+        'commercials',
+        'product_reimbursement_upload',
+        'additional_agency_commission',
+        'gross_amount',
+        'additional_information',
+        'product_reimbursement_file',
+        'reference_po_file',
+        'actions',
+      ] satisfies SheetColumnId[];
+    }
+
+    if (viewer === 'team_lead' && viewerBusinessLine === 'IM') {
+      return [
+        ...baseColumns,
+        ...invoiceFields,
+        'intake_status',
         ...teamLeadColumns,
         'submitted_at',
         'rejection_note',
@@ -838,13 +880,17 @@ function getColumns(
         'invoice_type',
         'bill_due',
         'creator_brand',
-        'deliverables',
-        'line_amounts',
+        ...(showImCampaignColumns ? (['campaign_name'] as SheetColumnId[]) : []),
+        'campaign_brand',
+        ...(showImCampaignColumns ? (['campaign_code'] as SheetColumnId[]) : []),
+        'commercials',
         'product_reimbursement_upload',
-        'product_reimbursement_file',
-    'reference_po_file',
         'additional_agency_commission',
+        'gross_amount',
         'additional_information',
+        'product_reimbursement_file',
+        'reference_po_file',
+        'deliverables',
         'actions',
       ] satisfies SheetColumnId[];
     }
@@ -941,12 +987,14 @@ function ExpandableText({
   onCopy,
   title,
   className,
+  collapseSignal,
 }: {
   value: string;
   copied: boolean;
   onCopy: () => void;
   title?: string;
   className?: string;
+  collapseSignal?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -963,6 +1011,10 @@ function ExpandableText({
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [expanded]);
+
+  useEffect(() => {
+    setExpanded(false);
+  }, [collapseSignal]);
 
   useEffect(() => {
     const element = textRef.current;
@@ -983,6 +1035,7 @@ function ExpandableText({
   return (
     <div
       ref={ref}
+      data-expandable-root="true"
       className="relative h-full max-w-full"
       onClick={(event) => {
         if (!needsClamp || event.detail !== 1) return;
@@ -990,6 +1043,16 @@ function ExpandableText({
       }}
       onDoubleClick={onCopy}
       title={title || value}
+      onKeyDown={(event) => {
+        if (!needsClamp) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          setExpanded((current) => !current);
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          setExpanded(false);
+        }
+      }}
     >
       <CopyNotice active={copied} />
       <div
@@ -1011,6 +1074,7 @@ function ExpandableText({
             setExpanded((current) => !current);
           }}
           className="absolute bottom-0 right-0 inline-flex h-6 w-6 items-center justify-center rounded-md text-[0.68rem] font-semibold text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground"
+          data-expandable-toggle="true"
           aria-label={expanded ? 'Collapse cell' : 'Expand cell'}
         >
           {expanded ? '▴' : '▾'}
@@ -1344,7 +1408,7 @@ function EditableNoteCell({
   }
 
   return (
-    <div className="flex items-start gap-1.5" title={value || label}>
+    <div className="flex items-center gap-1.5" title={value || label}>
       <div className="min-w-0 flex-1">
         <ExpandableText value={value || '—'} copied={copied} onCopy={onCopy} />
       </div>
@@ -1642,7 +1706,10 @@ function BadgeSelectCell({
   onOpenAudit?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [menuRect, setMenuRect] = useState<DOMRect | null>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const tone = getStatusTone(field, value);
   const currentValue = getEditableValue(row, field);
   const options = getEditableOptions(field);
@@ -1659,6 +1726,14 @@ function BadgeSelectCell({
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [active, onClose]);
+
+  useEffect(() => {
+    const currentIndex = Math.max(0, options.findIndex((option) => option.value === currentValue));
+    setHighlightedIndex(currentIndex >= 0 ? currentIndex : 0);
+    if (active) {
+      requestAnimationFrame(() => triggerRef.current?.focus());
+    }
+  }, [active, currentValue, options]);
 
   useEffect(() => {
     if (!active) {
@@ -1683,13 +1758,41 @@ function BadgeSelectCell({
       <CopyNotice active={copied} />
       <div className="relative max-w-full">
         <button
+          ref={triggerRef}
           type="button"
           onMouseDown={(event) => event.stopPropagation()}
           onClick={editable ? (active ? onClose : onActivate) : undefined}
           onKeyDown={(event) => {
+            if (!editable) return;
             if (event.key === 'Escape') {
               event.preventDefault();
+              event.stopPropagation();
               onClose();
+              return;
+            }
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              event.stopPropagation();
+              if (!active) {
+                onActivate();
+              } else {
+                void onChange(options[highlightedIndex]?.value || currentValue).finally(onClose);
+              }
+              return;
+            }
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              event.stopPropagation();
+              if (!active) {
+                onActivate();
+                return;
+              }
+              setHighlightedIndex((current) => {
+                const delta = event.key === 'ArrowDown' ? 1 : -1;
+                const next = (current + delta + options.length) % options.length;
+                requestAnimationFrame(() => optionRefs.current[next]?.focus());
+                return next;
+              });
             }
           }}
           className={[
@@ -1711,20 +1814,41 @@ function BadgeSelectCell({
             className="fixed z-[9999] min-w-[152px] rounded-md border border-border/70 bg-popover p-1 text-popover-foreground shadow-sm"
             style={{ top: menuRect.bottom + 4, left: menuRect.left }}
           >
-            {options.map((option) => {
+            {options.map((option, index) => {
               const selected = option.value === currentValue;
               return (
                 <button
                   key={option.value}
+                  ref={(node) => { optionRefs.current[index] = node; }}
                   type="button"
                   disabled={saving}
                   onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const delta = event.key === 'ArrowDown' ? 1 : -1;
+                      const next = (index + delta + options.length) % options.length;
+                      setHighlightedIndex(next);
+                      optionRefs.current[next]?.focus();
+                    } else if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void onChange(option.value).finally(onClose);
+                    } else if (event.key === 'Escape') {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onClose();
+                      requestAnimationFrame(() => triggerRef.current?.focus());
+                    }
+                  }}
                   onClick={() => {
                     void onChange(option.value).finally(onClose);
                   }}
                   className={[
                     'flex w-full items-center justify-between rounded-sm px-2 py-1 text-left text-[11px] transition-none hover:bg-muted/40',
-                    selected ? 'bg-primary/5 text-foreground' : 'text-popover-foreground',
+                    selected || highlightedIndex === index ? 'bg-primary/5 text-foreground' : 'text-popover-foreground',
                   ].join(' ')}
                 >
                   <span className="truncate">{option.label}</span>
@@ -2266,26 +2390,26 @@ export function SubmissionTable({
         return creatorData.deliverables;
       case 'line_amounts':
         return copyMoney(creatorData.amounts);
-      case 'campaign_code':
-        return fieldValue(row.campaign_code);
       case 'campaign_name':
         return fieldValue(row.campaign_name);
       case 'campaign_brand':
         return fieldValue(row.campaign_brand);
-      case 'campaign_notes':
-        return fieldValue(row.campaign_notes);
+      case 'campaign_code':
+        return fieldValue(row.campaign_code);
+      case 'commercials':
+        return copyMoney(money(row.amount, row.currency));
       case 'product_reimbursement_upload':
         return copyMoney(getProductReimbursementValue(row));
+      case 'additional_agency_commission':
+        return row.additional_agency_commission ? copyMoney(money(row.additional_agency_commission, row.currency)) : '';
+      case 'gross_amount':
+        return copyMoney(money(row.amount + (row.additional_agency_commission || 0), row.currency));
+      case 'additional_information':
+        return fieldValue(row.additional_information);
       case 'product_reimbursement_file':
         return fieldValue(row.product_reimbursement_attachment?.file_name);
       case 'reference_po_file':
         return fieldValue(row.reference_po_attachment?.file_name);
-      case 'commercials':
-        return copyMoney(money(row.amount, row.currency));
-      case 'additional_agency_commission':
-        return row.additional_agency_commission ? copyMoney(money(row.additional_agency_commission, row.currency)) : '';
-      case 'additional_information':
-        return fieldValue(row.additional_information);
       case 'rejection_note':
         return fieldValue(getEmployeeFeedback(row));
       case 'invoice_number':
@@ -2577,6 +2701,14 @@ export function SubmissionTable({
       if (row && !isClosedRow(row)) {
         setActiveEditor({ rowId: row.id, columnIndex });
       }
+    } else if (event.key === 'Enter') {
+      const cell = cellRefs.current.get(`${row.id}:${columnIndex}`);
+      const toggle = cell?.querySelector('[data-expandable-toggle="true"]');
+      if (toggle instanceof HTMLElement) {
+        event.preventDefault();
+        toggle.click();
+        return;
+      }
     } else if (event.key === 'Escape') {
       event.preventDefault();
       setActiveEditor(null);
@@ -2663,7 +2795,14 @@ export function SubmissionTable({
     const isCopied = copiedKey === cellKey;
     const isSaving = savingKey === `${row.id}:${column}`;
     const commonText = (value: string, title?: string, copyValue = value, className?: string) => (
-      <ExpandableText value={value} copied={isCopied} onCopy={() => void copyCell(cellKey, copyValue)} title={title} className={className} />
+      <ExpandableText
+        value={value}
+        copied={isCopied}
+        onCopy={() => void copyCell(cellKey, copyValue)}
+        title={title}
+        className={className}
+        collapseSignal={focusedCell ? `${focusedCell.rowId}:${focusedCell.columnIndex}` : ''}
+      />
     );
     const renderAttachmentCell = (attachment: SubmissionAttachmentSummary | null | undefined, row: SubmissionRow) => {
       if (!attachment) return commonText('-');
@@ -2845,7 +2984,7 @@ export function SubmissionTable({
         const value = fieldValue(row.agency_name);
         const review = masterDataReviewsBySubmission?.[row.id]?.['agency_name'];
         return (
-          <div className="flex items-start gap-1.5">
+          <div className="flex items-center gap-1.5">
             <div className="min-w-0 flex-1">{commonText(value)}</div>
             {review ? renderMasterDataReviewActions(review) : null}
           </div>
@@ -2855,7 +2994,7 @@ export function SubmissionTable({
         const value = fieldValue(row.agency_trade_name);
         const review = masterDataReviewsBySubmission?.[row.id]?.['agency_trade_name'];
         return (
-          <div className="flex items-start gap-1.5">
+          <div className="flex items-center gap-1.5">
             <div className="min-w-0 flex-1">{commonText(value)}</div>
             {review ? renderMasterDataReviewActions(review) : null}
           </div>
@@ -2865,7 +3004,7 @@ export function SubmissionTable({
         const value = fieldValue(row.brand_name);
         const review = masterDataReviewsBySubmission?.[row.id]?.['brand_name'];
         return (
-          <div className="flex items-start gap-1.5">
+          <div className="flex items-center gap-1.5">
             <div className="min-w-0 flex-1">{commonText(value)}</div>
             {review ? renderMasterDataReviewActions(review) : null}
           </div>
@@ -2875,7 +3014,7 @@ export function SubmissionTable({
         const value = fieldValue(row.brand_trade_name);
         const review = masterDataReviewsBySubmission?.[row.id]?.['brand_trade_name'];
         return (
-          <div className="flex items-start gap-1.5">
+          <div className="flex items-center gap-1.5">
             <div className="min-w-0 flex-1">{commonText(value)}</div>
             {review ? renderMasterDataReviewActions(review) : null}
           </div>
@@ -2901,7 +3040,7 @@ export function SubmissionTable({
         const value = creatorData.creatorNames;
         const review = masterDataReviewsBySubmission?.[row.id]?.creator_name;
         return (
-          <div className="flex items-start gap-1.5">
+          <div className="flex items-center gap-1.5">
             <div className="min-w-0 flex-1">{commonText(value)}</div>
             {review ? renderMasterDataReviewActions(review) : null}
           </div>
@@ -2913,30 +3052,34 @@ export function SubmissionTable({
         return commonText(creatorData.deliverables);
       case 'line_amounts':
         return commonText(creatorData.amounts, getCurrencyTitle(row.currency), copyMoney(creatorData.amounts));
-      case 'campaign_code':
-        return commonText(fieldValue(row.campaign_code));
       case 'campaign_name':
         return commonText(fieldValue(row.campaign_name));
       case 'campaign_brand':
         return commonText(fieldValue(row.campaign_brand));
-      case 'campaign_notes':
-        return commonText(fieldValue(row.campaign_notes));
-      case 'product_reimbursement_upload':
-        return commonText(getProductReimbursementValue(row), getCurrencyTitle(row.currency), copyMoney(getProductReimbursementValue(row)));
-      case 'product_reimbursement_file':
-        return renderAttachmentCell(row.product_reimbursement_attachment, row);
-      case 'reference_po_file':
-        return renderAttachmentCell(row.reference_po_attachment, row);
+      case 'campaign_code':
+        return commonText(fieldValue(row.campaign_code));
       case 'commercials':
         return commonText(money(row.amount, row.currency), getCurrencyTitle(row.currency, row.amount), copyMoney(money(row.amount, row.currency)));
+      case 'product_reimbursement_upload':
+        return commonText(getProductReimbursementValue(row), getCurrencyTitle(row.currency), copyMoney(getProductReimbursementValue(row)));
       case 'additional_agency_commission':
         return commonText(
           row.additional_agency_commission ? money(row.additional_agency_commission, row.currency) : '-',
           row.additional_agency_commission ? getCurrencyTitle(row.currency, row.additional_agency_commission) : undefined,
           row.additional_agency_commission ? copyMoney(money(row.additional_agency_commission, row.currency)) : '-'
         );
+      case 'gross_amount':
+        return commonText(
+          money(row.amount + (row.additional_agency_commission || 0), row.currency),
+          getCurrencyTitle(row.currency, row.amount + (row.additional_agency_commission || 0)),
+          copyMoney(money(row.amount + (row.additional_agency_commission || 0), row.currency))
+        );
       case 'additional_information':
         return commonText(fieldValue(row.additional_information));
+      case 'product_reimbursement_file':
+        return renderAttachmentCell(row.product_reimbursement_attachment, row);
+      case 'reference_po_file':
+        return renderAttachmentCell(row.reference_po_attachment, row);
       case 'rejection_note': {
         const feedbackRaw = row.rejection_note || row.finance_comment || '';
         const feedback = fieldValue(feedbackRaw);
@@ -2975,6 +3118,7 @@ export function SubmissionTable({
               copied={isCopied}
               onCopy={() => void copyCell(cellKey, fieldValue(row[field]))}
               className={colorClass}
+              collapseSignal={focusedCell ? `${focusedCell.rowId}:${focusedCell.columnIndex}` : ''}
             />
           );
         }
@@ -3117,7 +3261,7 @@ export function SubmissionTable({
                           : undefined
                   }
                   className={[
-                    'h-8 overflow-hidden border-b border-r border-border/60 bg-card px-2.5 py-1 text-left text-[10px] font-bold uppercase tracking-[0.07em] text-muted-foreground',
+                    'h-8 overflow-hidden align-middle border-b border-r border-border/60 bg-card px-2.5 py-1 text-left text-[10px] font-bold uppercase tracking-[0.07em] text-muted-foreground',
                     (column === 'pi' || column === 'address' || (column === 'intake_status' && canToggleCampaignColumns)) ? 'cursor-pointer' : '',
                     column === 'pi' || column === 'intake_status' ? 'bg-card border-r border-border/60' : '',
                   ].join(' ')}
@@ -3131,7 +3275,7 @@ export function SubmissionTable({
                   }}
                 >
                   <div className="flex items-center justify-between gap-1">
-                    <span className="truncate leading-[1.05]">
+                    <span className="truncate whitespace-nowrap leading-[1.05]">
                         {((isCollapsed && canCollapse) || (isCampaignCollapsed && canCollapseCampaignColumn)) ? (
                           column === 'invoice_number'
                             ? 'Inv'
@@ -3153,15 +3297,15 @@ export function SubmissionTable({
                         ) : column === 'debit_note_number' ? (
                           <>Debit<br />No.</>
                         ) : column === 'campaign_code' ? (
-                          <>Campaign<br />Code</>
+                          'Campaign Code'
                         ) : column === 'campaign_name' ? (
-                          <>Campaign<br />Name</>
+                          'Campaign Name'
                         ) : column === 'product_reimbursement_upload' ? (
                           <>Product<br />Reimbursement</>
                         ) : column === 'product_reimbursement_file' ? (
-                          <>Product Reimb.<br />File</>
+                          'Product Reim. File'
                         ) : column === 'reference_po_file' ? (
-                          <>Reference PO<br />File</>
+                          'Reference PO File'
                         ) : column === 'creator_invoice_received' ? (
                           <>Creator<br />Invoice</>
                       ) : column === 'payment_received' ? (
@@ -3174,8 +3318,6 @@ export function SubmissionTable({
                         isFinanceViewer ? <>Finance External<br />Notes</> : <>Finance<br />Notes</>
                       ) : column === 'finance_notes' ? (
                         <>Finance Internal<br />Notes</>
-                      ) : column === 'creator_brand' && viewer === 'employee' && viewerBusinessLine === 'IM' ? (
-                        <>Campaign<br />Brand</>
                       ) : (
                         COLUMN_TITLES[column]
                       )}
