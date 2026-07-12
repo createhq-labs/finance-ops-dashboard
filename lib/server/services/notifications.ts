@@ -179,6 +179,65 @@ export async function createPendingMasterReviewNotifications(params: {
   return createNotifications(adminClient, inserts);
 }
 
+async function upsertResubmissionRequestedNotifications(params: {
+  adminClient: SupabaseClient;
+  inserts: NotificationInsert[];
+}) {
+  const { adminClient, inserts } = params;
+  if (inserts.length === 0) return { success: true as const, created: 0 };
+
+  const userIds = uniqueStrings(inserts.map((insert) => insert.user_id));
+  const relatedSubmissionId = inserts[0]?.related_submission_id ?? null;
+  if (!relatedSubmissionId || userIds.length === 0) {
+    return createNotifications(adminClient, inserts);
+  }
+
+  const { data: existingRows, error: existingError } = await adminClient
+    .from('notifications')
+    .select('id, user_id')
+    .eq('type', 'resubmission_requested')
+    .eq('related_submission_id', relatedSubmissionId)
+    .in('user_id', userIds);
+
+  if (existingError) {
+    return { success: false as const, created: 0, error: existingError.message };
+  }
+
+  const existingByUserId = new Map(
+    ((existingRows ?? []) as Array<{ id: string; user_id: string | null }>).map((row) => [String(row.user_id ?? ''), String(row.id)])
+  );
+
+  const updates = inserts.filter((insert) => existingByUserId.has(insert.user_id));
+  const creates = inserts.filter((insert) => !existingByUserId.has(insert.user_id));
+
+  if (updates.length > 0) {
+    const updateResults = await Promise.all(
+      updates.map((insert) =>
+        adminClient
+          .from('notifications')
+          .update({
+            title: insert.title,
+            message: insert.message,
+            target_path: insert.target_path,
+            audit_log_id: insert.audit_log_id ?? null,
+            is_read: false,
+          })
+          .eq('id', existingByUserId.get(insert.user_id)!)
+      )
+    );
+
+    const failed = updateResults.find((result) => result.error);
+    if (failed?.error) {
+      return { success: false as const, created: 0, error: failed.error.message };
+    }
+  }
+
+  const created = await createNotifications(adminClient, creates);
+  if (!created.success) return created;
+
+  return { success: true as const, created: updates.length + created.created };
+}
+
 export async function createEmployeeNotification(params: {
   adminClient: SupabaseClient;
   submittedBy: string;
@@ -217,6 +276,10 @@ export async function createEmployeeNotification(params: {
       audit_log_id: auditLogId ?? null,
       target_path: '/dashboard/team-submissions?submission_id=' + relatedSubmissionId,
     });
+  }
+
+  if (type === 'resubmission_requested') {
+    return upsertResubmissionRequestedNotifications({ adminClient, inserts });
   }
 
   return createNotifications(adminClient, inserts);

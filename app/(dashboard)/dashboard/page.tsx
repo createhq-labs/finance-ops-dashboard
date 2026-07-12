@@ -222,6 +222,55 @@ function overviewTone(status: string | null | undefined): 'cyan' | 'green' | 'am
   return 'amber';
 }
 
+function hasResubmissionSuccessor(entryId: string, rows: Array<{ previous_submission_id?: string | null }>) {
+  return rows.some((row) => row.previous_submission_id === entryId);
+}
+
+function isCompletedResubmissionUpdate(entry: { previous_submission_id?: string | null; version_status?: string | null }) {
+  return Boolean(entry.previous_submission_id) || entry.version_status === 'resubmitted';
+}
+
+function isCompletedActionHistoryEntry(
+  entry: { id: string; intake_status?: string | null; previous_submission_id?: string | null; version_status?: string | null },
+  rows: Array<{ id: string; previous_submission_id?: string | null }>
+) {
+  return (
+    (entry.intake_status === 'rejected' && hasResubmissionSuccessor(entry.id, rows)) ||
+    isCompletedResubmissionUpdate(entry)
+  );
+}
+
+function getLifecycleRootId(
+  entryId: string,
+  parentMap: Map<string, string | null | undefined>
+) {
+  let currentId = entryId;
+  const seen = new Set<string>();
+
+  while (currentId && !seen.has(currentId)) {
+    seen.add(currentId);
+    const parentId = parentMap.get(currentId);
+    if (!parentId) return currentId;
+    currentId = parentId;
+  }
+
+  return entryId;
+}
+
+function getLatestLifecycleRows<T extends { id: string; previous_submission_id?: string | null }>(rows: T[]) {
+  const parentMap = new Map(rows.map((row) => [row.id, row.previous_submission_id]));
+  const latestByRoot = new Map<string, T>();
+
+  for (const row of rows) {
+    const rootId = getLifecycleRootId(row.id, parentMap);
+    if (!latestByRoot.has(rootId)) {
+      latestByRoot.set(rootId, row);
+    }
+  }
+
+  return Array.from(latestByRoot.values());
+}
+
 function PremiumOverviewCard({
   title,
   description,
@@ -1050,22 +1099,24 @@ export default function DashboardHomePage() {
   if (rowsError || (isTeamLead && teamError) || (isAdmin && adminError)) return <StatePanel tone="danger">{rowsError || teamError || adminError}</StatePanel>;
 
   if (isEmployee) {
-    const submittedCount = visibleRows.filter((entry) => entry.intake_status === 'submitted').length;
-    const acceptedCount = visibleRows.filter((entry) => entry.intake_status === 'accepted').length;
-    const rejectedCount = visibleRows.filter((entry) => entry.intake_status === 'rejected').length;
-    const paidCount = visibleRows.filter((entry) => {
+    const originalSubmissionRows = visibleRows.filter((entry) => !entry.previous_submission_id);
+    const latestLifecycleRows = getLatestLifecycleRows(visibleRows);
+    const submittedCount = originalSubmissionRows.length;
+    const acceptedCount = latestLifecycleRows.filter((entry) => entry.intake_status === 'accepted').length;
+    const rejectedCount = visibleRows.filter((entry) => Boolean(entry.previous_submission_id)).length;
+    const paidCount = latestLifecycleRows.filter((entry) => {
       const paymentMade = normalizeOverviewStatus(entry.payment_made);
       const paymentReceived = normalizeOverviewStatus(entry.payment_received);
       return paymentMade === 'paid' || paymentMade === 'full' || paymentReceived === 'full' || paymentReceived === 'received';
     }).length;
-    const paidValue = visibleRows.reduce((sum, entry) => {
+    const paidValue = latestLifecycleRows.reduce((sum, entry) => {
       const paymentMade = normalizeOverviewStatus(entry.payment_made);
       const paymentReceived = normalizeOverviewStatus(entry.payment_received);
       return paymentMade === 'paid' || paymentMade === 'full' || paymentReceived === 'full' || paymentReceived === 'received'
         ? sum + entry.amount
         : sum;
     }, 0);
-    const employeeActionRows = visibleRows.filter((entry) => entry.intake_status === 'rejected');
+    const employeeActionRows = visibleRows.filter((entry) => entry.intake_status === 'rejected' && !hasResubmissionSuccessor(entry.id, visibleRows));
     const invoiceCreatedCount = visibleRows.filter((entry) => normalizeOverviewStatus(entry.invoice_status) === 'invoice_created').length;
     const latestSubmitted = visibleRows.find((entry) => entry.intake_status === 'submitted');
     const totalSubmissionCount = visibleRows.length;
@@ -1144,8 +1195,14 @@ export default function DashboardHomePage() {
                     title={getOverviewPiMeta(entry).label}
                     primaryChip={
                       <StatusChip
-                        label={entry.intake_status === 'rejected' ? 'Resubmission' : titleCaseStatus(entry.intake_status)}
-                        tone={overviewTone(entry.intake_status)}
+                        label={
+                          isCompletedActionHistoryEntry(entry, visibleRows)
+                            ? 'Resubmission Completed'
+                            : entry.intake_status === 'rejected'
+                              ? 'Resubmission'
+                              : titleCaseStatus(entry.intake_status)
+                        }
+                        tone={isCompletedActionHistoryEntry(entry, visibleRows) ? 'green' : overviewTone(entry.intake_status)}
                       />
                     }
                     meta={
@@ -1160,7 +1217,7 @@ export default function DashboardHomePage() {
                         : undefined
                     }
                     action={
-                      canResubmitSubmission(user.role, entry) ? (
+                      canResubmitSubmission(user.role, entry) && !isCompletedActionHistoryEntry(entry, visibleRows) ? (
                         <Link
                           href={`${getInvoiceIntakePath()}?resubmit_id=${entry.id}`}
                           className="btn"
@@ -1548,8 +1605,8 @@ export default function DashboardHomePage() {
       <section style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
         <CompactMetricCard title="Pending Review" value={String(pendingCount)} hint="Needs check" />
         <CompactMetricCard title="Pending Payments" value={String(pendingPaymentsCount)} hint="Follow-up queue" />
-        <CompactMetricCard title="Resubmissions" value={String(rejectedCount)} hint="Returned items" />
-        <CompactMetricCard title="Invoices Created" value={String(invoicesCreatedCount)} hint="Invoice stage" />
+        <CompactMetricCard title="Resubmissions Pending" value={String(rejectedCount)} hint="Returned items" />
+        <CompactMetricCard title="Invoice Stage" value={String(invoicesCreatedCount)} hint="Currently in invoice stage" />
         <CompactMetricCard title="Closed This Month" value={String(closedThisMonthCount)} hint="Completed" />
       </section>
 

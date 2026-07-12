@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, ChevronRight, Inbox } from 'lucide-react';
+import { Check, CheckCircle2, ChevronRight, Inbox } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
@@ -10,10 +10,12 @@ import { isEmployeeRole } from '../../../../lib/client/dashboard-access';
 import {
   getNotificationDisplayType,
   formatRelativeTime,
+  getCompletedNotificationTitle,
   getNotificationCategory,
   getNotificationCategoryLabel,
   getNotificationTone,
   isClosedSubmissionReopenedNotification,
+  isNotificationCompleted,
   sortNotificationsLatestFirst,
   type NotificationCategory,
   type NotificationRow,
@@ -538,20 +540,31 @@ export default function NotificationsPage() {
 
             {!pageLoading && !error && visibleNotifications.length > 0 ? (
               <>
-                <div className="divide-y divide-border">
+                <div className="divide-y divide-border pt-1">
                   {visibleNotifications.map((item) => {
                     const category = getNotificationCategory(item.type);
+                    const isCompleted = isNotificationCompleted(item);
 
                     return (
                       <article
                         key={item.id}
                         className={[
-                          'grid max-w-full grid-cols-[12px_minmax(0,1fr)_auto] gap-3 overflow-hidden px-4 py-3 transition-colors hover:bg-accent/5',
-                          item.is_read ? 'bg-card' : 'border-l-2 border-l-[rgba(34,211,238,0.65)] bg-[linear-gradient(90deg,rgba(34,211,238,0.10),transparent)]',
+                          'grid max-w-full grid-cols-[16px_minmax(0,1fr)_auto] gap-3 overflow-hidden px-4 py-3 transition-colors hover:bg-accent/5',
+                          isCompleted
+                            ? 'border-l-2 border-l-[rgba(74,222,128,0.95)] bg-[linear-gradient(90deg,rgba(134,239,172,0.22),rgba(134,239,172,0.10),transparent)] dark:border-l-[rgba(110,231,183,0.95)] dark:bg-[linear-gradient(90deg,rgba(110,231,183,0.30),rgba(110,231,183,0.14),transparent)]'
+                            : item.is_read
+                              ? 'bg-card'
+                              : 'border-l-2 border-l-[rgba(34,211,238,0.65)] bg-[linear-gradient(90deg,rgba(34,211,238,0.16),transparent)] dark:border-l-[rgba(56,189,248,0.75)] dark:bg-[linear-gradient(90deg,rgba(56,189,248,0.24),transparent)]',
                         ].join(' ')}
                       >
-                        <div className="flex items-start justify-center pt-1 ">
-                          {!item.is_read ? <span className="h-2 w-2 rounded-full bg-[linear-gradient(135deg,rgba(34,211,238,1),rgba(30,58,138,0.95))]" /> : null}
+                        <div className="flex items-start justify-center pt-1">
+                          <span className="inline-flex h-4 w-4 items-center justify-center">
+                            {isCompleted ? (
+                              <CheckCircle2 size={14} className="text-emerald-600 dark:text-emerald-400" />
+                            ) : !item.is_read ? (
+                              <span className="h-2 w-2 rounded-full bg-[linear-gradient(135deg,rgba(34,211,238,1),rgba(30,58,138,0.95))]" />
+                            ) : null}
+                          </span>
                         </div>
 
                         <button
@@ -559,35 +572,37 @@ export default function NotificationsPage() {
                           onClick={() => openNotification(item)}
                           className="min-w-0 text-left"
                         >
-                          <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <h3
-                              className={[
-                                'truncate text-sm text-foreground',
-                                item.is_read ? 'font-medium' : 'font-semibold',
-                              ].join(' ')}
-                            >
-                              {item.title}
-                            </h3>
+                          <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                              <h3
+                                className={[
+                                  'truncate text-sm text-foreground',
+                                  item.is_read ? 'font-medium' : 'font-semibold',
+                                ].join(' ')}
+                              >
+                                {getCompletedNotificationTitle(item)}
+                              </h3>
 
-                            {categoryFilter === 'all' ? (
+                              {categoryFilter === 'all' ? (
+                                <span
+                                  className={[
+                                    'rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                                    getCategoryBadgeClass(category),
+                                  ].join(' ')}
+                                >
+                                  {getNotificationCategoryLabel(category)}
+                                </span>
+                              ) : null}
+
                               <span
                                 className={[
                                   'rounded-full border px-2 py-0.5 text-[11px] font-medium',
-                                  getCategoryBadgeClass(category),
+                                  getTypeBadgeClass(item.type, user?.role),
                                 ].join(' ')}
                               >
-                                {getNotificationCategoryLabel(category)}
+                                {getNotificationDisplayType(item.type, user?.role)}
                               </span>
-                            ) : null}
-
-                            <span
-                              className={[
-                                'rounded-full border px-2 py-0.5 text-[11px] font-medium',
-                                getTypeBadgeClass(item.type, user?.role),
-                              ].join(' ')}
-                            >
-                              {getNotificationDisplayType(item.type, user?.role)}
-                            </span>
+                            </div>
                           </div>
 
                           <p className="mt-1 line-clamp-2 text-[13px] text-muted-foreground">{item.message}</p>
