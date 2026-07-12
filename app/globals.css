@@ -940,32 +940,191 @@ h3 {
   color: var(--intake-option-fg);
 }
 
-.intake-searchable-root .intake-searchable-input {
-  background: var(--intake-input-bg) !important;
-  color: var(--intake-input-fg) !important;
-  border-color: var(--intake-input-border) !important;
+.intake-searchable-root {
+  width: 100%;
+  isolation: isolate;
+}
+
+.intake-select-trigger {
+  display: inline-flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 10px;
+  border: 0.5px solid var(--intake-input-border);
+  background: var(--intake-input-bg);
+  color: var(--intake-input-fg);
+  padding: 9px 12px;
+  font-size: 14px;
+  line-height: 1.35;
+  text-align: left;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, border-radius 0.2s ease, background 0.2s ease;
+}
+
+.intake-select-trigger:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--intake-input-border) 35%, var(--foreground) 65%);
+  background: color-mix(in oklab, var(--intake-input-bg) 94%, var(--ring) 6%);
+}
+
+.intake-select-trigger:focus-visible {
+  outline: none;
+}
+
+.intake-select-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.intake-select-trigger-open {
+  border-color: var(--ring);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 24%, transparent);
+}
+
+.intake-select-trigger-placeholder .intake-select-trigger-label {
+  color: var(--muted-foreground);
+}
+
+.intake-select-trigger-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.intake-select-validation-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.intake-select-chevron {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  transition: transform 0.2s ease;
+}
+
+.intake-select-chevron-open {
+  transform: rotate(180deg);
 }
 
 .intake-searchable-panel {
   background: var(--intake-option-bg) !important;
-  border-color: var(--intake-input-border) !important;
+  border-color: var(--ring) !important;
+}
+
+.intake-select-panel {
+  position: absolute;
+  z-index: 800;
+  top: calc(100% - 1px);
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 0.5px solid var(--ring);
+  border-top: 0;
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+  background: var(--intake-option-bg);
+  box-shadow: var(--surface-shadow);
+}
+
+.intake-select-search-shell {
+  border-bottom: 0.5px solid var(--intake-input-border);
+  background: transparent;
+}
+
+.intake-select-search {
+  width: 100%;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--intake-option-fg);
+  padding: 0 12px;
+  font-size: 13px;
+  outline: none;
+}
+
+.intake-select-search::placeholder {
+  color: var(--muted-foreground);
+}
+
+.intake-select-options {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .intake-searchable-option {
-  background: var(--intake-option-bg) !important;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  background: transparent !important;
   color: var(--intake-option-fg) !important;
+  padding: 9px 12px;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.dark .intake-searchable-panel {
-  background: var(--popover) !important;
-  color: var(--popover-foreground) !important;
-  border-color: var(--surface-border) !important;
+.intake-searchable-option:hover:not(:disabled),
+.intake-searchable-option-highlighted {
+  background: color-mix(in oklab, var(--ring) 10%, var(--intake-option-bg)) !important;
 }
 
-.dark .intake-searchable-option:hover,
-.dark .intake-searchable-option[aria-selected='true'] {
-  background: var(--secondary) !important;
-  color: var(--foreground) !important;
+.intake-searchable-option-selected {
+  color: var(--ring) !important;
+  font-weight: 500;
+}
+
+.intake-searchable-option-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.intake-searchable-option-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.intake-searchable-option-check {
+  display: inline-flex;
+  width: 14px;
+  min-width: 14px;
+  align-items: center;
+  justify-content: center;
+  color: var(--ring);
+  opacity: 0;
+}
+
+.intake-searchable-option-selected .intake-searchable-option-check {
+  opacity: 1;
+}
+
+.intake-select-empty {
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.dark .intake-select-panel {
+  background: var(--popover);
 }
 
 .intake-textarea {
