@@ -175,7 +175,6 @@ export default function NewSubmissionPage() {
         .split(',')
         .map((item) => item.trim())
         .filter(Boolean);
-      const commissionValue = Number(found.additional_agency_commission ?? 0);
       const commercialsValue = Number(found.commercials ?? 0);
 
       const nextPrefill: Partial<InvoiceIntakeFormValues> = {
@@ -208,7 +207,7 @@ export default function NewSubmissionPage() {
         campaignExtraDeliverables: imDeliverables.slice(1),
         campaignNotes: found.campaign_notes ?? '',
         currency: (String(found.currency ?? 'INR').toUpperCase() as InvoiceIntakeFormValues["currency"]) || 'INR',
-        imCommercials: commercialsValue > 0 ? String(Math.max(commercialsValue - commissionValue, 0)) : '',
+        imCommercials: commercialsValue > 0 ? String(commercialsValue) : '',
       };
 
       if (businessLine === 'TM' && entryType === 'SC' && scRows.length > 0) nextPrefill.scDeliverables = scRows;
