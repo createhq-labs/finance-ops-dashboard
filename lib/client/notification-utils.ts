@@ -9,6 +9,10 @@ export type NotificationRow = {
   target_path: string;
   is_read: boolean;
   created_at: string;
+  related_submission_status?: string | null;
+  related_submission_closed_status?: string | null;
+  related_review_status?: string | null;
+  has_resubmission_successor?: boolean;
 };
 
 export type NotificationCategory = 'needs_action' | 'master_data' | 'updates';
@@ -61,6 +65,68 @@ export function getNotificationTone(type: string): NotificationTone {
   if (type === 'new_submission') return 'success';
   if (type === 'pending_master_data_review' || type === 'invoice_updated') return 'info';
   return 'neutral';
+}
+
+function normalizeWorkflowStatus(value: string | null | undefined) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+}
+
+export function isNotificationCompleted(
+  notification: Pick<
+    NotificationRow,
+    | 'type'
+    | 'related_submission_status'
+    | 'related_submission_closed_status'
+    | 'related_review_status'
+    | 'has_resubmission_successor'
+  >
+) {
+  if (notification.type === 'resubmission_requested' || notification.type === 'submission_rejected') {
+    return Boolean(notification.has_resubmission_successor);
+  }
+
+  if (notification.type === 'finance_action_pending') {
+    return normalizeWorkflowStatus(notification.related_submission_status) !== 'submitted';
+  }
+
+  if (notification.type === 'pending_master_data_review') {
+    return normalizeWorkflowStatus(notification.related_review_status) !== 'pending';
+  }
+
+  if (notification.type === 'submission_reopened') {
+    return normalizeWorkflowStatus(notification.related_submission_closed_status) === 'closed';
+  }
+
+  return false;
+}
+
+const COMPLETED_NOTIFICATION_TITLES: Partial<Record<NotificationRow['type'], string>> = {
+  resubmission_requested: 'Resubmission Completed',
+  submission_rejected: 'Correction Completed',
+  finance_action_pending: 'Finance Action Completed',
+  pending_master_data_review: 'Master Data Review Completed',
+  submission_reopened: 'Submission Reopened Completed',
+};
+
+export function getCompletedNotificationTitle(
+  notification: Pick<
+    NotificationRow,
+    | 'type'
+    | 'title'
+    | 'related_submission_status'
+    | 'related_submission_closed_status'
+    | 'related_review_status'
+    | 'has_resubmission_successor'
+  >
+) {
+  if (!isNotificationCompleted(notification)) {
+    return notification.title;
+  }
+
+  return COMPLETED_NOTIFICATION_TITLES[notification.type] || notification.title;
 }
 
 export function sortNotificationsLatestFirst<T extends Pick<NotificationRow, 'created_at'>>(items: T[]) {
