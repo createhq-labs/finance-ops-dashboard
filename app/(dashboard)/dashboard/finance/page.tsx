@@ -1080,12 +1080,11 @@ export default function FinanceReviewPage() {
           onCancel={() => setEditingField(null)}
         >
           <div style={{ display: 'grid', gap: 10 }}>
-            <select className="intake-input" value={invoiceStatusValue} onChange={(e) => setInvoiceStatusValue(e.target.value)}>
-                <option value="">—</option>
-              {INVOICE_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={invoiceStatusValue}
+              onChange={(next) => setInvoiceStatusValue(next)}
+              options={[{ value: '', label: '\u2014' }, ...INVOICE_STATUS_OPTIONS]}
+            />
             <button className="btn" type="button" disabled={actionSubmitting} onClick={() => void runFinanceAction('mark_invoice_created', { invoice_status: invoiceStatusValue })}>
               {actionLoadingKey === 'mark_invoice_created' ? 'Saving...' : 'Save'}
             </button>
@@ -1105,12 +1104,11 @@ export default function FinanceReviewPage() {
           onCancel={() => setEditingField(null)}
         >
           <div style={{ display: 'grid', gap: 10 }}>
-            <select className="intake-input" value={creatorInvoiceStatus} onChange={(e) => setCreatorInvoiceStatus(e.target.value)}>
-                <option value="">—</option>
-              {CREATOR_INVOICE_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={creatorInvoiceStatus}
+              onChange={(next) => setCreatorInvoiceStatus(next)}
+              options={[{ value: '', label: '\u2014' }, ...CREATOR_INVOICE_STATUS_OPTIONS]}
+            />
             <button
               className="btn"
               type="button"
@@ -1135,12 +1133,11 @@ export default function FinanceReviewPage() {
           onCancel={() => setEditingField(null)}
         >
           <div style={{ display: 'grid', gap: 10 }}>
-            <select className="intake-input" value={paymentReceivedStatus} onChange={(e) => setPaymentReceivedStatus(e.target.value)}>
-                <option value="">—</option>
-              {PAYMENT_RECEIVED_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={paymentReceivedStatus}
+              onChange={(next) => setPaymentReceivedStatus(next)}
+              options={[{ value: '', label: '\u2014' }, ...PAYMENT_RECEIVED_STATUS_OPTIONS]}
+            />
             <button
               className="btn"
               type="button"
@@ -1165,12 +1162,11 @@ export default function FinanceReviewPage() {
           onCancel={() => setEditingField(null)}
         >
           <div style={{ display: 'grid', gap: 10 }}>
-            <select className="intake-input" value={paymentMadeStatus} onChange={(e) => setPaymentMadeStatus(e.target.value)}>
-                <option value="">—</option>
-              {PAYMENT_MADE_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={paymentMadeStatus}
+              onChange={(next) => setPaymentMadeStatus(next)}
+              options={[{ value: '', label: '\u2014' }, ...PAYMENT_MADE_STATUS_OPTIONS]}
+            />
             <button
               className="btn"
               type="button"
@@ -1195,12 +1191,11 @@ export default function FinanceReviewPage() {
           onCancel={() => setEditingField(null)}
         >
           <div style={{ display: 'grid', gap: 10 }}>
-            <select className="intake-input" value={closureStatus} onChange={(e) => setClosureStatus(e.target.value)}>
-                <option value="">—</option>
-              {CLOSURE_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={closureStatus}
+              onChange={(next) => setClosureStatus(next)}
+              options={[{ value: '', label: '\u2014' }, ...CLOSURE_STATUS_OPTIONS]}
+            />
             <button className="btn" type="button" disabled={actionSubmitting} onClick={() => void runFinanceAction('close_submission', { closure_status: closureStatus })}>
               {actionLoadingKey === 'close_submission' ? 'Saving...' : 'Save'}
             </button>
@@ -1290,20 +1285,28 @@ export default function FinanceReviewPage() {
             </label>
             <label className="grid gap-1">
               <span className="text-xs font-medium text-muted-foreground">Business Line</span>
-              <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={businessLineFilter} onChange={(e) => setBusinessLineFilter(e.target.value as 'all' | 'TM' | 'IM')}>
-                <option value="all">All</option>
-                <option value="TM">TM</option>
-                <option value="IM">IM</option>
-              </select>
+              <SearchableSelect
+                value={businessLineFilter}
+                onChange={(next) => setBusinessLineFilter(next as 'all' | 'TM' | 'IM')}
+                options={[
+                  { value: 'all', label: 'All' },
+                  { value: 'TM', label: 'TM' },
+                  { value: 'IM', label: 'IM' },
+                ]}
+              />
             </label>
             <label className="grid gap-1">
               <span className="text-xs font-medium text-muted-foreground">Status</span>
-              <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={intakeStatusFilter} onChange={(e) => setIntakeStatusFilter(e.target.value as 'all' | 'submitted' | 'accepted' | 'rejected')}>
-                <option value="all">All</option>
-                <option value="submitted">Submitted</option>
-                <option value="accepted">Accepted</option>
-                <option value="rejected">Rejected</option>
-              </select>
+              <SearchableSelect
+                value={intakeStatusFilter}
+                onChange={(next) => setIntakeStatusFilter(next as 'all' | 'submitted' | 'accepted' | 'rejected')}
+                options={[
+                  { value: 'all', label: 'All' },
+                  { value: 'submitted', label: 'Submitted' },
+                  { value: 'accepted', label: 'Accepted' },
+                  { value: 'rejected', label: 'Rejected' },
+                ]}
+              />
             </label>
             <label className="grid gap-1">
               <span className="text-xs font-medium text-muted-foreground">Employee</span>
@@ -1331,57 +1334,59 @@ export default function FinanceReviewPage() {
                 <DateFilterInput label="Date To" committedValue={dateTo} onCommit={setDateTo} />
                 <label className="grid gap-1">
                   <span className="text-xs font-medium text-muted-foreground">Invoice Status</span>
-                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={invoiceStatusFilter} onChange={(e) => setInvoiceStatusFilter(e.target.value)}>
-                    <option value="all">All</option>
-                    {invoiceStatusOptions.map((status) => (
-                      <option key={status} value={status}>{formatInvoiceStatus(status)}</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={invoiceStatusFilter}
+                    onChange={(next) => setInvoiceStatusFilter(next)}
+                    options={[
+                      { value: 'all', label: 'All' },
+                      ...invoiceStatusOptions.map((status) => ({ value: status, label: formatInvoiceStatus(status) })),
+                    ]}
+                  />
                 </label>
                 <label className="grid gap-1">
                   <span className="text-xs font-medium text-muted-foreground">Creator Invoice Received</span>
-                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={creatorInvoiceReceivedFilter} onChange={(e) => setCreatorInvoiceReceivedFilter(e.target.value as 'all' | 'received' | 'pending')}>
-                    <option value="all">All</option>
-                    {CREATOR_INVOICE_STATUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={creatorInvoiceReceivedFilter}
+                    onChange={(next) => setCreatorInvoiceReceivedFilter(next as 'all' | 'received' | 'pending')}
+                    options={[{ value: 'all', label: 'All' }, ...CREATOR_INVOICE_STATUS_OPTIONS]}
+                  />
                 </label>
                 <label className="grid gap-1">
                   <span className="text-xs font-medium text-muted-foreground">Payment Received</span>
-                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={paymentReceivedFilter} onChange={(e) => setPaymentReceivedFilter(e.target.value)}>
-                    <option value="all">All</option>
-                    {PAYMENT_RECEIVED_STATUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={paymentReceivedFilter}
+                    onChange={(next) => setPaymentReceivedFilter(next)}
+                    options={[{ value: 'all', label: 'All' }, ...PAYMENT_RECEIVED_STATUS_OPTIONS]}
+                  />
                 </label>
                 <label className="grid gap-1">
                   <span className="text-xs font-medium text-muted-foreground">Payment Made</span>
-                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={paymentMadeFilter} onChange={(e) => setPaymentMadeFilter(e.target.value)}>
-                    <option value="all">All</option>
-                    {PAYMENT_MADE_STATUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={paymentMadeFilter}
+                    onChange={(next) => setPaymentMadeFilter(next)}
+                    options={[{ value: 'all', label: 'All' }, ...PAYMENT_MADE_STATUS_OPTIONS]}
+                  />
                 </label>
                 <label className="grid gap-1">
                   <span className="text-xs font-medium text-muted-foreground">Closed Status</span>
-                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={closedStatusFilter} onChange={(e) => setClosedStatusFilter(e.target.value)}>
-                    <option value="all">All</option>
-                    {CLOSURE_STATUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={closedStatusFilter}
+                    onChange={(next) => setClosedStatusFilter(next)}
+                    options={[{ value: 'all', label: 'All' }, ...CLOSURE_STATUS_OPTIONS]}
+                  />
                 </label>
                 <label className="grid gap-1">
                   <span className="text-xs font-medium text-muted-foreground">Version Status</span>
-                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={versionStatusFilter} onChange={(e) => setVersionStatusFilter(e.target.value as 'all' | 'original' | 'resubmitted' | 'superseded')}>
-                    <option value="all">All</option>
-                    <option value="original">Original</option>
-                    <option value="resubmitted">Resubmitted</option>
-                    <option value="superseded">Superseded</option>
-                  </select>
+                  <SearchableSelect
+                    value={versionStatusFilter}
+                    onChange={(next) => setVersionStatusFilter(next as 'all' | 'original' | 'resubmitted' | 'superseded')}
+                    options={[
+                      { value: 'all', label: 'All' },
+                      { value: 'original', label: 'Original' },
+                      { value: 'resubmitted', label: 'Resubmitted' },
+                      { value: 'superseded', label: 'Superseded' },
+                    ]}
+                  />
                 </label>
               </div>
               <div className="mt-3 flex justify-end">

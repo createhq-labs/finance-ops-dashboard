@@ -143,13 +143,26 @@ const INITIAL_VALUES: InvoiceIntakeFormValues = {
   currency: "INR",
 };
 
-function sanitizeWholeNumberInput(value: string) {
-  return value.replace(/[^0-9]/g, "");
+function sanitizeDecimalInput(value: string) {
+  const cleaned = value.replace(/[^0-9.]/g, "");
+  if (!cleaned) return "";
+
+  const firstDotIndex = cleaned.indexOf(".");
+  if (firstDotIndex === -1) return cleaned;
+
+  const integerPart = cleaned.slice(0, firstDotIndex);
+  const decimalPart = cleaned
+    .slice(firstDotIndex + 1)
+    .replace(/\./g, "")
+    .slice(0, 2);
+
+  const normalizedInteger = integerPart || "0";
+  return `${normalizedInteger}.${decimalPart}`;
 }
 
 function parseAmount(value: string) {
-  const digits = sanitizeWholeNumberInput(value);
-  return digits ? Number.parseInt(digits, 10) : 0;
+  const sanitized = sanitizeDecimalInput(value);
+  return sanitized ? Number.parseFloat(sanitized) || 0 : 0;
 }
 
 function sumAmounts(values: string[]) {
@@ -576,7 +589,7 @@ export function InvoiceIntakeForm({
 
     let nextValue = value;
     if (key === "commission" || key === "reimbursementAmount" || key === "imCommercials") {
-      nextValue = sanitizeWholeNumberInput(String(value)) as InvoiceIntakeFormValues[K];
+      nextValue = sanitizeDecimalInput(String(value)) as InvoiceIntakeFormValues[K];
     }
     if (key === "addressLine") {
       setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
@@ -667,7 +680,7 @@ export function InvoiceIntakeForm({
           ? {
               ...item,
               ...patch,
-              ...(patch.amount !== undefined ? { amount: sanitizeWholeNumberInput(patch.amount) } : {}),
+              ...(patch.amount !== undefined ? { amount: sanitizeDecimalInput(patch.amount) } : {}),
             }
           : item
       ),
@@ -705,7 +718,7 @@ export function InvoiceIntakeForm({
           ? {
               ...item,
               ...nextPatch,
-              ...(nextPatch.amount !== undefined ? { amount: sanitizeWholeNumberInput(nextPatch.amount) } : {}),
+              ...(nextPatch.amount !== undefined ? { amount: sanitizeDecimalInput(nextPatch.amount) } : {}),
             }
           : item;
       }),
@@ -924,7 +937,7 @@ export function InvoiceIntakeForm({
         if (!deliverable.trim()) errors[`campaignExtraDeliverables.${index}`] = "Deliverable is required.";
         else if (!deliverableOptions.IM.includes(deliverable)) errors[`campaignExtraDeliverables.${index}`] = "Select a valid deliverable.";
       });
-      if (!(parseAmount(nextValues.imCommercials) > 0)) errors.imCommercials = "Commercials / Total Amount is required.";
+      if (!(parseAmount(nextValues.imCommercials) > 0)) errors.imCommercials = "Deal amount is required.";
       if (imDeliverables.length === 0) errors.creatorDeliverables = "At least one deliverable is required.";
     }
 
@@ -1027,7 +1040,10 @@ export function InvoiceIntakeForm({
               line_order: idx,
             }));
 
-    const commercials = parseAmount(totalAmount);
+    const commercials =
+      values.businessLine === "IM"
+        ? parseAmount(values.imCommercials)
+        : parseAmount(totalAmount);
 
     return {
       previous_submission_id: previousSubmissionId || null,

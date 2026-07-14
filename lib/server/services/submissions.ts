@@ -179,5 +179,35 @@ export async function allocateGapFreePiForSubmission(adminClient: SupabaseClient
     throw new Error('Failed to allocate PI number.');
   }
 
-  return piNumber;
+  const { data: persistedSubmission, error: persistedError } = await adminClient
+    .from('intake_submissions')
+    .update({ proforma_invoice: piNumber })
+    .eq('id', submissionId)
+    .is('proforma_invoice', null)
+    .select('proforma_invoice')
+    .maybeSingle();
+
+  if (persistedError) {
+    throw new Error(persistedError.message);
+  }
+
+  if (persistedSubmission?.proforma_invoice === piNumber) {
+    return piNumber;
+  }
+
+  const { data: currentSubmission, error: currentError } = await adminClient
+    .from('intake_submissions')
+    .select('proforma_invoice')
+    .eq('id', submissionId)
+    .maybeSingle();
+
+  if (currentError) {
+    throw new Error(currentError.message);
+  }
+
+  if (currentSubmission?.proforma_invoice === piNumber) {
+    return piNumber;
+  }
+
+  throw new Error('PI was allocated but not persisted to the submission.');
 }

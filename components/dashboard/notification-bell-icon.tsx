@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertTriangle, Bell, Check, ExternalLink, X } from 'lucide-react';
+import { AlertTriangle, Bell, Check, CheckCircle2, ExternalLink, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDashboardSession } from '../layout/dashboard-session';
 import { isEmployeeRole } from '../../lib/client/dashboard-access';
@@ -9,10 +9,12 @@ import {
   getNotificationDisplayType,
   getNotificationTone,
   formatRelativeTime,
+  getCompletedNotificationTitle,
   getNotificationCategory,
   getNotificationCategoryLabel,
   sortNotificationsLatestFirst,
   isClosedSubmissionReopenedNotification,
+  isNotificationCompleted,
   type NotificationCategory,
   type NotificationRow,
 } from '../../lib/client/notification-utils';
@@ -231,27 +233,36 @@ export function NotificationBellIcon({ onUnreadCountChange, variant = 'default' 
                     <div className="divide-y divide-border/60">
                       {visibleItems.map((item) => {
                         const isReopenedAlert = isClosedSubmissionReopenedNotification(item);
+                        const isCompleted = isNotificationCompleted(item);
                         return (
                           <article
                             key={item.id}
                             className={[
                               'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-2 transition-colors hover:bg-muted/15',
-                              isReopenedAlert
-                                ? item.is_read
-                                  ? 'bg-rose-50/55 dark:bg-rose-500/10'
-                                  : 'border-l-2 border-l-rose-500/75 bg-[linear-gradient(90deg,rgba(244,63,94,0.12),transparent)] dark:bg-[linear-gradient(90deg,rgba(244,63,94,0.16),transparent)]'
-                                : item.is_read
-                                  ? 'bg-popover'
-                                  : 'border-l-2 border-l-[rgba(34,211,238,0.65)] bg-[linear-gradient(90deg,rgba(34,211,238,0.10),transparent)]',
+                              isCompleted
+                                ?'border-l-2 border-l-[rgba(74,222,128,0.95)] bg-[linear-gradient(90deg,rgba(134,239,172,0.22),rgba(134,239,172,0.10),transparent)] dark:border-l-[rgba(110,231,183,0.95)] dark:bg-[linear-gradient(90deg,rgba(110,231,183,0.30),rgba(110,231,183,0.14),transparent)]'
+                                : isReopenedAlert
+                                  ? item.is_read
+                                    ? 'bg-rose-50/55 dark:bg-rose-500/10'
+                                    : 'border-l-2 border-l-rose-500/75 bg-[linear-gradient(90deg,rgba(244,63,94,0.12),transparent)] dark:bg-[linear-gradient(90deg,rgba(244,63,94,0.16),transparent)]'
+                                  : item.is_read
+                                    ? 'bg-popover'
+                                    :'border-l-2 border-l-[rgba(34,211,238,0.65)] bg-[linear-gradient(90deg,rgba(34,211,238,0.16),transparent)] dark:border-l-[rgba(56,189,248,0.75)] dark:bg-[linear-gradient(90deg,rgba(56,189,248,0.24),transparent)]',
                             ].join(' ')}
                           >
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
-                                {!item.is_read ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-destructive" /> : null}
+                                <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
+                                  {isCompleted ? (
+                                    <CheckCircle2 size={14} className="text-emerald-600 dark:text-emerald-400" />
+                                  ) : !item.is_read ? (
+                                    <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
+                                  ) : null}
+                                </span>
                                 <p
                                   className={`truncate text-sm ${item.is_read ? 'font-medium' : 'font-semibold'} ${isReopenedAlert ? 'text-rose-700 dark:text-rose-200' : getToneTextClass(item.type, isEmployeeView)}`}
                                 >
-                                  {item.title}
+                                  {getCompletedNotificationTitle(item)}
                                 </p>
                               </div>
                               <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{item.message}</p>

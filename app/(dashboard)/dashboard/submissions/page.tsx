@@ -7,13 +7,14 @@ import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
+import { SearchableSelect } from '../../../../components/forms/searchable-select';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { PAYMENT_RECEIVED_STATUS_OPTIONS } from '../../../../lib/client/finance-status';
 import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../lib/shared/submission-attachments';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
-import { canSubmitInvoice, getDrawerViewerRole, getSubmissionsLabel } from '../../../../lib/client/dashboard-access';
+import { canResubmitSubmission, canSubmitInvoice, getDrawerViewerRole, getSubmissionsLabel } from '../../../../lib/client/dashboard-access';
 
 type SubmissionAttachmentApiRow = {
   id: string;
@@ -388,12 +389,16 @@ export default function EmployeeSubmissionsPage() {
             </label>
             <label className="grid gap-1">
               <span className="text-xs font-medium text-muted-foreground">Status</span>
-              <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={intakeStatusFilter} onChange={(e) => setIntakeStatusFilter(e.target.value as 'all' | SubmissionRow['intake_status'])}>
-                <option value="all">All</option>
-                <option value="submitted">Submitted</option>
-                <option value="accepted">Accepted</option>
-                <option value="rejected">Rejected</option>
-              </select>
+              <SearchableSelect
+                value={intakeStatusFilter}
+                onChange={(next) => setIntakeStatusFilter(next as 'all' | SubmissionRow['intake_status'])}
+                options={[
+                  { value: 'all', label: 'All' },
+                  { value: 'submitted', label: 'Submitted' },
+                  { value: 'accepted', label: 'Accepted' },
+                  { value: 'rejected', label: 'Rejected' },
+                ]}
+              />
             </label>
             <div className="flex items-end">
               <button className="btn w-full md:w-auto" type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
@@ -407,25 +412,24 @@ export default function EmployeeSubmissionsPage() {
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-2">
                 <label className="grid gap-1">
                   <span className="text-xs font-medium text-muted-foreground">Version Status</span>
-                  <select
-                    className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
+                  <SearchableSelect
                     value={versionStatusFilter}
-                    onChange={(e) => setVersionStatusFilter(e.target.value as 'all' | NonNullable<SubmissionRow['version_status']>)}
-                  >
-                    <option value="all">All</option>
-                    <option value="original">Original</option>
-                    <option value="resubmitted">Resubmitted</option>
-                    <option value="superseded">Superseded</option>
-                  </select>
+                    onChange={(next) => setVersionStatusFilter(next as 'all' | NonNullable<SubmissionRow['version_status']>)}
+                    options={[
+                      { value: 'all', label: 'All' },
+                      { value: 'original', label: 'Original' },
+                      { value: 'resubmitted', label: 'Resubmitted' },
+                      { value: 'superseded', label: 'Superseded' },
+                    ]}
+                  />
                 </label>
                 <label className="grid gap-1">
                   <span className="text-xs font-medium text-muted-foreground">Payment Status</span>
-                  <select className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value as EmployeePaymentFilter)}>
-                    <option value="all">All</option>
-                    {PAYMENT_RECEIVED_STATUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={paymentStatusFilter}
+                    onChange={(next) => setPaymentStatusFilter(next as EmployeePaymentFilter)}
+                    options={[{ value: 'all', label: 'All' }, ...PAYMENT_RECEIVED_STATUS_OPTIONS]}
+                  />
                 </label>
               </div>
               <div className="mt-3 flex justify-end">
@@ -444,7 +448,7 @@ export default function EmployeeSubmissionsPage() {
           <SubmissionTable
             rows={rows}
             onOpen={(id, selectedRow) => {
-              if (user.role === 'employee' && selectedRow?.intake_status === 'rejected') {
+              if (selectedRow && canResubmitSubmission(user.role, selectedRow)) {
                 router.push('/dashboard/submissions/new?resubmit_id=' + id);
                 return;
               }
@@ -452,7 +456,7 @@ export default function EmployeeSubmissionsPage() {
             }}
             columns={['pi', 'entity', 'amount', 'intake_status', 'invoice_status', 'submitted_at', 'rejection_note', 'actions']}
             emptyLabel="No submissions found yet."
-            getActionLabel={(currentRow) => user.role === 'employee' && currentRow.intake_status === 'rejected' ? 'Resubmit' : 'View'}
+            getActionLabel={(currentRow) => canResubmitSubmission(user.role, currentRow) ? 'Resubmit' : 'View'}
             viewer={user.role}
             viewerBusinessLine={user.business_line}
             highlightedRowId={highlightedSubmissionId}

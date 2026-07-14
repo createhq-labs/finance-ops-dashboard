@@ -5,6 +5,7 @@ import { CheckCircle2, PencilLine, Plus, RefreshCw, ShieldOff, X } from 'lucide-
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
+import { SearchableSelect } from '../../../../components/forms/searchable-select';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
@@ -265,30 +266,31 @@ export default function DeliverablesPage() {
 
             <label className="grid gap-1.5 text-sm font-medium text-foreground">
               Line
-              <select
+              <SearchableSelect
                 value={lineFilter}
-                onChange={(event) => setLineFilter(event.target.value as DeliverableLineFilter)}
-                className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-              >
-                <option value="all">All Lines</option>
-                <option value="IM">IM</option>
-                <option value="TM">TM</option>
-                <option value="unassigned">Unassigned</option>
-              </select>
+                onChange={(next) => setLineFilter(next as DeliverableLineFilter)}
+                options={[
+                  { value: 'all', label: 'All Lines' },
+                  { value: 'IM', label: 'IM' },
+                  { value: 'TM', label: 'TM' },
+                  { value: 'unassigned', label: 'Unassigned' },
+                ]}
+              />
             </label>
 
             <div className="grid gap-1.5">
               <span className="text-sm font-medium text-foreground">Status</span>
               <div className="flex items-center gap-2">
-                <select
+                <SearchableSelect
                   value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value as 'all' | 'active' | 'inactive')}
-                  className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
+                  onChange={(next) => setStatusFilter(next as 'all' | 'active' | 'inactive')}
+                  options={[
+                    { value: 'all', label: 'All Statuses' },
+                    { value: 'active', label: 'Active' },
+                    { value: 'inactive', label: 'Inactive' },
+                  ]}
+                  className="min-w-0 flex-1"
+                />
                 <button
                   type="button"
                   onClick={() => {
@@ -401,22 +403,16 @@ export default function DeliverablesPage() {
 
               <label className="grid gap-1.5 text-sm font-medium text-foreground">
                 Business Line
-                <select
+                <SearchableSelect
                   value={form.business_line}
-                  onChange={(event) =>
+                  onChange={(next) =>
                     setForm((current) => ({
                       ...current,
-                      business_line: event.target.value as DeliverableLineValue,
+                      business_line: next as DeliverableLineValue,
                     }))
                   }
-                  className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                >
-                  {BUSINESS_LINE_OPTIONS.map((option) => (
-                    <option key={String(option.value)} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  options={BUSINESS_LINE_OPTIONS.map((option) => ({ value: String(option.value), label: option.label }))}
+                />
               </label>
 
               <label className="flex items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-medium text-foreground">

@@ -227,11 +227,10 @@ export function SubmissionDrawer({
 
           {isIM ? (
             <DetailSection title="Campaign Details">
-              <DetailItem label="Campaign Code" value={row.campaign_code} />
               <DetailItem label="Campaign Name" value={row.campaign_name} />
               <DetailItem label="Campaign Brand" value={imCampaignBrand} />
+              <DetailItem label="Campaign Code" value={row.campaign_code} />
               <DetailItem label="Deliverables" value={imDeliverableNames.join(', ')} />
-              {row.campaign_notes ? <DetailItem label="Campaign Notes" value={row.campaign_notes} /> : null}
             </DetailSection>
           ) : (
             <DetailSection title="Creator / Deliverables">
@@ -269,23 +268,27 @@ export function SubmissionDrawer({
           )}
 
           <DetailSection title="Commercials">
-            <DetailItem label="Total Amount" value={money(row.amount, row.currency)} alwaysShow />
+            <DetailItem label="Deal Amount" value={money(row.amount, row.currency)} alwaysShow />
+            {(row.reimbursement_amount || 0) > 0 ? (
+              <DetailItem
+                label="Product Reimbursement"
+                value={money(row.reimbursement_amount, row.currency)}
+              />
+            ) : null}
             {(row.additional_agency_commission || 0) > 0 ? (
               <DetailItem
                 label="Additional Agency Commission"
                 value={money(row.additional_agency_commission, row.currency)}
               />
             ) : null}
+            <DetailItem
+              label="Total/Gross Amount"
+              value={money(row.amount + (row.additional_agency_commission || 0), row.currency)}
+            />
           </DetailSection>
 
           <DetailSection title="Additional">
-            <DetailItem label="Internal Notes / Additional Information" value={row.additional_information} />
-            {(row.reimbursement_amount || 0) > 0 ? (
-              <DetailItem
-                label="Product Reimbursement Amount"
-                value={money(row.reimbursement_amount, row.currency)}
-              />
-            ) : null}
+            <DetailItem label="Additional Information" value={row.additional_information} />
             <DetailItem label="Reimbursement/Product Reimbursement File Info" value={row.reimbursement_receipts} />
             <DetailItem label="Product Reimbursement File" value={row.product_reimbursement_attachment?.file_name || '-'} />
             <DetailItem label="Reference PO File" value={row.reference_po_attachment?.file_name || '-'} />

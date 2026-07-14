@@ -7,6 +7,7 @@ import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
+import { SearchableSelect } from '../../../../components/forms/searchable-select';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { canManageUsers, getDefaultDashboardPath } from '../../../../lib/client/dashboard-access';
@@ -722,48 +723,31 @@ export default function UsersManagementPage() {
 
             <label className="grid gap-1.5 text-sm font-medium text-foreground">
               Role
-              <select
+              <SearchableSelect
                 value={roleFilter}
-                onChange={(event) => setRoleFilter(event.target.value as AppRole | 'all')}
-                className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-              >
-                {ROLE_FILTERS.map((entry) => (
-                  <option key={entry.value} value={entry.value}>
-                    {entry.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(next) => setRoleFilter(next as AppRole | 'all')}
+                options={ROLE_FILTERS.map((entry) => ({ value: entry.value, label: entry.label }))}
+              />
             </label>
 
             <label className="grid gap-1.5 text-sm font-medium text-foreground">
               Status
-              <select
+              <SearchableSelect
                 value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as UserStatus | 'all')}
-                className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-              >
-                {STATUS_OPTIONS.map((entry) => (
-                  <option key={entry.value} value={entry.value}>
-                    {entry.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(next) => setStatusFilter(next as UserStatus | 'all')}
+                options={STATUS_OPTIONS.map((entry) => ({ value: entry.value, label: entry.label }))}
+              />
             </label>
 
             <div className="grid gap-1.5">
               <span className="text-sm font-medium text-foreground">Business Line</span>
               <div className="flex items-center gap-2">
-                <select
+                <SearchableSelect
                   value={businessLineFilter}
-                  onChange={(event) => setBusinessLineFilter(event.target.value as BusinessLine | 'all')}
-                  className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                >
-                  {BUSINESS_LINE_FILTERS.map((entry) => (
-                    <option key={entry.value} value={entry.value}>
-                      {entry.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(next) => setBusinessLineFilter(next as BusinessLine | 'all')}
+                  options={BUSINESS_LINE_FILTERS.map((entry) => ({ value: entry.value, label: entry.label }))}
+                  className="min-w-0 flex-1"
+                />
                 <button
                   type="button"
                   onClick={() => {
@@ -974,29 +958,23 @@ export default function UsersManagementPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="grid gap-1.5 text-sm font-medium text-foreground">
                   Role
-                  <select
+                  <SearchableSelect
                     value={createForm.role}
-                    onChange={(event) => setCreateForm((current) => ({ ...current, role: event.target.value as AppRole }))}
-                    className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                  >
-                    {creatableRoles.map((role) => (
-                      <option key={role} value={role}>
-                        {formatRoleLabel(role)}
-                      </option>
-                    ))}
-                    </select>
+                    onChange={(next) => setCreateForm((current) => ({ ...current, role: next as AppRole }))}
+                    options={creatableRoles.map((role) => ({ value: role, label: formatRoleLabel(role) }))}
+                  />
                 </label>
 
                 <label className="grid gap-1.5 text-sm font-medium text-foreground">
                   Status
-                  <select
+                  <SearchableSelect
                     value={createForm.status}
-                    onChange={(event) => setCreateForm((current) => ({ ...current, status: event.target.value as UserStatus }))}
-                    className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
+                    onChange={(next) => setCreateForm((current) => ({ ...current, status: next as UserStatus }))}
+                    options={[
+                      { value: 'active', label: 'Active' },
+                      { value: 'inactive', label: 'Inactive' },
+                    ]}
+                  />
                 </label>
               </div>
 
@@ -1007,21 +985,21 @@ export default function UsersManagementPage() {
                     {requiresBusinessLine(createForm.role) ? 'Required for employee/team lead' : 'Overall role'}
                   </span>
                 </label>
-                <select
+                <SearchableSelect
                   value={createForm.business_line}
-                  onChange={(event) =>
+                  onChange={(next) =>
                     setCreateForm((current) => ({
                       ...current,
-                      business_line: event.target.value as BusinessLine | '',
+                      business_line: next as BusinessLine | '',
                     }))
                   }
-                  className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                  options={[
+                    { value: '', label: isOverallRole(createForm.role) ? 'Overall Access' : 'Unassigned' },
+                    { value: 'IM', label: 'IM' },
+                    { value: 'TM', label: 'TM' },
+                  ]}
                   disabled={isOverallRole(createForm.role)}
-                >
-                  <option value="">{isOverallRole(createForm.role) ? 'Overall Access' : 'Unassigned'}</option>
-                  <option value="IM">IM</option>
-                  <option value="TM">TM</option>
-                </select>
+                />
                 <div className="text-xs text-muted-foreground">
                   {createForm.role === 'employee' || createForm.role === 'team_lead'
                     ? `${formatBusinessLineLabel(createForm.business_line, createForm.role)} ${formatRoleLabel(createForm.role)}`
@@ -1086,33 +1064,25 @@ export default function UsersManagementPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="grid gap-1.5 text-sm font-medium text-foreground">
                   Status
-                  <select
+                  <SearchableSelect
                     value={editForm.status}
-                    onChange={(event) => setEditForm((current) => ({ ...current, status: event.target.value as UserStatus }))}
-                    className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive" disabled={editUser.id === user.id}>
-                      Inactive
-                    </option>
-                  </select>
+                    onChange={(next) => setEditForm((current) => ({ ...current, status: next as UserStatus }))}
+                    options={[
+                      { value: 'active', label: 'Active' },
+                      { value: 'inactive', label: 'Inactive', disabled: editUser.id === user.id },
+                    ]}
+                  />
                 </label>
 
                 {canEditRole(user.role, user.id, editUser) ? (
                   <div className="grid gap-1.5 text-sm font-medium text-foreground">
                     <label className="grid gap-1.5">
                       <span>Role</span>
-                      <select
+                      <SearchableSelect
                         value={editForm.role}
-                        onChange={(event) => setEditForm((current) => ({ ...current, role: event.target.value as AppRole }))}
-                        className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                      >
-                        {getEditableRoleOptions(user.role, editUser.role).map((role) => (
-                          <option key={role} value={role}>
-                            {formatRoleLabel(role)}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(next) => setEditForm((current) => ({ ...current, role: next as AppRole }))}
+                        options={getEditableRoleOptions(user.role, editUser.role).map((role) => ({ value: role, label: formatRoleLabel(role) }))}
+                      />
                     </label>
                     <p className="text-xs text-muted-foreground">
                       Admin and developer can promote or demote between Employee and Team Lead only. Finance and Admin roles stay locked here.
@@ -1136,21 +1106,21 @@ export default function UsersManagementPage() {
                       {requiresBusinessLine(editForm.role) ? 'Required for employee/team lead' : 'Overall role'}
                     </span>
                   </label>
-                  <select
+                  <SearchableSelect
                     value={editForm.business_line}
-                    onChange={(event) =>
+                    onChange={(next) =>
                       setEditForm((current) => ({
                         ...current,
-                        business_line: event.target.value as BusinessLine | '',
+                        business_line: next as BusinessLine | '',
                       }))
                     }
-                    className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                    options={[
+                      { value: '', label: isOverallRole(editForm.role) ? 'Overall Access' : 'Unassigned' },
+                      { value: 'IM', label: 'IM' },
+                      { value: 'TM', label: 'TM' },
+                    ]}
                     disabled={isOverallRole(editForm.role)}
-                  >
-                    <option value="">{isOverallRole(editForm.role) ? 'Overall Access' : 'Unassigned'}</option>
-                    <option value="IM">IM</option>
-                    <option value="TM">TM</option>
-                  </select>
+                  />
                 </div>
               ) : (
                 <div className="grid gap-1.5 text-sm font-medium text-foreground">

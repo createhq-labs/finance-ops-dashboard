@@ -20,7 +20,7 @@ export function SectionCard({
   return (
     <section
       className={[
-        'overflow-hidden rounded-2xl border border-border/70 bg-card text-card-foreground shadow-sm',
+        'overflow-visible rounded-2xl border border-border/70 bg-card text-card-foreground shadow-sm',
         'dark:border-border/80',
         className,
       ].join(' ')}
