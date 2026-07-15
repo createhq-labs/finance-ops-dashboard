@@ -50,6 +50,7 @@ export type InvoiceIntakeFormValues = {
   agencyBrandName: string;
   agencyBrandTradeName: string;
   billingBrandName: string;
+  gstSelectionMode: 'existing' | 'new';
   gstNumber: string;
   addressLine: string;
   city: string;
@@ -109,6 +110,10 @@ export type InvoiceIntakeSubmissionPayload = {
   email_address: string;
   gst_number: string;
   address: string;
+  city: string;
+  state: string;
+  country: string;
+  pincode: string;
   bill_due: string;
   invoice_type: string;
   deliverables: string;

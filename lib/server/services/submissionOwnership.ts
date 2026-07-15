@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logSubmissionAction } from './activityLog';
+import { deriveInvoiceStatusDbValue } from '../../shared/invoice-status';
 import type { AppRole } from '../types/submissions';
 
 export type TransferEligibilitySummary = {
@@ -349,6 +350,7 @@ export async function listTransferredSubmissions(
     const previousSubmissionId = row.previous_submission_id ? String(row.previous_submission_id) : null;
     return {
       ...row,
+      invoice_status: deriveInvoiceStatusDbValue(row),
       submitted_by_name: userMap.get(submittedById)?.full_name ?? null,
       submitted_by_email: userMap.get(submittedById)?.email ?? null,
       original_owner_name: userMap.get(originalOwnerId)?.full_name ?? null,

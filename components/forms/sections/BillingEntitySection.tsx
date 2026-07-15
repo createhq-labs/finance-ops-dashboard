@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { ENTITY_TYPES } from "../constants";
+import { GstNumberPicker } from "../gst-number-picker";
 import { SearchableSelect } from "../searchable-select";
 import type { GstMappingOption, InvoiceIntakeFormValues } from "../types";
 
@@ -9,6 +10,7 @@ type Props = {
   onEntityNameSelect: (value: string) => void;
   onTradeNameSelect: (value: string) => void;
   onGstSelect: (value: string) => void;
+  onAddNewGstSelect: () => void;
   errors?: Record<string, string>;
   agencyOptions: string[];
   brandOptions: string[];
@@ -24,6 +26,7 @@ export function BillingEntitySection({
   onEntityNameSelect,
   onTradeNameSelect,
   onGstSelect,
+  onAddNewGstSelect,
   errors = {},
   agencyOptions,
   brandOptions,
@@ -36,11 +39,10 @@ export function BillingEntitySection({
   const [pincodeTouched, setPincodeTouched] = useState(false);
   const [cityTouched, setCityTouched] = useState(false);
   const [stateTouched, setStateTouched] = useState(false);
-  const gstInputRef = useRef<HTMLInputElement | null>(null);
   const addressRef = useRef<HTMLTextAreaElement | null>(null);
   const gst = (values.gstNumber || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const isIndianClient = values.clientType === "Indian";
-  const gstValid = !isIndianClient || !gst ? true : gst === 'NA' || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gst);
+  const gstValid = !isIndianClient || !gst ? true : gst === "NA" || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gst);
   const pincodeValid = !isIndianClient || !values.pincode ? true : /^\d{6}$/.test(values.pincode.trim());
   const pincodePrefix = values.pincode.trim().slice(0, 2);
   const pincodeStateMap: Record<string, string> = {
@@ -101,42 +103,7 @@ export function BillingEntitySection({
   const entityNameOptions = values.entityType === "Agency" ? agencyOptions : brandOptions;
   const tradeNameOptions = values.entityType === "Agency" ? agencyTradeNameOptions : brandTradeNameOptions;
   const selectedGstMapping = gstMappingByNumber[gst] ?? null;
-
-  function formatGst(raw: string) {
-    const p1 = raw.slice(0, 2);
-    const p2 = raw.slice(2, 12);
-    const p3 = raw.slice(12, 13);
-    const p4 = raw.slice(13, 14);
-    const p5 = raw.slice(14, 15);
-    return [p1, p2, p3, p4, p5].filter(Boolean).join(" ");
-  }
-
-  function rawIndexToFormattedIndex(rawIndex: number, formatted: string) {
-    if (rawIndex <= 0) return 0;
-    let seen = 0;
-    for (let i = 0; i < formatted.length; i += 1) {
-      if (/[A-Z0-9]/.test(formatted[i])) seen += 1;
-      if (seen >= rawIndex) return i + 1;
-    }
-    return formatted.length;
-  }
-
-  function handleGstInputChange(nextDisplayValue: string, selectionStart: number | null) {
-    const cleanAll = nextDisplayValue.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15);
-    const cleanBeforeCaret = nextDisplayValue
-      .slice(0, selectionStart ?? nextDisplayValue.length)
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, "")
-      .slice(0, 15).length;
-
-    onGstSelect(cleanAll);
-
-    const nextDisplay = formatGst(cleanAll);
-    const nextCaret = rawIndexToFormattedIndex(cleanBeforeCaret, nextDisplay);
-    requestAnimationFrame(() => {
-      gstInputRef.current?.setSelectionRange(nextCaret, nextCaret);
-    });
-  }
+  const gstEntries = gstOptions.map((gstNumber) => gstMappingByNumber[gstNumber]).filter(Boolean);
 
   function resizeAddressField() {
     const node = addressRef.current;
@@ -221,6 +188,7 @@ export function BillingEntitySection({
               allowCustom
               panelMaxHeight={160}
               onChange={onEntityNameSelect}
+              deselectOnSelectedClick
               placeholder={`Select ${values.entityType.toLowerCase()} name`}
               data-field="agencyBrandName"
               required
@@ -238,6 +206,7 @@ export function BillingEntitySection({
               allowCustom
               panelMaxHeight={160}
               onChange={onTradeNameSelect}
+              deselectOnSelectedClick
               placeholder={`Select ${values.entityType.toLowerCase()} trade name`}
               data-field="agencyBrandTradeName"
               required
@@ -265,39 +234,33 @@ export function BillingEntitySection({
           ) : null}
 
           {isIndianClient ? (
-            <label className="intake-field">
+            <div className="intake-field">
               <span className="intake-label">GST Number</span>
-              {gstOptions.length > 0 ? (
-                <SearchableSelect
-                  value={values.gstNumber}
-                  options={gstOptions}
-                  allowCustom
-                  panelMaxHeight={180}
-                  onChange={onGstSelect}
-                  placeholder="Select or enter GST number"
-                  data-field="gstNumber"
-                />
-              ) : (
-                <input
-                  ref={gstInputRef}
-                  className="intake-input"
-                  value={formatGst(gst)}
-                  onChange={(event) => handleGstInputChange(event.target.value, event.target.selectionStart)}
-                  onBlur={() => setGstTouched(true)}
-                  placeholder="22AAAAA0000A1Z5"
-                  data-field="gstNumber"
-                />
-              )}
+              <GstNumberPicker
+                value={values.gstNumber}
+                mode={values.gstSelectionMode}
+                options={gstEntries}
+                onSelect={(next) => {
+                  setGstTouched(true);
+                  onGstSelect(next);
+                }}
+                onStartAddNew={() => {
+                  setGstTouched(false);
+                  onAddNewGstSelect();
+                }}
+                onClear={() => {
+                  setGstTouched(false);
+                  onChange("gstSelectionMode", "existing");
+                  onChange("gstNumber", "");
+                }}
+              />
               <div style={{ minHeight: 16 }}>
                 {errors.gstNumber ? <p className="text-danger intake-inline-error">{errors.gstNumber}</p> : null}
                 {!errors.gstNumber && gstTouched && gst && !gstValid ? (
                   <p className="text-danger intake-inline-error">Enter a valid GST number or NA.</p>
                 ) : null}
-                {!errors.gstNumber && selectedGstMapping ? (
-                  <p className="text-muted intake-inline-help">Approved mapping found. Address has been auto-filled.</p>
-                ) : null}
               </div>
-            </label>
+            </div>
           ) : null}
 
           <label className="intake-field billing-entity-wide">

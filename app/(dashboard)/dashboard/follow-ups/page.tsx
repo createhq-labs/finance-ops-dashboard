@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock3, Search } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock3 } from 'lucide-react';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
-import { SearchableSelect } from '../../../../components/forms/searchable-select';
+import { FilterBar } from '../../../../components/dashboard/filter-bar';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { useDashboardRefresh } from '../../../../lib/client/use-dashboard-refresh';
@@ -37,9 +37,6 @@ type FollowUpRow = {
   closure_status: string | null;
   submitted_at: string | null;
 };
-
-const STATUS_OPTIONS = ['All statuses', 'Pending', 'Completed'] as const;
-const TYPE_OPTIONS = ['All follow-up types', 'Payment Received pending', 'GST pending'] as const;
 
 function formatDate(value: string | null | undefined) {
   if (!value) return '-';
@@ -75,18 +72,6 @@ function getFollowUpDescription(row: FollowUpRow) {
     return 'Payment received is still pending for ' + (row.proforma_invoice || 'this submission') + '.';
   }
   return 'GST details/documents are still pending for ' + (row.proforma_invoice || 'this submission') + '.';
-}
-
-function getStatusValue(label: string): 'all' | 'pending' | 'completed' {
-  if (label === 'Pending') return 'pending';
-  if (label === 'Completed') return 'completed';
-  return 'all';
-}
-
-function getTypeValue(label: string): 'all' | 'payment_received_pending' | 'gst_pending' {
-  if (label === 'Payment Received pending') return 'payment_received_pending';
-  if (label === 'GST pending') return 'gst_pending';
-  return 'all';
 }
 
 export default function FollowUpsPage() {
@@ -188,34 +173,40 @@ export default function FollowUpsPage() {
         contentClassName="grid gap-4"
       >
         <div className="grid gap-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_200px_220px]">
-            <label className="relative block">
-              <span className="sr-only">Search follow-ups</span>
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                className="h-10 w-full rounded-xl border border-border/70 bg-background pl-9 pr-3 text-sm text-foreground outline-none transition focus:border-accent"
-                placeholder="Search PI, employee, or submission"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-
-            <SearchableSelect
-              value={status === 'all' ? 'All statuses' : status === 'pending' ? 'Pending' : 'Completed'}
-              options={[...STATUS_OPTIONS]}
-              onChange={(next) => setStatus(getStatusValue(next))}
-              placeholder="All statuses"
-              dataField="followUpStatus"
-            />
-
-            <SearchableSelect
-              value={type === 'all' ? 'All follow-up types' : type === 'payment_received_pending' ? 'Payment Received pending' : 'GST pending'}
-              options={[...TYPE_OPTIONS]}
-              onChange={(next) => setType(getTypeValue(next))}
-              placeholder="All follow-up types"
-              dataField="followUpType"
-            />
-          </div>
+          <FilterBar
+            searchPlaceholder="Search PI, employee, or submission"
+            searchValue={query}
+            primaryFilters={[
+              {
+                key: 'status',
+                label: 'Status',
+                value: status,
+                options: [
+                  { value: 'all', label: 'All statuses' },
+                  { value: 'pending', label: 'Pending' },
+                  { value: 'completed', label: 'Completed' },
+                ],
+              },
+              {
+                key: 'type',
+                label: 'Type',
+                value: type,
+                options: [
+                  { value: 'all', label: 'All follow-up types' },
+                  { value: 'payment_received_pending', label: 'Payment Received pending' },
+                  { value: 'gst_pending', label: 'GST pending' },
+                ],
+              },
+            ]}
+            advancedFilters={[]}
+            onSearch={setQuery}
+            onPrimaryChange={(key, value) => {
+              if (key === 'status') setStatus((value || 'all') as 'all' | 'pending' | 'completed');
+              if (key === 'type') setType((value || 'all') as 'all' | 'payment_received_pending' | 'gst_pending');
+            }}
+            onAdvancedChange={() => undefined}
+            onReset={() => undefined}
+          />
 
           {fetching ? (
             <WorkspaceLoader variant="section" label="Loading follow-ups..." description="Pulling the current follow-up queue." />

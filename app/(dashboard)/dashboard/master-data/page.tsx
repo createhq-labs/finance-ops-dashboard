@@ -12,6 +12,7 @@ import { WorkspaceLoader } from '../../../../components/layout/workspace-loader'
 import { useDashboardRefresh } from '../../../../lib/client/use-dashboard-refresh';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { canViewMasterData, getDefaultDashboardPath } from '../../../../lib/client/dashboard-access';
+import { inferAddressData } from '../../../../lib/shared/address-utils';
 
 type ReviewStatus = 'pending' | 'approved' | 'rejected';
 type ReviewType = 'agency' | 'brand' | 'creator' | 'agency_gst_address' | 'brand_gst_address';
@@ -163,6 +164,7 @@ function isGstAddressReviewType(type: ReviewType) {
 function buildEditFormFromItem(item: MasterDataReviewItem): EditFormState {
   const payload = item.payload ?? null;
   const isGstReview = isGstAddressReviewType(item.type);
+  const inferredAddress = isGstReview ? inferAddressData(String(payload?.address ?? ''), 'Indian') : null;
   return {
     submitted_value: isGstReview ? String(payload?.entity_name ?? item.submitted_value ?? '') : item.submitted_value,
     submitted_trade_name: isGstReview ? String(payload?.entity_trade_name ?? item.submitted_trade_name ?? '') : (item.submitted_trade_name ?? ''),
@@ -170,10 +172,10 @@ function buildEditFormFromItem(item: MasterDataReviewItem): EditFormState {
     entity_type: isGstReview ? String(payload?.entity_type ?? (item.type === 'agency_gst_address' ? 'Agency' : 'Brand')) : '',
     gst_number: isGstReview ? String(payload?.gst_number ?? '') : '',
     address: isGstReview ? String(payload?.address ?? '') : '',
-    city: isGstReview ? String(payload?.city ?? '') : '',
-    state: isGstReview ? String(payload?.state ?? '') : '',
-    country: isGstReview ? String(payload?.country ?? '') : '',
-    pincode: isGstReview ? String(payload?.pincode ?? '') : '',
+    city: isGstReview ? String(payload?.city ?? '').trim() || inferredAddress?.city || '' : '',
+    state: isGstReview ? String(payload?.state ?? '').trim() || inferredAddress?.state || '' : '',
+    country: isGstReview ? String(payload?.country ?? '').trim() || inferredAddress?.country || '' : '',
+    pincode: isGstReview ? String(payload?.pincode ?? '').trim() || inferredAddress?.pincode || '' : '',
   };
 }
 
@@ -840,7 +842,7 @@ export default function MasterDataPage() {
                   <div className="mt-1.5 text-sm font-semibold text-foreground">{viewItem.submitted_value}</div>
                 </div>
                 <div className="rounded-xl border border-border/70 bg-card p-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Current Trade Name</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Trade Name</div>
                   <div className="mt-2 text-sm font-semibold text-foreground">{viewItem.submitted_trade_name || '—'}</div>
                 </div>
               </div>
@@ -971,11 +973,11 @@ export default function MasterDataPage() {
             <div className="grid auto-rows-max content-start flex-1 gap-4 overflow-y-auto px-5 py-5">
               <div className="grid items-start gap-2 md:grid-cols-3">
                 <div className="self-start rounded-lg border border-sky-200/70 bg-sky-50/70 p-2.5 text-sm dark:border-sky-400/20 dark:bg-sky-400/10 min-h-[72px]">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Type</div>
-                  <div className="mt-1 text-[15px] font-semibold leading-5 text-sky-900 dark:text-sky-100">{formatTypeLabel(editItem.type)}</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{isGstAddressReviewType(editItem.type) ? 'Agency/Brand Type' : 'Type'}</div>
+                  <div className="mt-1 text-[15px] font-semibold leading-5 text-sky-900 dark:text-sky-100">{isGstAddressReviewType(editItem.type) ? (editForm.entity_type || formatTypeLabel(editItem.type)) : formatTypeLabel(editItem.type)}</div>
                 </div>
                 <div className="self-start rounded-lg border border-emerald-200/70 bg-emerald-50/60 p-2.5 text-sm dark:border-emerald-400/20 dark:bg-emerald-400/10 min-h-[72px]">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Current Value</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{isGstAddressReviewType(editItem.type) ? 'Agency/Brand Name' : 'Current Value'}</div>
                   <div className="mt-1 text-[15px] font-semibold leading-5 text-emerald-900 dark:text-emerald-100">{editItem.submitted_value}</div>
                 </div>
                 <div className="self-start rounded-lg border border-violet-200/70 bg-violet-50/60 p-2.5 text-sm dark:border-violet-400/20 dark:bg-violet-400/10 min-h-[72px]">
@@ -985,30 +987,37 @@ export default function MasterDataPage() {
               </div>
 
               <div className="grid gap-4">
-                <label className="grid gap-2 text-sm font-medium text-foreground">
-                  Type New Value
-                  <input
-                    value={editForm.submitted_value}
-                    onChange={(event) => setEditForm((current) => ({ ...current, submitted_value: event.target.value }))}
-                    className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                    placeholder="Enter corrected value"
-                  />
-                </label>
+                {!isGstAddressReviewType(editItem.type) ? (
+                  <>
+                    <label className="grid gap-2 text-sm font-medium text-foreground">
+                      Type New Value
+                      <input
+                        value={editForm.submitted_value}
+                        onChange={(event) => setEditForm((current) => ({ ...current, submitted_value: event.target.value }))}
+                        className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                        placeholder="Enter corrected value"
+                      />
+                    </label>
 
-                {editItem.type !== 'creator' ? (
-                  <label className="grid gap-2 text-sm font-medium text-foreground">
-                    New Trade Name
-                    <input
-                      value={editForm.submitted_trade_name}
-                      onChange={(event) => setEditForm((current) => ({ ...current, submitted_trade_name: event.target.value }))}
-                      className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                      placeholder="Optional trade name"
-                    />
-                  </label>
+                    {editItem.type !== 'creator' ? (
+                      <label className="grid gap-2 text-sm font-medium text-foreground">
+                        New Trade Name
+                        <input
+                          value={editForm.submitted_trade_name}
+                          onChange={(event) => setEditForm((current) => ({ ...current, submitted_trade_name: event.target.value }))}
+                          className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                          placeholder="Optional trade name"
+                        />
+                      </label>
+                    ) : null}
+                  </>
                 ) : null}
 
                 {isGstAddressReviewType(editItem.type) ? (
                   <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground md:col-span-2">
+                      GST/address edits keep the current entity mapping and only update the approved GST details.
+                    </div>
                     <label className="grid gap-2 text-sm font-medium text-foreground">
                       GST Number
                       <input
@@ -1018,20 +1027,22 @@ export default function MasterDataPage() {
                         placeholder="Enter GST number"
                       />
                     </label>
-                    <label className="grid gap-2 text-sm font-medium text-foreground">
-                      Entity Type
-                      <input
-                        value={editForm.entity_type}
-                        onChange={(event) => setEditForm((current) => ({ ...current, entity_type: event.target.value }))}
-                        className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                        placeholder="Agency or Brand"
-                      />
-                    </label>
                     <label className="grid gap-2 text-sm font-medium text-foreground md:col-span-2">
                       Address
                       <textarea
                         value={editForm.address}
-                        onChange={(event) => setEditForm((current) => ({ ...current, address: event.target.value }))}
+                        onChange={(event) => {
+                          const address = event.target.value;
+                          const inferred = inferAddressData(address, 'Indian');
+                          setEditForm((current) => ({
+                            ...current,
+                            address,
+                            city: current.city || inferred.city,
+                            state: current.state || inferred.state,
+                            country: current.country || inferred.country,
+                            pincode: current.pincode || inferred.pincode,
+                          }));
+                        }}
                         className="min-h-20 rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
                         placeholder="Enter approved billing address"
                       />

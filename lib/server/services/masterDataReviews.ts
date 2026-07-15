@@ -21,13 +21,23 @@ type PendingReviewInsert = {
   created_from_submission_id: string;
   submitted_by: string;
   status: 'pending';
-  payload?: Record<string, unknown>;
+  payload: Record<string, unknown>;
 };
 
 type CreatedReviewSummary = {
   id: string;
   type: PendingReviewInsert['type'];
   submitted_value: string;
+};
+
+type ReviewFailureDetails = {
+  success: false;
+  created: 0;
+  createdReviews: CreatedReviewSummary[];
+  error: string;
+  code?: string | null;
+  details?: string | null;
+  hint?: string | null;
 };
 
 function normalizeMasterValue(value: string) {
@@ -92,7 +102,6 @@ export async function createPendingMasterDataReviews(params: {
   lineItemsPayload: SanitizedLineItemPayload[];
 }) {
   const { userClient, appUser, submissionId, submissionPayload, lineItemsPayload } = params;
-
   const [agenciesRes, brandsRes, creatorsRes, gstMappingsRes] = await Promise.all([
     userClient.from('brands').select('agency_name').eq('is_active', true).not('agency_name', 'is', null),
     userClient.from('brands').select('brand_name').eq('is_active', true).not('brand_name', 'is', null),
@@ -107,6 +116,9 @@ export async function createPendingMasterDataReviews(params: {
       created: 0,
       createdReviews: [] as CreatedReviewSummary[],
       error: errors.map((error) => error?.message).join(' | '),
+      code: errors.map((error) => error?.code).filter(Boolean).join(' | ') || null,
+      details: errors.map((error) => error?.details).filter(Boolean).join(' | ') || null,
+      hint: errors.map((error) => error?.hint).filter(Boolean).join(' | ') || null,
     };
   }
 
@@ -153,7 +165,9 @@ export async function createPendingMasterDataReviews(params: {
     payload?: Record<string, unknown>
   ) {
     const value = asText(submittedValue);
-    if (!value || approved) return;
+    if (!value || approved) {
+      return;
+    }
 
     const dedupeKey = type + ':' + normalizedValue;
     if (seen.has(dedupeKey)) return;
@@ -167,7 +181,7 @@ export async function createPendingMasterDataReviews(params: {
       created_from_submission_id: submissionId,
       submitted_by: appUser.id,
       status: 'pending',
-      payload,
+      payload: payload ?? {},
     });
   }
 
@@ -201,12 +215,11 @@ export async function createPendingMasterDataReviews(params: {
 
   const gstPayload = buildGstReviewPayload(submissionPayload);
   if (gstPayload) {
-    const normalizedEntityName = normalizeMasterValue(gstPayload.entity_name);
     const mappingKey = buildApprovedGstMappingKey(gstPayload);
     pushPendingReview(
       gstPayload.entity_type === 'Agency' ? 'agency_gst_address' : 'brand_gst_address',
       gstPayload.entity_name,
-      normalizedEntityName + '::' + gstPayload.gst_number,
+      mappingKey,
       approvedGstMappings.has(mappingKey),
       gstPayload.entity_trade_name,
       gstPayload
@@ -227,11 +240,20 @@ export async function createPendingMasterDataReviews(params: {
     .in('normalized_value', candidateValues);
 
   if (existingPendingRes.error) {
+    console.error('master_data_reviews existing pending lookup failed', {
+      submissionId,
+      candidateTypes,
+      candidateValues,
+      error: existingPendingRes.error,
+    });
     return {
       success: false as const,
       created: 0,
       createdReviews: [] as CreatedReviewSummary[],
       error: existingPendingRes.error.message,
+      code: existingPendingRes.error.code ?? null,
+      details: existingPendingRes.error.details ?? null,
+      hint: existingPendingRes.error.hint ?? null,
     };
   }
 
@@ -244,27 +266,54 @@ export async function createPendingMasterDataReviews(params: {
     return { success: true as const, created: 0, createdReviews: [] as CreatedReviewSummary[] };
   }
 
-  const { data, error } = await userClient
-    .from('master_data_reviews')
-    .insert(filteredInserts)
-    .select('id, type, submitted_value');
+  const createdReviews: CreatedReviewSummary[] = [];
+  let skipped = 0;
 
-  if (error) {
-    if (error.code === '23505') {
-      return { success: true as const, created: 0, createdReviews: [] as CreatedReviewSummary[] };
+  for (const item of filteredInserts) {
+    const { data, error } = await userClient
+      .from('master_data_reviews')
+      .insert(item)
+      .select('id, type, submitted_value')
+      .single();
+
+    if (error) {
+      if (error.code === '23505') {
+        console.info('Pending master review already exists, skipping duplicate creation', {
+          submissionId,
+          reviewType: item.type,
+          normalizedValue: item.normalized_value,
+        });
+        skipped += 1;
+        continue;
+      }
+
+      console.error('master_data_reviews insert failed', {
+        submissionId,
+        reviewType: item.type,
+        payloadKeys: item.payload ? Object.keys(item.payload) : [],
+        error,
+      });
+
+      return {
+        success: false as const,
+        created: 0,
+        createdReviews: [] as CreatedReviewSummary[],
+        error: error.message,
+        code: error.code ?? null,
+        details: error.details ?? null,
+        hint: error.hint ?? null,
+      };
     }
 
-    return {
-      success: false as const,
-      created: 0,
-      createdReviews: [] as CreatedReviewSummary[],
-      error: error.message,
-    };
+    if (data) {
+      createdReviews.push(data as CreatedReviewSummary);
+    }
   }
 
   return {
     success: true as const,
-    created: filteredInserts.length,
-    createdReviews: (data ?? []) as CreatedReviewSummary[],
+    created: createdReviews.length,
+    skipped,
+    createdReviews,
   };
 }

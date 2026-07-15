@@ -49,6 +49,11 @@ export async function createSubmissionWithLineItems(params: {
   lineItemsPayload: SanitizedLineItemPayload[];
 }): Promise<CreateSubmissionResult> {
   const { userClient, adminClient, appUser, submissionPayload, lineItemsPayload } = params;
+  const dbSubmissionPayload = Object.fromEntries(
+    Object.entries(submissionPayload).filter(
+      ([key]) => key !== 'city' && key !== 'state' && key !== 'country' && key !== 'pincode'
+    )
+  ) as Omit<SanitizedSubmissionPayload, 'city' | 'state' | 'country' | 'pincode'>;
 
   const shouldSkipPi = shouldSkipPiGeneration(submissionPayload, lineItemsPayload);
   let carryForwardPi: string | null | undefined;
@@ -58,7 +63,7 @@ export async function createSubmissionWithLineItems(params: {
     previousSubmissionId = submissionPayload.previous_submission_id;
     const { data: previousSubmission, error: previousError } = await adminClient
       .from('intake_submissions')
-      .select('proforma_invoice')
+      .select('id, proforma_invoice, is_latest_version')
       .eq('id', previousSubmissionId)
       .maybeSingle();
 
@@ -80,6 +85,28 @@ export async function createSubmissionWithLineItems(params: {
 
     carryForwardPi = previousSubmission.proforma_invoice ?? null;
 
+    if (!previousSubmission.is_latest_version && carryForwardPi) {
+      const { data: latestSubmission, error: latestError } = await adminClient
+        .from('intake_submissions')
+        .select('id, proforma_invoice')
+        .eq('proforma_invoice', carryForwardPi)
+        .eq('is_latest_version', true)
+        .maybeSingle();
+
+      if (latestError) {
+        return {
+          success: false,
+          stage: 'fetch_previous_submission',
+          error: latestError.message,
+        };
+      }
+
+      if (latestSubmission?.id) {
+        previousSubmissionId = String(latestSubmission.id);
+        carryForwardPi = latestSubmission.proforma_invoice ?? carryForwardPi;
+      }
+    }
+
     const { error: supersedeError } = await adminClient
       .from('intake_submissions')
       .update({
@@ -98,7 +125,8 @@ export async function createSubmissionWithLineItems(params: {
   }
 
   const insertPayload = {
-    ...submissionPayload,
+    ...dbSubmissionPayload,
+    previous_submission_id: previousSubmissionId,
     submitted_by: appUser.id,
     assigned_to_user_id: appUser.id,
     original_submitted_by: appUser.id,

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BusinessLine } from '../types/submissions';
+import { deriveInvoiceStatusDbValue } from '../../shared/invoice-status';
 
 type TeamLeadMemberRow = {
   id: string;
@@ -403,6 +404,7 @@ export async function listTeamLeadSubmissions(
     const previousSubmissionId = row.previous_submission_id ? String(row.previous_submission_id) : null;
     return {
       ...row,
+      invoice_status: deriveInvoiceStatusDbValue(row),
       submitted_by_name: owner?.full_name ?? null,
       submitted_by_email: owner?.email ?? null,
       previous_submission_pi: previousSubmissionId ? previousPiMap.get(previousSubmissionId) ?? null : null,

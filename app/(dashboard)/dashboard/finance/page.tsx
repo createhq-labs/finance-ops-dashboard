@@ -7,6 +7,7 @@ import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
+import { FilterBar } from '../../../../components/dashboard/filter-bar';
 import { SearchableSelect } from '../../../../components/forms/searchable-select';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { SubmissionTable, type MasterDataCellKey, type MasterDataReviewSummary, type SubmissionRow } from '../../../../components/dashboard/submission-table';
@@ -27,6 +28,7 @@ import {
 } from '../../../../lib/client/finance-status';
 import { canViewFinanceDashboard, getDefaultDashboardPath, getDrawerViewerRole, getFinanceDashboardTitle } from '../../../../lib/client/dashboard-access';
 import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../lib/shared/submission-attachments';
+import { normalizeInvoiceStatusMachine } from '../../../../lib/shared/invoice-status';
 
 type SubmissionAttachmentApiRow = {
   id: string;
@@ -250,14 +252,7 @@ function hasStartedLifecycleStatus(value: string | null | undefined) {
 }
 
 function normalizeInvoiceStatus(value: string | null | undefined) {
-  const normalized = normalizeStatusToken(value);
-  if (!normalized) return '';
-  if (normalized === 'invoice_created') return 'invoice_created';
-  if (normalized === 'po_created_estimate' || normalized === 'po_createdestimate') return 'po_created_estimate';
-  if (normalized === 'invoice_cancelled') return 'invoice_cancelled';
-  if (normalized === 'debit_note') return 'debit_note';
-  if (normalized === 'invoice_plus_debit_note') return 'invoice_plus_debit_note';
-  return 'invoice_pending';
+  return normalizeInvoiceStatusMachine(value) || '';
 }
 
 function formatDateDigitsInput(value: string) {
@@ -500,57 +495,6 @@ function TrackingRow({
   );
 }
 
-function DateFilterInput({
-  label,
-  committedValue,
-  onCommit,
-}: {
-  label: string;
-  committedValue: string;
-  onCommit: (value: string) => void;
-}) {
-  const [inputValue, setInputValue] = useState(() => formatDateFilterInput(committedValue));
-  const [invalid, setInvalid] = useState(false);
-
-  useEffect(() => {
-    setInputValue(formatDateFilterInput(committedValue));
-    if (!committedValue) setInvalid(false);
-  }, [committedValue]);
-
-  return (
-    <label className="grid gap-1">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <input
-        className={`intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20 ${invalid ? 'border-destructive focus:border-destructive focus:ring-destructive/15' : ''}`}
-        type="text"
-        inputMode="numeric"
-        placeholder="dd/mm/yyyy"
-        value={inputValue}
-        onChange={(e) => {
-          const parsed = parseDateFilterInput(e.target.value);
-          setInputValue(parsed.display);
-          if (!parsed.display) {
-            setInvalid(false);
-            onCommit('');
-            return;
-          }
-          if (!parsed.complete) {
-            setInvalid(false);
-            return;
-          }
-          if (!parsed.valid) {
-            setInvalid(true);
-            return;
-          }
-          setInvalid(false);
-          onCommit(parsed.iso);
-        }}
-      />
-      {invalid ? <span className="text-xs text-destructive">Enter a valid date.</span> : null}
-    </label>
-  );
-}
-
 export default function FinanceReviewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -578,7 +522,6 @@ export default function FinanceReviewPage() {
   const [versionStatusFilter, setVersionStatusFilter] = useState<'all' | 'original' | 'resubmitted' | 'superseded'>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [actionError, setActionError] = useState('');
   const [rejectionNote, setRejectionNote] = useState('');
@@ -1358,124 +1301,121 @@ export default function FinanceReviewPage() {
         </section>
 
       <SectionCard padding={16} className="overflow-visible">
-        <div className="grid gap-3">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,0.7fr))_auto]">
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Search</span>
-              <input className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search PI, creator, agency, or brand" />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Business Line</span>
-              <SearchableSelect
-                value={businessLineFilter}
-                onChange={(next) => setBusinessLineFilter(next as 'all' | 'TM' | 'IM')}
-                options={[
-                  { value: 'all', label: 'All' },
-                  { value: 'TM', label: 'TM' },
-                  { value: 'IM', label: 'IM' },
-                ]}
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Status</span>
-              <SearchableSelect
-                value={intakeStatusFilter}
-                onChange={(next) => setIntakeStatusFilter(next as 'all' | 'submitted' | 'accepted' | 'rejected')}
-                options={[
-                  { value: 'all', label: 'All' },
-                  { value: 'submitted', label: 'Submitted' },
-                  { value: 'accepted', label: 'Accepted' },
-                  { value: 'rejected', label: 'Rejected' },
-                ]}
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Employee</span>
-              <SearchableSelect
-                value={employeeFilter === 'all' ? '' : employeeFilter}
-                options={employeeOptions}
-                onChange={(next) => setEmployeeFilter(next || 'all')}
-                placeholder="Search employee email"
-                panelMaxHeight={220}
-                searchTextByOption={Object.fromEntries(employeeOptions.map((email) => [email, `${email} ${employeeDirectory[email] || ''}`]))}
-                className="border-border/70 bg-card text-foreground"
-              />
-            </label>
-            <div className="flex items-end">
-              <button className="btn w-full xl:w-auto shrink-0" type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
-                More Filters{activeAdvancedFilterCount > 0 ? ` (${activeAdvancedFilterCount})` : ''}
-              </button>
-            </div>
-          </div>
-
-          {showAdvancedFilters ? (
-            <div className="rounded-xl border border-border/60 bg-card/90 p-3 dark:bg-card/70">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <DateFilterInput label="Date From" committedValue={dateFrom} onCommit={setDateFrom} />
-                <DateFilterInput label="Date To" committedValue={dateTo} onCommit={setDateTo} />
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Invoice Status</span>
-                  <SearchableSelect
-                    value={invoiceStatusFilter}
-                    onChange={(next) => setInvoiceStatusFilter(next)}
-                    options={[
-                      { value: 'all', label: 'All' },
-                      ...invoiceStatusOptions.map((status) => ({ value: status, label: formatInvoiceStatus(status) })),
-                    ]}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Creator Invoice Received</span>
-                  <SearchableSelect
-                    value={creatorInvoiceReceivedFilter}
-                    onChange={(next) => setCreatorInvoiceReceivedFilter(next as 'all' | 'received' | 'pending')}
-                    options={[{ value: 'all', label: 'All' }, ...CREATOR_INVOICE_STATUS_OPTIONS]}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Payment Received</span>
-                  <SearchableSelect
-                    value={paymentReceivedFilter}
-                    onChange={(next) => setPaymentReceivedFilter(next)}
-                    options={[{ value: 'all', label: 'All' }, ...PAYMENT_RECEIVED_STATUS_OPTIONS]}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Payment Made</span>
-                  <SearchableSelect
-                    value={paymentMadeFilter}
-                    onChange={(next) => setPaymentMadeFilter(next)}
-                    options={[{ value: 'all', label: 'All' }, ...PAYMENT_MADE_STATUS_OPTIONS]}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Closed Status</span>
-                  <SearchableSelect
-                    value={closedStatusFilter}
-                    onChange={(next) => setClosedStatusFilter(next)}
-                    options={[{ value: 'all', label: 'All' }, ...CLOSURE_STATUS_OPTIONS]}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Version Status</span>
-                  <SearchableSelect
-                    value={versionStatusFilter}
-                    onChange={(next) => setVersionStatusFilter(next as 'all' | 'original' | 'resubmitted' | 'superseded')}
-                    options={[
-                      { value: 'all', label: 'All' },
-                      { value: 'original', label: 'Original' },
-                      { value: 'resubmitted', label: 'Resubmitted' },
-                      { value: 'superseded', label: 'Superseded' },
-                    ]}
-                  />
-                </label>
-              </div>
-              <div className="mt-3 flex justify-end">
-                <button className="btn" type="button" onClick={resetAdvancedFilters}>Reset Advanced</button>
-              </div>
-            </div>
-          ) : null}
-        </div>
+        <FilterBar
+          searchPlaceholder="Search PI, creator, agency, or brand"
+          searchValue={query}
+          primaryFilters={[
+            {
+              key: 'businessLine',
+              label: 'Business Line',
+              value: businessLineFilter,
+              options: [
+                { value: 'all', label: 'All' },
+                { value: 'TM', label: 'TM' },
+                { value: 'IM', label: 'IM' },
+              ],
+            },
+            {
+              key: 'status',
+              label: 'Status',
+              value: intakeStatusFilter,
+              options: [
+                { value: 'all', label: 'All' },
+                { value: 'submitted', label: 'Submitted' },
+                { value: 'accepted', label: 'Accepted' },
+                { value: 'rejected', label: 'Rejected' },
+              ],
+            },
+            {
+              key: 'employee',
+              label: 'Employee',
+              value: employeeFilter === 'all' ? '' : employeeFilter,
+              placeholder: 'Search employee email',
+              options: employeeOptions.map((email) => ({ value: email, label: email })),
+              searchTextByOption: Object.fromEntries(employeeOptions.map((email) => [email, `${email} ${employeeDirectory[email] || ""}`])),
+            },
+          ]}
+          advancedFilters={[
+            { key: 'dateFrom', label: 'Date From', type: 'date', value: dateFrom },
+            { key: 'dateTo', label: 'Date To', type: 'date', value: dateTo },
+            {
+              key: 'invoiceStatus',
+              label: 'Invoice Status',
+              type: 'select',
+              value: invoiceStatusFilter,
+              options: [
+                { value: 'all', label: 'All' },
+                ...invoiceStatusOptions.map((status) => ({ value: status, label: formatInvoiceStatus(status) })),
+              ],
+            },
+            {
+              key: 'creatorInvoice',
+              label: 'Creator Invoice Received',
+              type: 'select',
+              value: creatorInvoiceReceivedFilter,
+              options: [{ value: 'all', label: 'All' }, ...CREATOR_INVOICE_STATUS_OPTIONS],
+            },
+            {
+              key: 'paymentReceived',
+              label: 'Payment Received',
+              type: 'select',
+              value: paymentReceivedFilter,
+              options: [{ value: 'all', label: 'All' }, ...PAYMENT_RECEIVED_STATUS_OPTIONS],
+            },
+            {
+              key: 'paymentMade',
+              label: 'Payment Made',
+              type: 'select',
+              value: paymentMadeFilter,
+              options: [{ value: 'all', label: 'All' }, ...PAYMENT_MADE_STATUS_OPTIONS],
+            },
+            {
+              key: 'closedStatus',
+              label: 'Closed Status',
+              type: 'select',
+              value: closedStatusFilter,
+              options: [{ value: 'all', label: 'All' }, ...CLOSURE_STATUS_OPTIONS],
+            },
+            {
+              key: 'versionStatus',
+              label: 'Version Status',
+              type: 'select',
+              value: versionStatusFilter,
+              options: [
+                { value: 'all', label: 'All' },
+                { value: 'original', label: 'Original' },
+                { value: 'resubmitted', label: 'Resubmitted' },
+                { value: 'superseded', label: 'Superseded' },
+              ],
+            },
+          ]}
+          onSearch={setQuery}
+          onPrimaryChange={(key, value) => {
+            if (key === 'businessLine') setBusinessLineFilter((value || 'all') as 'all' | 'TM' | 'IM');
+            if (key === 'status') setIntakeStatusFilter((value || 'all') as 'all' | 'submitted' | 'accepted' | 'rejected');
+            if (key === 'employee') setEmployeeFilter(value || 'all');
+          }}
+          onAdvancedChange={(filters) => {
+            setDateFrom(filters.dateFrom || '');
+            setDateTo(filters.dateTo || '');
+            setInvoiceStatusFilter(filters.invoiceStatus || 'all');
+            setCreatorInvoiceReceivedFilter((filters.creatorInvoice || 'all') as 'all' | 'received' | 'pending');
+            setPaymentReceivedFilter(filters.paymentReceived || 'all');
+            setPaymentMadeFilter(filters.paymentMade || 'all');
+            setClosedStatusFilter(filters.closedStatus || 'all');
+            setVersionStatusFilter((filters.versionStatus || 'all') as 'all' | 'original' | 'resubmitted' | 'superseded');
+          }}
+          onReset={() => {
+            setDateFrom('');
+            setDateTo('');
+            setInvoiceStatusFilter('all');
+            setCreatorInvoiceReceivedFilter('all');
+            setPaymentReceivedFilter('all');
+            setPaymentMadeFilter('all');
+            setClosedStatusFilter('all');
+            setVersionStatusFilter('all');
+          }}
+        />
       </SectionCard>
 
       {rowsLoading ? <WorkspaceLoader variant="section" label="Loading finance submissions..." /> : null}

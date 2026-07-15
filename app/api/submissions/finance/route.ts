@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../lib/server/auth';
 import { assertSupabaseEnv, createUserScopedClient } from '../../../../lib/server/supabase';
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
+import { deriveInvoiceStatusDbValue, normalizeInvoiceStatusMachine } from '../../../../lib/shared/invoice-status';
 
 const EMPTY_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -52,7 +53,20 @@ function applyFinanceFilters(query: FilterQuery, params: URLSearchParams, employ
   if (submissionId) query = query.eq('id', submissionId);
   if (businessLine && businessLine !== 'all') query = query.eq('business_line', businessLine);
   if (intakeStatus && intakeStatus !== 'all') query = query.eq('intake_status', intakeStatus);
-  if (invoiceStatus && invoiceStatus !== 'all') query = query.eq('invoice_status', invoiceStatus);
+  if (invoiceStatus && invoiceStatus !== 'all') {
+    const normalizedInvoiceStatus = normalizeInvoiceStatusMachine(invoiceStatus);
+    if (normalizedInvoiceStatus === 'invoice_cancelled') {
+      query = query.eq('intake_status', 'rejected');
+    } else if (normalizedInvoiceStatus === 'invoice_plus_debit_note') {
+      query = query.not('intake_status', 'eq', 'rejected').not('invoice_number', 'is', null).not('debit_note_number', 'is', null);
+    } else if (normalizedInvoiceStatus === 'debit_note') {
+      query = query.not('intake_status', 'eq', 'rejected').not('debit_note_number', 'is', null).is('invoice_number', null);
+    } else if (normalizedInvoiceStatus === 'invoice_created') {
+      query = query.not('intake_status', 'eq', 'rejected').not('invoice_number', 'is', null).is('debit_note_number', null);
+    } else if (normalizedInvoiceStatus === 'po_created_estimate' || normalizedInvoiceStatus === 'invoice_pending') {
+      query = query.eq('intake_status', 'accepted').is('invoice_number', null).is('debit_note_number', null);
+    }
+  }
   if (creatorInvoice && creatorInvoice !== 'all') query = query.eq('creator_invoice_status', creatorInvoice);
   if (paymentReceived && paymentReceived !== 'all') query = query.eq('payment_received_status', paymentReceived);
   if (paymentMade && paymentMade !== 'all') query = query.eq('payment_made_status', paymentMade);
@@ -225,6 +239,7 @@ export async function GET(req: NextRequest) {
       const owner = userMap.get(String(row.submitted_by ?? ''));
       return {
         ...row,
+        invoice_status: deriveInvoiceStatusDbValue(row),
         submitted_by_name: owner?.full_name ?? null,
         submitted_by_email: owner?.email ?? null,
         previous_submission_pi: row.previous_submission_id ? previousPiMap.get(String(row.previous_submission_id)) ?? null : null,
