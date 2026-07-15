@@ -194,6 +194,56 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (productReimbursementAttachment) {
+      await runNonCriticalSideEffect('log reimbursement attachment upload failed', async () => {
+        await logActivityEvent(adminClient, {
+          actorUserId: appUser.id,
+          action: 'submission_attachment_uploaded',
+          submissionId: result.submission.id,
+          details: {
+            attachment_id: productReimbursementAttachment.id,
+            document_type: productReimbursementAttachment.document_type,
+            file_name: productReimbursementAttachment.file_name,
+          },
+          structured: {
+            action_type: 'submission_attachment_uploaded',
+            entity_type: 'submission_attachment',
+            entity_id: productReimbursementAttachment.id,
+            metadata: {
+              attachment_id: productReimbursementAttachment.id,
+              document_type: productReimbursementAttachment.document_type,
+              file_name: productReimbursementAttachment.file_name,
+            },
+          },
+        });
+      });
+    }
+
+    if (referencePoAttachment) {
+      await runNonCriticalSideEffect('log reference po attachment upload failed', async () => {
+        await logActivityEvent(adminClient, {
+          actorUserId: appUser.id,
+          action: 'submission_attachment_uploaded',
+          submissionId: result.submission.id,
+          details: {
+            attachment_id: referencePoAttachment.id,
+            document_type: referencePoAttachment.document_type,
+            file_name: referencePoAttachment.file_name,
+          },
+          structured: {
+            action_type: 'submission_attachment_uploaded',
+            entity_type: 'submission_attachment',
+            entity_id: referencePoAttachment.id,
+            metadata: {
+              attachment_id: referencePoAttachment.id,
+              document_type: referencePoAttachment.document_type,
+              file_name: referencePoAttachment.file_name,
+            },
+          },
+        });
+      });
+    }
+
     const masterReviewResult = await createPendingMasterDataReviews({
       userClient,
       appUser,

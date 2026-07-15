@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useDashboardRefresh } from '../../../lib/client/use-dashboard-refresh';
 import { KpiCard } from '../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../components/dashboard/page-header';
 import { SectionCard } from '../../../components/dashboard/section-card';
@@ -910,15 +911,17 @@ export default function DashboardHomePage() {
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState('');
 
-  useEffect(() => {
-    let active = true;
-    if (!user) return;
+  useDashboardRefresh({
+    enabled: Boolean(user),
+    refresh: async () => {
+      if (!user) return;
 
-    setRowsLoading(true);
-    setRowsError('');
-    const isOperationalRole = user.role === 'finance' || user.role === 'admin';
-    fetch(isOperationalRole ? '/api/submissions/finance' : '/api/submissions/my', { method: 'GET', cache: 'no-store' })
-      .then(async (res) => {
+      setRowsLoading(true);
+      setRowsError('');
+      const isOperationalRole = user.role === 'finance' || user.role === 'admin';
+
+      try {
+        const res = await fetch(isOperationalRole ? '/api/submissions/finance' : '/api/submissions/my', { method: 'GET', cache: 'no-store' });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json?.success) {
           throw new Error(json?.error || 'Failed to load overview data.');
@@ -968,38 +971,36 @@ export default function DashboardHomePage() {
           entry_type: item.entry_type || null,
           intake_line_items: item.intake_line_items || [],
         }));
-        if (active) setRows(mapped);
-      })
-      .catch((error) => {
-        if (active) setRowsError(error instanceof Error ? error.message : 'Failed to load overview data.');
-      })
-      .finally(() => {
-        if (active) setRowsLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [user]);
+        setRows(mapped);
+      } catch (error) {
+        setRowsError(error instanceof Error ? error.message : 'Failed to load overview data.');
+      } finally {
+        setRowsLoading(false);
+      }
+    },
+    intervalMs: user?.role === 'team_lead' ? 30000 : user?.role === 'employee' ? 60000 : undefined,
+    refreshOnFocus: user?.role === 'team_lead' || user?.role === 'employee',
+  });
 
   useEffect(() => {
-    let active = true;
-    if (!user || user.role !== 'team_lead') {
-      setTeamRows([]);
-      setTeamMembers([]);
-      setTeamError('');
-      setTeamLoading(false);
-      return;
-    }
-
-    setTeamLoading(true);
+    if (user?.role === 'team_lead') return;
+    setTeamRows([]);
+    setTeamMembers([]);
     setTeamError('');
+    setTeamLoading(false);
+  }, [user]);
 
-    Promise.all([
-      fetch('/api/submissions/team', { method: 'GET', cache: 'no-store' }),
-      fetch('/api/team/members', { method: 'GET', cache: 'no-store' }),
-    ])
-      .then(async ([teamRes, membersRes]) => {
+  useDashboardRefresh({
+    enabled: user?.role === 'team_lead',
+    refresh: async () => {
+      setTeamLoading(true);
+      setTeamError('');
+
+      try {
+        const [teamRes, membersRes] = await Promise.all([
+          fetch('/api/submissions/team', { method: 'GET', cache: 'no-store' }),
+          fetch('/api/team/members', { method: 'GET', cache: 'no-store' }),
+        ]);
         const teamJson = await teamRes.json().catch(() => ({}));
         const membersJson = await membersRes.json().catch(() => ({}));
 
@@ -1010,42 +1011,37 @@ export default function DashboardHomePage() {
           throw new Error(membersJson?.error || 'Failed to load team members.');
         }
 
-        if (!active) return;
         setTeamRows(((teamJson.submissions ?? []) as TeamLeadOverviewApiRow[]).map(mapTeamLeadOverviewRow));
         setTeamMembers(Array.isArray(membersJson.members) ? membersJson.members : []);
-      })
-      .catch((error) => {
-        if (active) {
-          setTeamError(error instanceof Error ? error.message : 'Failed to load team data.');
-        }
-      })
-      .finally(() => {
-        if (active) setTeamLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [user]);
+      } catch (error) {
+        setTeamError(error instanceof Error ? error.message : 'Failed to load team data.');
+      } finally {
+        setTeamLoading(false);
+      }
+    },
+    intervalMs: 30000,
+    refreshOnFocus: true,
+  });
 
   useEffect(() => {
-    let active = true;
-    if (!user || user.role !== 'admin') {
-      setAdminUsers([]);
-      setMasterDataSummary({ total: 0, pending: 0, approved: 0, rejected: 0 });
-      setAdminLoading(false);
-      setAdminError('');
-      return;
-    }
-
-    setAdminLoading(true);
+    if (user?.role === 'admin') return;
+    setAdminUsers([]);
+    setMasterDataSummary({ total: 0, pending: 0, approved: 0, rejected: 0 });
+    setAdminLoading(false);
     setAdminError('');
+  }, [user]);
 
-    Promise.all([
-      fetch('/api/users', { method: 'GET', cache: 'no-store' }),
-      fetch('/api/master-data/reviews', { method: 'GET', cache: 'no-store' }),
-    ])
-      .then(async ([usersRes, reviewsRes]) => {
+  useDashboardRefresh({
+    enabled: user?.role === 'admin',
+    refresh: async () => {
+      setAdminLoading(true);
+      setAdminError('');
+
+      try {
+        const [usersRes, reviewsRes] = await Promise.all([
+          fetch('/api/users', { method: 'GET', cache: 'no-store' }),
+          fetch('/api/master-data/reviews', { method: 'GET', cache: 'no-store' }),
+        ]);
         const usersJson = await usersRes.json().catch(() => ({}));
         const reviewsJson = await reviewsRes.json().catch(() => ({}));
 
@@ -1056,25 +1052,17 @@ export default function DashboardHomePage() {
           throw new Error(reviewsJson?.error || 'Failed to load master data summary.');
         }
 
-        if (!active) return;
         setAdminUsers(Array.isArray(usersJson.users) ? usersJson.users : []);
         setMasterDataSummary(
           reviewsJson.summary ?? { total: 0, pending: 0, approved: 0, rejected: 0 }
         );
-      })
-      .catch((error) => {
-        if (active) {
-          setAdminError(error instanceof Error ? error.message : 'Failed to load admin overview.');
-        }
-      })
-      .finally(() => {
-        if (active) setAdminLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [user]);
+      } catch (error) {
+        setAdminError(error instanceof Error ? error.message : 'Failed to load admin overview.');
+      } finally {
+        setAdminLoading(false);
+      }
+    },
+  });
 
   const visibleRows = useMemo(() => [...rows].sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()), [rows]);
   const financeRecentRows = useMemo(() => visibleRows.slice(0, 6), [visibleRows]);

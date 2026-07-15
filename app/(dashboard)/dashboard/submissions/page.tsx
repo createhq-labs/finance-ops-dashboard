@@ -11,6 +11,7 @@ import { FilterBar } from '../../../../components/dashboard/filter-bar';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
+import { useDashboardRefresh } from '../../../../lib/client/use-dashboard-refresh';
 import { PAYMENT_RECEIVED_STATUS_OPTIONS } from '../../../../lib/client/finance-status';
 import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../lib/shared/submission-attachments';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
@@ -254,13 +255,17 @@ export default function EmployeeSubmissionsPage() {
     void loadRows(nextOffset, true);
   }, [hasMore, loadRows, loadingMore, nextOffset, rowsLoading]);
 
-  useEffect(() => {
-    if (!user) return;
-    setRows([]);
-    setHasMore(false);
-    setNextOffset(null);
-    void loadRows(0, false);
-  }, [loadRows, user]);
+  useDashboardRefresh({
+    enabled: Boolean(user),
+    refresh: async () => {
+      setRows([]);
+      setHasMore(false);
+      setNextOffset(null);
+      await loadRows(0, false);
+    },
+    intervalMs: 60000,
+    refreshOnFocus: true,
+  });
 
   useEffect(() => {
     if (!hasMore || loadingMore || loadingMoreRef.current) return undefined;

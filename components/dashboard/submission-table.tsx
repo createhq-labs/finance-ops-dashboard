@@ -76,6 +76,7 @@ export type SubmissionRow = {
   additional_information?: string | null;
   previous_submission_id?: string | null;
   previous_submission_pi?: string | null;
+  previous_submission_snapshot?: Partial<Omit<SubmissionRow, 'previous_submission_snapshot'>> | null;
   version_status?: 'original' | 'resubmitted' | 'superseded';
   business_line?: 'TM' | 'IM' | string | null;
   entry_type?: 'SC' | 'MC' | string | null;
@@ -105,14 +106,26 @@ export type MasterDataCellKey =
   | 'agency_trade_name'
   | 'brand_name'
   | 'brand_trade_name'
-  | 'creator_name';
+  | 'creator_name'
+  | 'gst_number';
 
 export type MasterDataReviewSummary = {
   id: string;
-  type: 'agency' | 'brand' | 'creator';
+  type: 'agency' | 'brand' | 'creator' | 'agency_gst_address' | 'brand_gst_address';
   status: 'pending' | 'approved' | 'rejected';
   submitted_value: string;
   submitted_trade_name?: string | null;
+  payload?: {
+    entity_type?: string;
+    entity_name?: string;
+    entity_trade_name?: string | null;
+    gst_number?: string;
+    address?: string;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
+    pincode?: string | null;
+  } | null;
   reviewed_by_name?: string | null;
   reviewed_at?: string | null;
   rejection_reason?: string | null;
@@ -267,7 +280,7 @@ const COLUMN_TITLES: Record<SheetColumnId, string> = {
 const COLUMN_WIDTHS: Record<SheetColumnId, number> = {
   pi: 164,
   submitted_at: 124,
-  intake_status: 132,
+  intake_status: 176,
   invoice_status: 136,
   payment_received: 140,
   payment_made: 136,
@@ -322,6 +335,35 @@ const STATUS_AUDIT_FIELDS = new Set<StatusEditableField>([
   'closed_status',
 ]);
 
+const RESUBMISSION_CHANGE_FIELDS: Array<{ label: string; getValue: (row: Partial<SubmissionRow>) => unknown }> = [
+  { label: 'Entity Name', getValue: (row) => row.entity },
+  { label: 'Legal Name', getValue: (row) => row.trade_name },
+  { label: 'GST Number', getValue: (row) => row.gst_number },
+  { label: 'Address', getValue: (row) => row.address },
+  { label: 'Payment Terms', getValue: (row) => row.bill_due },
+  { label: 'Invoice Type', getValue: (row) => row.invoice_type },
+  { label: 'Creator / Creators', getValue: (row) => row.creator_creators_name },
+  { label: 'Brand Name', getValue: (row) => row.brand_name },
+  { label: 'Campaign Code', getValue: (row) => row.campaign_code },
+  { label: 'Campaign Name', getValue: (row) => row.campaign_name },
+  { label: 'Campaign Brand', getValue: (row) => row.campaign_brand },
+  { label: 'Deliverables', getValue: (row) => row.deliverables },
+  { label: 'Deal Amount', getValue: (row) => row.amount },
+  { label: 'Product Reimbursement', getValue: (row) => row.reimbursement_amount },
+  { label: 'Product Reimbursement File', getValue: (row) => row.reimbursement_receipts },
+  { label: 'Additional Agency Commission', getValue: (row) => row.additional_agency_commission },
+  { label: 'Additional Information', getValue: (row) => row.additional_information },
+  { label: 'Business Line', getValue: (row) => row.business_line },
+  { label: 'Entry Type', getValue: (row) => row.entry_type },
+  { label: 'Entity Type', getValue: (row) => row.entity_type },
+  { label: 'Client Type', getValue: (row) => row.client_type },
+  { label: 'Agency Name', getValue: (row) => row.agency_name },
+  { label: 'Agency Trade Name', getValue: (row) => row.agency_trade_name },
+  { label: 'Brand Trade Name', getValue: (row) => row.brand_trade_name },
+  { label: 'Currency', getValue: (row) => row.currency },
+  { label: 'Line Items', getValue: (row) => row.intake_line_items ?? [] },
+];
+
 const COLLAPSED_COLUMN_WIDTHS: Record<'invoice_number' | 'debit_note_number' | 'campaign_code' | 'campaign_name' | 'city' | 'state' | 'country' | 'pincode', number> = {
   invoice_number: 72,
   debit_note_number: 72,
@@ -346,6 +388,53 @@ function copyMoney(value: string | number | null | undefined) {
     .map((part) => part.replace(/[^0-9.-]/g, '').trim())
     .filter((part) => /[0-9]/.test(part))
     .join(String.fromCharCode(10));
+}
+
+function normalizeComparableDate(value: string) {
+  const isoLike = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:[tT ].*)?$/);
+  if (isoLike) return isoLike[1] + '-' + isoLike[2] + '-' + isoLike[3];
+  const dayFirst = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (dayFirst) return dayFirst[3] + '-' + dayFirst[2] + '-' + dayFirst[1];
+  return null;
+}
+
+function normalizeComparableValue(value: unknown): string {
+  if (value == null) return '';
+  if (Array.isArray(value)) {
+    return JSON.stringify(
+      value.map((entry) => {
+        if (!entry || typeof entry !== 'object') return normalizeComparableValue(entry);
+        const item = entry as Record<string, unknown>;
+        return {
+          creator_name: normalizeComparableValue(item.creator_name),
+          brand_name: normalizeComparableValue(item.brand_name),
+          deliverable_name: normalizeComparableValue(item.deliverable_name),
+          amount: normalizeComparableValue(item.amount),
+          line_order: normalizeComparableValue(item.line_order),
+        };
+      })
+    );
+  }
+  if (typeof value === 'number') return 'number:' + value;
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  const text = String(value).trim();
+  if (!text) return '';
+  if (/^-?\d+(?:\.\d+)?$/.test(text)) return 'number:' + Number(text);
+  const normalizedDate = normalizeComparableDate(text);
+  if (normalizedDate) return 'date:' + normalizedDate;
+  return text;
+}
+
+function getResubmissionChangedFields(row: SubmissionRow): string[] {
+  if (!row.previous_submission_snapshot) return [];
+  const previous = row.previous_submission_snapshot;
+  const changed: string[] = [];
+  for (const field of RESUBMISSION_CHANGE_FIELDS) {
+    const currentValue = normalizeComparableValue(field.getValue(row));
+    const previousValue = normalizeComparableValue(field.getValue(previous));
+    if (currentValue !== previousValue) changed.push(field.label);
+  }
+  return changed;
 }
 
 function fieldValue(value: string | number | null | undefined) {
@@ -1220,6 +1309,8 @@ function MasterDataReviewPopover({
     const clampedTop = typeof window === 'undefined' ? top : Math.min(Math.max(12, top), Math.max(12, window.innerHeight - 320));
     const clampedLeft = typeof window === 'undefined' ? left : Math.min(Math.max(12, left), Math.max(12, window.innerWidth - 288 - 12));
   const statusLabel = review.status === 'approved' ? 'Approved' : review.status === 'rejected' ? 'Ignored' : 'Pending Review';
+  const gstNumber = String(review.payload?.gst_number ?? '').trim();
+  const address = String(review.payload?.address ?? '').trim();
 
   return createPortal(
     <div
@@ -1247,6 +1338,18 @@ function MasterDataReviewPopover({
           <div>
             <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-300">Trade Name</div>
             <div className="mt-1 text-sm font-medium text-gray-900 dark:text-gray-50">{review.submitted_trade_name}</div>
+          </div>
+        ) : null}
+        {gstNumber ? (
+          <div>
+            <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-300">GST Number</div>
+            <div className="mt-1 text-sm font-medium text-gray-900 dark:text-gray-50">{gstNumber}</div>
+          </div>
+        ) : null}
+        {address ? (
+          <div>
+            <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-300">Address</div>
+            <div className="mt-1 text-sm font-medium text-gray-900 dark:text-gray-50">{address}</div>
           </div>
         ) : null}
         {review.status !== 'pending' ? (
@@ -2077,6 +2180,7 @@ export function SubmissionTable({
   const [reopenReason, setReopenReason] = useState('');
   const [reopenError, setReopenError] = useState('');
   const [reopenSubmitting, setReopenSubmitting] = useState(false);
+  const [changeSummaryDialog, setChangeSummaryDialog] = useState<{ pi: string; fields: string[] } | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const cellRefs = useRef(new Map<string, HTMLTableCellElement>());
   const lastHighlightedRowIdRef = useRef<string | null>(null);
@@ -2236,6 +2340,14 @@ export function SubmissionTable({
   }, [rows]);
 
   const expandedPiGroupSet = useMemo(() => new Set(expandedPiGroups), [expandedPiGroups]);
+  const resubmissionChangeMap = useMemo(() => {
+    const next = new Map<string, string[]>();
+    for (const row of rows) {
+      if (!row.previous_submission_id || !row.previous_submission_snapshot) continue;
+      next.set(row.id, getResubmissionChangedFields(row));
+    }
+    return next;
+  }, [rows]);
 
   useEffect(() => {
     if (!highlightedRowId) {
@@ -2953,7 +3065,8 @@ export function SubmissionTable({
           );
         }
 
-        return (
+        const changeFields = field === 'intake_status' && !isHistoryRow ? (resubmissionChangeMap.get(row.id) ?? null) : null;
+        const statusCell = (
           <BadgeSelectCell
             row={row}
             field={field}
@@ -2979,6 +3092,29 @@ export function SubmissionTable({
             }
             onOpenAudit={STATUS_AUDIT_FIELDS.has(field) ? (event) => openAudit(row, field, event) : undefined}
           />
+        );
+
+        if (!changeFields || !row.previous_submission_id) {
+          return statusCell;
+        }
+
+        return (
+          <div className="flex max-w-full items-center gap-1.5">
+            {statusCell}
+            <button
+              type="button"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                setChangeSummaryDialog({ pi: formatPiNumber(row), fields: changeFields });
+              }}
+              className="inline-flex h-5 min-w-[24px] items-center justify-center rounded-full border border-rose-300 bg-rose-50 px-1.5 text-[10px] font-semibold leading-none text-rose-700 transition-none hover:bg-rose-100 dark:border-rose-400/35 dark:bg-rose-500/12 dark:text-rose-200 dark:hover:bg-rose-500/20"
+              title="View changes in latest resubmission"
+              aria-label={'View ' + changeFields.length + ' changed fields in latest resubmission'}
+            >
+              {changeFields.length}
+            </button>
+          </div>
         );
       }
       case 'email_address':
@@ -3031,8 +3167,16 @@ export function SubmissionTable({
           </div>
         );
       }
-      case 'gst_number':
-        return commonText(fieldValue(row.gst_number));
+      case 'gst_number': {
+        const value = fieldValue(row.gst_number);
+        const review = masterDataReviewsBySubmission?.[row.id]?.gst_number;
+        return (
+          <div className="flex items-start gap-1.5">
+            <div className="min-w-0 flex-1">{commonText(value)}</div>
+            {review ? renderMasterDataReviewActions(review) : null}
+          </div>
+        );
+      }
       case 'address':
         return commonText(fieldValue(row.address));
       case 'city':
@@ -3465,6 +3609,45 @@ export function SubmissionTable({
           onReject={masterDataPopover.review.status === 'pending' ? () => void handleMasterDataPopoverAction('reject') : undefined}
         />
       ) : null}
+      {changeSummaryDialog && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/35 px-4">
+              <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-base font-semibold text-foreground">Changes in Latest Resubmission</div>
+                    <div className="mt-1 text-sm text-muted-foreground">{changeSummaryDialog.pi}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setChangeSummaryDialog(null)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border/70 text-muted-foreground hover:bg-muted/30 hover:text-foreground"
+                    aria-label="Close changes summary"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+                <div className="mt-4">
+                  <div className="text-sm font-medium text-foreground">Changed Fields:</div>
+                  {changeSummaryDialog.fields.length > 0 ? (
+                    <ul className="mt-2 grid gap-2 text-sm text-foreground">
+                      {changeSummaryDialog.fields.map((field) => (
+                        <li key={field} className="flex items-start gap-2">
+                          <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-rose-500" />
+                          <span>{field}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-sm text-muted-foreground">No comparable business fields changed.</p>
+                  )}
+                </div>
+                <p className="mt-4 text-xs text-muted-foreground">Detailed history is available by expanding the PI entry.</p>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
       {reopenDialog && typeof document !== 'undefined'
         ? createPortal(
             <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/35 px-4">
