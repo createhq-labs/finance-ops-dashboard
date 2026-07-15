@@ -5,7 +5,7 @@ import { canManageMasterData, listMasterDataReviews, type MasterDataReviewStatus
 import { assertSupabaseEnv, createUserScopedClient } from '../../../../lib/server/supabase';
 
 const ALLOWED_STATUS = new Set<MasterDataReviewStatus | 'all'>(['pending', 'approved', 'rejected', 'all']);
-const ALLOWED_TYPE = new Set<MasterDataReviewType | 'all'>(['agency', 'brand', 'creator', 'all']);
+const ALLOWED_TYPE = new Set<MasterDataReviewType | 'all'>(['agency', 'brand', 'creator', 'agency_gst_address', 'brand_gst_address', 'all']);
 
 export async function GET(req: NextRequest) {
   try {

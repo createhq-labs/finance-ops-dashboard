@@ -16,6 +16,18 @@ export type MasterDeliverable = {
   name: string;
 };
 
+export type GstMappingOption = {
+  entityType: string;
+  entityName: string;
+  entityTradeName: string;
+  gstNumber: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  pincode: string;
+};
+
 export type DeliverableAmountRow = {
   deliverable: string;
   amount: string;

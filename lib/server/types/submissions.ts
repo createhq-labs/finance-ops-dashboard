@@ -27,6 +27,10 @@ export type CreateSubmissionInput = {
   email_address?: string;
   gst_number?: string | null;
   address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  pincode?: string | null;
   bill_due?: string;
   invoice_type?: string;
   deliverables?: string | null;
@@ -62,6 +66,10 @@ export type SanitizedSubmissionPayload = {
   email_address: string;
   gst_number: string | null;
   address: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  pincode: string | null;
   bill_due: string;
   invoice_type: string;
   deliverables: string | null;

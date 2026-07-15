@@ -9,6 +9,7 @@ export type DashboardPath =
   | '/dashboard/team-submissions'
   | '/dashboard/transferred-submissions'
   | '/dashboard/submissions/new'
+  | '/dashboard/follow-ups'
   | '/dashboard/finance'
   | '/dashboard/analytics'
   | '/dashboard/master-data'
@@ -40,6 +41,10 @@ export function canViewSubmissionsPage(role: AppRole) {
 }
 
 export function canViewNotifications(role: AppRole) {
+  return isEmployeeRole(role) || isTeamLeadRole(role) || role === 'finance' || isAdminRole(role) || role === 'developer';
+}
+
+export function canViewFollowUps(role: AppRole) {
   return isEmployeeRole(role) || isTeamLeadRole(role) || role === 'finance' || isAdminRole(role) || role === 'developer';
 }
 
@@ -112,6 +117,7 @@ export function canAccessDashboardPath(role: AppRole, pathname: string) {
   if (pathname === '/dashboard/submissions') return canViewSubmissionsPage(role);
   if (pathname === '/dashboard/team-submissions') return canViewTeamSubmissions(role);
   if (pathname === '/dashboard/transferred-submissions') return canViewTransferredSubmissions(role);
+  if (pathname === '/dashboard/follow-ups') return canViewFollowUps(role);
   if (pathname === '/dashboard/finance') return canViewFinanceDashboard(role);
   if (pathname === '/dashboard/analytics') return canViewAnalyticsPage(role);
   if (pathname === '/dashboard/master-data') return canViewMasterData(role);

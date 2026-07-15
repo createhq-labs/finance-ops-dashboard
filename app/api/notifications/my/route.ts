@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../lib/server/auth';
+import { syncFollowUps } from '../../../../lib/server/services/followUps';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../lib/server/supabase';
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
 
@@ -90,6 +91,8 @@ export async function GET(req: NextRequest) {
     if (!token) throw new Error('Missing auth token');
 
     const userClient = createUserScopedClient(token);
+    const adminClient = createServiceClient();
+    await syncFollowUps(adminClient);
     const appUser = await getCurrentAppUser(userClient, token);
     const limit = clampLimit(req.nextUrl.searchParams.get('limit'), 40);
     const offset = parseOffset(req.nextUrl.searchParams.get('offset'));
@@ -150,3 +153,4 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+

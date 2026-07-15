@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../../../lib/server/auth';
+import { logActivityEvent } from '../../../../../../lib/server/services/activityLog';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../../../lib/server/supabase';
 import { getAccessTokenFromCookieHeader } from '../../../../../../lib/server/services/authCookies';
 import {
@@ -33,10 +34,35 @@ export async function GET(
       appUser,
     });
 
+    const isDownload = req.nextUrl.searchParams.get('download') === '1';
     const signedUrl = await createSubmissionAttachmentSignedUrl({
       adminClient,
       filePath: attachment.file_path,
-      download: req.nextUrl.searchParams.get('download') === '1',
+      download: isDownload,
+    });
+
+    await logActivityEvent(adminClient, {
+      actorUserId: appUser.id,
+      action: isDownload ? 'submission_attachment_downloaded' : 'submission_attachment_viewed',
+      submissionId: attachment.submission_id,
+      details: {
+        attachment_id: attachment.id,
+        document_type: attachment.document_type,
+        file_name: attachment.file_name,
+      },
+      structured: {
+        action_type: isDownload ? 'submission_attachment_downloaded' : 'submission_attachment_viewed',
+        entity_type: 'submission_attachment',
+        entity_id: attachment.id,
+        metadata: {
+          attachment_id: attachment.id,
+          document_type: attachment.document_type,
+          file_name: attachment.file_name,
+          access_mode: isDownload ? 'download' : 'view',
+          actor_role: appUser.role,
+          actor_user_id: appUser.id,
+        },
+      },
     });
 
     return NextResponse.json({

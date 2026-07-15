@@ -15,7 +15,7 @@ import { CommercialsSection } from "./sections/CommercialsSection";
 import { CreatorDeliverablesSection } from "./sections/CreatorDeliverablesSection";
 import { FormActions } from "./sections/FormActions";
 import { InvoiceDetailsSection } from "./sections/InvoiceDetailsSection";
-import type { BusinessLine, EntryType, InvoiceIntakeFormSubmitInput, InvoiceIntakeFormValues, InvoiceIntakeSubmissionPayload, MultiCreatorRow } from "./types";
+import type { BusinessLine, EntryType, GstMappingOption, InvoiceIntakeFormSubmitInput, InvoiceIntakeFormValues, InvoiceIntakeSubmissionPayload, MultiCreatorRow } from "./types";
 import { PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES, PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES, REFERENCE_PO_ALLOWED_MIME_TYPES, REFERENCE_PO_MAX_FILE_SIZE_BYTES } from "../../lib/shared/submission-attachments";
 
 type Props = {
@@ -377,6 +377,21 @@ export function InvoiceIntakeForm({
               ? body.data.deliverables.IM.map((name: string) => String(name ?? "").trim()).filter(Boolean)
               : [],
           },
+          gstMappings: Array.isArray(body.data.gstMappings)
+            ? body.data.gstMappings
+                .map((row: { entityType?: string; entityName?: string; entityTradeName?: string; gstNumber?: string; address?: string; city?: string; state?: string; country?: string; pincode?: string }) => ({
+                  entityType: String(row.entityType ?? "").trim(),
+                  entityName: String(row.entityName ?? "").trim(),
+                  entityTradeName: String(row.entityTradeName ?? "").trim(),
+                  gstNumber: String(row.gstNumber ?? "").trim(),
+                  address: String(row.address ?? "").trim(),
+                  city: String(row.city ?? "").trim(),
+                  state: String(row.state ?? "").trim(),
+                  country: String(row.country ?? "").trim(),
+                  pincode: String(row.pincode ?? "").trim(),
+                }))
+                .filter((row: { entityType: string; entityName: string; gstNumber: string; address: string }) => row.entityType && row.entityName && row.gstNumber && row.address)
+            : [],
         };
 
         setMasters({
@@ -387,6 +402,7 @@ export function InvoiceIntakeForm({
             TM: nextMasters.deliverables.TM.length > 0 ? nextMasters.deliverables.TM : fallback.deliverables.TM,
             IM: nextMasters.deliverables.IM.length > 0 ? nextMasters.deliverables.IM : fallback.deliverables.IM,
           },
+          gstMappings: nextMasters.gstMappings,
         });
       } catch {
         // Keep fallback constants when master data fetch fails.
@@ -569,6 +585,19 @@ export function InvoiceIntakeForm({
       return acc;
     }, {});
   }, [masters.brands]);
+  const gstMappingsForEntity = useMemo(
+    () => masters.gstMappings.filter((row) => row.entityType === values.entityType && row.entityName.trim().toLowerCase() === values.agencyBrandName.trim().toLowerCase()),
+    [masters.gstMappings, values.entityType, values.agencyBrandName]
+  );
+  const gstOptions = useMemo(() => gstMappingsForEntity.map((row) => row.gstNumber), [gstMappingsForEntity]);
+  const gstMappingByNumber = useMemo(
+    () =>
+      gstMappingsForEntity.reduce<Record<string, GstMappingOption>>((acc, row) => {
+        acc[row.gstNumber.toUpperCase()] = row;
+        return acc;
+      }, {}),
+    [gstMappingsForEntity]
+  );
 
   function clearErrors(keys: string[]) {
     setFieldErrors((prev) => {
@@ -602,6 +631,39 @@ export function InvoiceIntakeForm({
     setValues((prev) => ({ ...prev, [key]: nextValue }));
     clearErrors([String(key), "creatorDeliverables"]);
     setError("");
+  }
+
+  function handleEntityNameSelect(next: string) {
+    update("agencyBrandName", next);
+    const tradeNameMap = values.entityType === "Agency" ? agencyTradeNameMap : brandTradeNameMap;
+    const mappedTradeName = tradeNameMap[next.trim().toLowerCase()];
+    if (mappedTradeName) {
+      update("agencyBrandTradeName", mappedTradeName);
+    }
+  }
+
+  function handleTradeNameSelect(next: string) {
+    update("agencyBrandTradeName", next);
+    const entityNameMap = values.entityType === "Agency" ? agencyNameMap : brandNameMap;
+    const mappedEntityName = entityNameMap[next.trim().toLowerCase()];
+    if (mappedEntityName) {
+      update("agencyBrandName", mappedEntityName);
+    }
+  }
+
+  function handleGstSelect(next: string) {
+    update("gstNumber", next.toUpperCase() as InvoiceIntakeFormValues["gstNumber"]);
+    const mapped = gstMappingByNumber[next.trim().toUpperCase()];
+    if (!mapped) return;
+    setValues((prev) => ({
+      ...prev,
+      gstNumber: mapped.gstNumber,
+      addressLine: mapped.address,
+      city: mapped.city || prev.city,
+      state: mapped.state || prev.state,
+      country: mapped.country || prev.country || 'India',
+      pincode: mapped.pincode || prev.pincode,
+    }));
   }
 
   useEffect(() => {
@@ -1222,15 +1284,16 @@ export function InvoiceIntakeForm({
       <BillingEntitySection
         values={values}
         onChange={update}
+        onEntityNameSelect={handleEntityNameSelect}
+        onTradeNameSelect={handleTradeNameSelect}
+        onGstSelect={handleGstSelect}
         errors={fieldErrors}
         agencyOptions={agencyOptions}
         brandOptions={brandOptions}
         agencyTradeNameOptions={agencyTradeNameOptions}
         brandTradeNameOptions={brandTradeNameOptions}
-        agencyTradeNameMap={agencyTradeNameMap}
-        brandTradeNameMap={brandTradeNameMap}
-        agencyNameMap={agencyNameMap}
-        brandNameMap={brandNameMap}
+        gstOptions={gstOptions}
+        gstMappingByNumber={gstMappingByNumber}
       />
       <InvoiceDetailsSection values={values} onChange={update} errors={fieldErrors} />
       <CreatorDeliverablesSection

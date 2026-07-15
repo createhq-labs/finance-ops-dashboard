@@ -198,6 +198,17 @@ export type FormDropdownMasterData = {
     TM: string[];
     IM: string[];
   };
+  gstMappings: Array<{
+    entityType: string;
+    entityName: string;
+    entityTradeName: string;
+    gstNumber: string;
+    address: string;
+    city: string;
+    state: string;
+    country: string;
+    pincode: string;
+  }>;
 };
 
 export function getFallbackMasterData(): FormDropdownMasterData {
@@ -218,5 +229,6 @@ export function getFallbackMasterData(): FormDropdownMasterData {
       TM: getDeliverableOptions("TM"),
       IM: getDeliverableOptions("IM"),
     },
+    gstMappings: [],
   };
 }

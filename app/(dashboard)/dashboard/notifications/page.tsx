@@ -4,6 +4,7 @@ import { Check, CheckCircle2, ChevronRight, Inbox } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
+import { useDashboardRefresh } from '../../../../lib/client/use-dashboard-refresh';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { isEmployeeRole } from '../../../../lib/client/dashboard-access';
@@ -174,13 +175,17 @@ export default function NotificationsPage() {
     void loadNotificationsPage(nextOffset, true);
   }, [hasMore, loadNotificationsPage, loadingMore, nextOffset, pageLoading]);
 
-  useEffect(() => {
-    if (!user) return;
-    setNotifications([]);
-    setHasMore(false);
-    setNextOffset(null);
-    void loadNotificationsPage(0, false);
-  }, [loadNotificationsPage, user]);
+  useDashboardRefresh({
+    enabled: Boolean(user),
+    refresh: async () => {
+      setNotifications([]);
+      setHasMore(false);
+      setNextOffset(null);
+      await loadNotificationsPage(0, false);
+    },
+    intervalMs: 60000,
+    refreshOnFocus: true,
+  });
 
   useEffect(() => {
     if (!hasMore || loadingMore) return undefined;

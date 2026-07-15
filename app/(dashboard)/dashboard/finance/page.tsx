@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -12,6 +12,7 @@ import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-reco
 import { SubmissionTable, type MasterDataCellKey, type MasterDataReviewSummary, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
+import { useDashboardRefresh } from '../../../../lib/client/use-dashboard-refresh';
 import {
   CLOSURE_STATUS_OPTIONS,
   CREATOR_INVOICE_STATUS_OPTIONS,
@@ -34,6 +35,37 @@ type SubmissionAttachmentApiRow = {
   file_size_bytes: number;
   mime_type: string;
   uploaded_at?: string | null;
+};
+
+type FinanceComparisonSnapshot = {
+  id?: string | null;
+  proforma_invoice?: string | null;
+  currency?: string | null;
+  agency_brand_name?: string | null;
+  agency_brand_trade_name?: string | null;
+  gst_number?: string | null;
+  address?: string | null;
+  bill_due?: string | null;
+  invoice_type?: string | null;
+  deliverables?: string | null;
+  creator_creators_name?: string | null;
+  brand_name?: string | null;
+  campaign_code?: string | null;
+  campaign_name?: string | null;
+  campaign_brand?: string | null;
+  commercials?: number | string | null;
+  additional_agency_commission?: number | string | null;
+  reimbursement_amount?: number | string | null;
+  reimbursement_receipts?: string | null;
+  additional_information?: string | null;
+  business_line?: 'TM' | 'IM' | null | string;
+  entry_type?: 'SC' | 'MC' | null | string;
+  entity_type?: 'Agency' | 'Brand' | null | string;
+  client_type?: 'Indian' | 'Foreign' | null | string;
+  agency_name?: string | null;
+  agency_trade_name?: string | null;
+  brand_trade_name?: string | null;
+  intake_line_items?: SubmissionRow['intake_line_items'];
 };
 
 type FinanceApiRow = {
@@ -61,6 +93,7 @@ type FinanceApiRow = {
   additional_information: string | null;
   previous_submission_id: string | null;
   previous_submission_pi?: string | null;
+  previous_submission_snapshot?: FinanceComparisonSnapshot | null;
   version_status?: 'original' | 'resubmitted' | 'superseded';
   business_line?: 'TM' | 'IM' | null;
   entry_type?: 'SC' | 'MC' | null;
@@ -107,10 +140,21 @@ type FinanceAction =
 
 type MasterDataReviewApiRow = {
   id: string;
-  type: 'agency' | 'brand' | 'creator';
+  type: 'agency' | 'brand' | 'creator' | 'agency_gst_address' | 'brand_gst_address';
   status: 'pending' | 'approved' | 'rejected';
   submitted_value: string;
   submitted_trade_name?: string | null;
+  payload?: {
+    entity_type?: string;
+    entity_name?: string;
+    entity_trade_name?: string | null;
+    gst_number?: string;
+    address?: string;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
+    pincode?: string | null;
+  } | null;
   reviewed_by_name?: string | null;
   reviewed_at?: string | null;
   rejection_reason?: string | null;
@@ -278,6 +322,39 @@ function mergeSubmissionRows(current: SubmissionRow[], incoming: SubmissionRow[]
   });
 }
 
+function mapFinanceComparisonSnapshot(item: FinanceComparisonSnapshot): NonNullable<SubmissionRow['previous_submission_snapshot']> {
+  return {
+    id: String(item.id || ''),
+    pi: item.proforma_invoice ?? '',
+    entity: item.agency_brand_name || '-',
+    amount: Number(item.commercials ?? 0),
+    currency: item.currency || 'INR',
+    trade_name: item.agency_brand_trade_name || null,
+    gst_number: item.gst_number || null,
+    address: item.address || null,
+    bill_due: item.bill_due || null,
+    invoice_type: item.invoice_type || null,
+    creator_creators_name: item.creator_creators_name || null,
+    brand_name: item.brand_name || null,
+    campaign_code: item.campaign_code || null,
+    campaign_name: item.campaign_name || null,
+    campaign_brand: item.campaign_brand || null,
+    deliverables: item.deliverables || null,
+    additional_agency_commission: Number(item.additional_agency_commission ?? 0),
+    reimbursement_amount: Number(item.reimbursement_amount ?? 0),
+    reimbursement_receipts: item.reimbursement_receipts || null,
+    additional_information: item.additional_information || null,
+    business_line: normalizeBusinessLine(item.business_line),
+    entry_type: item.entry_type || null,
+    entity_type: item.entity_type || null,
+    client_type: item.client_type || null,
+    agency_name: item.agency_name || null,
+    agency_trade_name: item.agency_trade_name || null,
+    brand_trade_name: item.brand_trade_name || null,
+    intake_line_items: item.intake_line_items || [],
+  };
+}
+
 function mapFinanceSubmissionRow(item: FinanceApiRow): SubmissionRow {
   return {
     id: String(item.id),
@@ -312,6 +389,7 @@ function mapFinanceSubmissionRow(item: FinanceApiRow): SubmissionRow {
     additional_information: item.additional_information || null,
     previous_submission_id: item.previous_submission_id || null,
     previous_submission_pi: item.previous_submission_pi || null,
+    previous_submission_snapshot: item.previous_submission_snapshot ? mapFinanceComparisonSnapshot(item.previous_submission_snapshot) : null,
     version_status: item.version_status || 'original',
     business_line: normalizeBusinessLine(item.business_line),
     entry_type: item.entry_type || null,
@@ -351,6 +429,7 @@ function mapMasterDataReviews(items: MasterDataReviewApiRow[]): MasterDataReview
       status: item.status,
       submitted_value: item.submitted_value,
       submitted_trade_name: item.submitted_trade_name ?? null,
+      payload: item.payload ?? null,
       reviewed_by_name: item.reviewed_by_name ?? null,
       reviewed_at: item.reviewed_at ?? null,
       rejection_reason: item.rejection_reason ?? null,
@@ -364,8 +443,10 @@ function mapMasterDataReviews(items: MasterDataReviewApiRow[]): MasterDataReview
     } else if (item.type === 'brand') {
       bucket.brand_name ??= summary;
       bucket.brand_trade_name ??= summary;
-    } else {
+    } else if (item.type === 'creator') {
       bucket.creator_name ??= summary;
+    } else {
+      bucket.gst_number ??= summary;
     }
     next[submissionId] = bucket;
   }
@@ -605,26 +686,24 @@ export default function FinanceReviewPage() {
     versionStatusFilter,
   ]);
 
-  useEffect(() => {
-    let active = true;
-    if (!user) return;
-    if (!canViewFinanceDashboard(user.role)) return;
-    setRows([]);
-    setHasMore(false);
-    setNextOffset(null);
-    void loadFinanceSubmissions(0, false).catch((error) => {
-      if (active) {
+  useDashboardRefresh({
+    enabled: Boolean(user && canViewFinanceDashboard(user.role)),
+    refresh: async () => {
+      setRows([]);
+      setHasMore(false);
+      setNextOffset(null);
+      try {
+        await loadFinanceSubmissions(0, false);
+      } catch (error) {
         const nextMessage = error instanceof Error ? error.message : 'Failed to load finance submissions.';
         if (handleAuthTokenRecoveryMessage(nextMessage)) return;
         setRowsError(nextMessage);
         setRowsLoading(false);
       }
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [user, loadFinanceSubmissions]);
+    },
+    intervalMs: 60000,
+    refreshOnFocus: true,
+  });
 
   useEffect(() => {
     if (loading || !user) return;
@@ -911,8 +990,10 @@ export default function FinanceReviewPage() {
       } else if (review.type === 'brand') {
         applyReview('brand_name');
         applyReview('brand_trade_name');
-      } else {
+      } else if (review.type === 'creator') {
         applyReview('creator_name');
+      } else {
+        applyReview('gst_number');
       }
       return { ...current, [submissionId]: bucket };
     });
