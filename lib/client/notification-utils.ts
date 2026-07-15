@@ -61,7 +61,7 @@ export function getNotificationDisplayType(type: string, role?: string | null) {
 export function getNotificationTone(type: string): NotificationTone {
   if (type === 'submission_rejected' || type === 'submission_reopened') return 'danger';
   if (type === 'resubmission_requested' || type === 'resubmitted_form') return 'warning';
-  if (type === 'finance_action_pending') return 'action';
+  if (type === 'finance_action_pending' || type === 'follow_up_pending') return 'action';
   if (type === 'new_submission') return 'success';
   if (type === 'pending_master_data_review' || type === 'invoice_updated') return 'info';
   return 'neutral';
@@ -169,3 +169,4 @@ export function formatRelativeTime(value: string) {
     year: 'numeric',
   });
 }
+

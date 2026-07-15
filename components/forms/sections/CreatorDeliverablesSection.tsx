@@ -196,9 +196,7 @@ export function CreatorDeliverablesSection({
           </label>
 
           {showCurrency ? (
-            <div className="intake-field">
-              <CurrencyField currency={values.currency} onCurrencyChange={(next) => onChange("currency", next as InvoiceIntakeFormValues["currency"])} />
-            </div>
+            <CurrencyField currency={values.currency} onCurrencyChange={(next) => onChange("currency", next as InvoiceIntakeFormValues["currency"])} />
           ) : null}
 
           <label className="intake-field">

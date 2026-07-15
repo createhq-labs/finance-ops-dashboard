@@ -23,6 +23,18 @@ type DeliverableRow = {
   business_line: string | null;
 };
 
+type GstMappingRow = {
+  entity_type: string | null;
+  entity_name: string | null;
+  entity_trade_name: string | null;
+  gst_number: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  pincode: string | null;
+};
+
 export async function GET(req: NextRequest) {
   try {
     assertSupabaseEnv();
@@ -64,11 +76,19 @@ export async function GET(req: NextRequest) {
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true });
 
-    const [agenciesRes, brandsRes, creatorsResult, deliverablesRes] = await Promise.all([
+    const gstMappingsPromise = userClient
+      .from("gst_address_mappings")
+      .select("entity_type, entity_name, entity_trade_name, gst_number, address, city, state, country, pincode")
+      .eq("is_active", true)
+      .order("entity_name", { ascending: true })
+      .order("gst_number", { ascending: true });
+
+    const [agenciesRes, brandsRes, creatorsResult, deliverablesRes, gstMappingsRes] = await Promise.all([
       agenciesPromise,
       brandsPromise,
       creatorsPromise,
       deliverablesPromise,
+      gstMappingsPromise,
     ]);
 
     let creatorsError = creatorsResult.error;
@@ -87,7 +107,7 @@ export async function GET(req: NextRequest) {
       }));
     }
 
-    const errors = [agenciesRes.error, brandsRes.error, creatorsError, deliverablesRes.error].filter(Boolean);
+    const errors = [agenciesRes.error, brandsRes.error, creatorsError, deliverablesRes.error, gstMappingsRes.error].filter(Boolean);
     if (errors.length > 0) {
       return NextResponse.json(
         { success: false, error: errors.map((error) => error?.message).join(" | ") },
@@ -116,6 +136,20 @@ export async function GET(req: NextRequest) {
       }))
       .filter((row) => row.name);
 
+    const gstMappings = ((gstMappingsRes.data ?? []) as GstMappingRow[])
+      .map((row) => ({
+        entityType: String(row.entity_type ?? '').trim(),
+        entityName: String(row.entity_name ?? '').trim(),
+        entityTradeName: String(row.entity_trade_name ?? '').trim(),
+        gstNumber: String(row.gst_number ?? '').trim(),
+        address: String(row.address ?? '').trim(),
+        city: String(row.city ?? '').trim(),
+        state: String(row.state ?? '').trim(),
+        country: String(row.country ?? '').trim(),
+        pincode: String(row.pincode ?? '').trim(),
+      }))
+      .filter((row) => row.entityType && row.entityName && row.gstNumber && row.address);
+
     const deliverables = { TM: [] as string[], IM: [] as string[] };
     for (const row of (deliverablesRes.data ?? []) as DeliverableRow[]) {
       const name = row.name?.trim();
@@ -133,6 +167,7 @@ export async function GET(req: NextRequest) {
           brands,
           creators,
           deliverables,
+          gstMappings,
         },
       },
       { status: 200 }

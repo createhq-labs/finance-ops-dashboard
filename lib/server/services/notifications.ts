@@ -9,7 +9,8 @@ type NotificationType =
   | 'submission_rejected'
   | 'resubmission_requested'
   | 'submission_reopened'
-  | 'invoice_updated';
+  | 'invoice_updated'
+  | 'follow_up_pending';
 
 type NotificationInsert = {
   user_id: string;
@@ -26,7 +27,7 @@ type NotificationInsert = {
 
 type MasterReviewSummary = {
   id: string;
-  type: 'agency' | 'brand' | 'creator';
+  type: 'agency' | 'brand' | 'creator' | 'agency_gst_address' | 'brand_gst_address';
   submitted_value: string;
 };
 
@@ -144,6 +145,21 @@ export async function createFinanceAndAdminSubmissionNotifications(params: {
   return createNotifications(adminClient, inserts);
 }
 
+function getMasterReviewTitle(type: MasterReviewSummary['type']) {
+  if (type === 'agency_gst_address') return 'Agency GST review pending';
+  if (type === 'brand_gst_address') return 'Brand GST review pending';
+  if (type === 'agency') return 'Agency master review pending';
+  if (type === 'brand') return 'Brand master review pending';
+  return 'Creator master review pending';
+}
+
+function getMasterReviewMessage(review: MasterReviewSummary) {
+  if (review.type === 'agency_gst_address' || review.type === 'brand_gst_address') {
+    return `GST and address mapping for "${review.submitted_value}" needs finance/admin approval before it becomes reusable.`;
+  }
+  return '"' + review.submitted_value + '" needs finance/admin approval before it becomes a reusable dropdown value.';
+}
+
 export async function createPendingMasterReviewNotifications(params: {
   adminClient: SupabaseClient;
   appUser: AppUser;
@@ -159,8 +175,8 @@ export async function createPendingMasterReviewNotifications(params: {
   const inserts: NotificationInsert[] = [];
   for (const review of createdReviews) {
     const targetPath = '/dashboard/master-data?review_id=' + review.id;
-    const title = review.type[0].toUpperCase() + review.type.slice(1) + ' master review pending';
-    const message = '"' + review.submitted_value + '" needs finance/admin approval before it becomes a reusable dropdown value.';
+    const title = getMasterReviewTitle(review.type);
+    const message = getMasterReviewMessage(review);
 
     for (const recipient of recipients) {
       inserts.push({
@@ -241,14 +257,18 @@ async function upsertResubmissionRequestedNotifications(params: {
 export async function createEmployeeNotification(params: {
   adminClient: SupabaseClient;
   submittedBy: string;
-  type: Extract<NotificationType, 'submission_rejected' | 'resubmission_requested' | 'submission_reopened' | 'invoice_updated'>;
+  type: Extract<NotificationType, 'submission_rejected' | 'resubmission_requested' | 'submission_reopened' | 'invoice_updated' | 'follow_up_pending'>;
   title: string;
   message: string;
   relatedSubmissionId: string;
   auditLogId?: string | null;
+  targetPath?: string;
 }) {
-  const { adminClient, submittedBy, type, title, message, relatedSubmissionId, auditLogId } = params;
+  const { adminClient, submittedBy, type, title, message, relatedSubmissionId, auditLogId, targetPath } = params;
   const teamLeadIds = await getActiveMappedTeamLeadIdsForEmployee(adminClient, submittedBy);
+
+  const employeeTargetPath = targetPath ?? '/dashboard/submissions?submission_id=' + relatedSubmissionId;
+  const teamLeadTargetPath = targetPath ?? '/dashboard/team-submissions?submission_id=' + relatedSubmissionId;
 
   const inserts: NotificationInsert[] = [
     {
@@ -260,7 +280,7 @@ export async function createEmployeeNotification(params: {
       related_submission_id: relatedSubmissionId,
       related_review_id: null,
       audit_log_id: auditLogId ?? null,
-      target_path: '/dashboard/submissions?submission_id=' + relatedSubmissionId,
+      target_path: employeeTargetPath,
     },
   ];
 
@@ -274,7 +294,7 @@ export async function createEmployeeNotification(params: {
       related_submission_id: relatedSubmissionId,
       related_review_id: null,
       audit_log_id: auditLogId ?? null,
-      target_path: '/dashboard/team-submissions?submission_id=' + relatedSubmissionId,
+      target_path: teamLeadTargetPath,
     });
   }
 
@@ -326,6 +346,7 @@ export async function createSubmissionReopenedNotifications(params: {
 
   const teamLeadIds = await getActiveMappedTeamLeadIdsForEmployee(adminClient, submittedBy);
   for (const teamLeadId of teamLeadIds) {
+    if (teamLeadId === actorUserId) continue;
     inserts.push({
       user_id: teamLeadId,
       role_target: 'team_lead',
@@ -340,8 +361,4 @@ export async function createSubmissionReopenedNotifications(params: {
   }
 
   return createNotifications(adminClient, inserts);
-}
-
-export function summarizeCreatedReviews(createdReviews: MasterReviewSummary[]) {
-  return uniqueStrings(createdReviews.map((review) => review.type + ':' + review.submitted_value));
 }

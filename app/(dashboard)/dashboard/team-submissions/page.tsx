@@ -11,6 +11,7 @@ import { SubmissionTable, type SubmissionRow } from '../../../../components/dash
 import { SearchableSelect } from '../../../../components/forms/searchable-select';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
+import { useDashboardRefresh } from '../../../../lib/client/use-dashboard-refresh';
 import { getDrawerViewerRole } from '../../../../lib/client/dashboard-access';
 import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../lib/shared/submission-attachments';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
@@ -290,13 +291,17 @@ export default function TeamSubmissionsPage() {
     void loadRows(nextOffset, true);
   }, [hasMore, loadRows, loadingMore, nextOffset, rowsLoading]);
 
-  useEffect(() => {
-    if (!user) return;
-    setRows([]);
-    setHasMore(false);
-    setNextOffset(null);
-    void loadAll(false);
-  }, [loadAll, user]);
+  useDashboardRefresh({
+    enabled: Boolean(user),
+    refresh: async () => {
+      setRows([]);
+      setHasMore(false);
+      setNextOffset(null);
+      await loadAll(false);
+    },
+    intervalMs: 30000,
+    refreshOnFocus: true,
+  });
 
   useEffect(() => {
     if (!hasMore || loadingMore || loadingMoreRef.current) return undefined;

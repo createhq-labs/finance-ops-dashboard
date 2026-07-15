@@ -1,40 +1,43 @@
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { ENTITY_TYPES } from "../constants";
 import { SearchableSelect } from "../searchable-select";
-import type { InvoiceIntakeFormValues } from "../types";
+import type { GstMappingOption, InvoiceIntakeFormValues } from "../types";
 
 type Props = {
   values: InvoiceIntakeFormValues;
   onChange: <K extends keyof InvoiceIntakeFormValues>(key: K, value: InvoiceIntakeFormValues[K]) => void;
+  onEntityNameSelect: (value: string) => void;
+  onTradeNameSelect: (value: string) => void;
+  onGstSelect: (value: string) => void;
   errors?: Record<string, string>;
   agencyOptions: string[];
   brandOptions: string[];
   agencyTradeNameOptions: string[];
   brandTradeNameOptions: string[];
-  agencyTradeNameMap: Record<string, string>;
-  brandTradeNameMap: Record<string, string>;
-  agencyNameMap: Record<string, string>;
-  brandNameMap: Record<string, string>;
+  gstOptions: string[];
+  gstMappingByNumber: Record<string, GstMappingOption>;
 };
 
 export function BillingEntitySection({
   values,
   onChange,
+  onEntityNameSelect,
+  onTradeNameSelect,
+  onGstSelect,
   errors = {},
   agencyOptions,
   brandOptions,
   agencyTradeNameOptions,
   brandTradeNameOptions,
-  agencyTradeNameMap,
-  brandTradeNameMap,
-  agencyNameMap,
-  brandNameMap,
+  gstOptions,
+  gstMappingByNumber,
 }: Props) {
   const [gstTouched, setGstTouched] = useState(false);
   const [pincodeTouched, setPincodeTouched] = useState(false);
   const [cityTouched, setCityTouched] = useState(false);
   const [stateTouched, setStateTouched] = useState(false);
   const gstInputRef = useRef<HTMLInputElement | null>(null);
+  const addressRef = useRef<HTMLTextAreaElement | null>(null);
   const gst = (values.gstNumber || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const isIndianClient = values.clientType === "Indian";
   const gstValid = !isIndianClient || !gst ? true : gst === 'NA' || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gst);
@@ -97,14 +100,7 @@ export function BillingEntitySection({
   const locationMismatch = pincodeStateMismatch || pincodeCityMismatch;
   const entityNameOptions = values.entityType === "Agency" ? agencyOptions : brandOptions;
   const tradeNameOptions = values.entityType === "Agency" ? agencyTradeNameOptions : brandTradeNameOptions;
-  const tradeNameMap = useMemo(
-    () => (values.entityType === "Agency" ? agencyTradeNameMap : brandTradeNameMap),
-    [agencyTradeNameMap, brandTradeNameMap, values.entityType]
-  );
-  const entityNameMap = useMemo(
-    () => (values.entityType === "Agency" ? agencyNameMap : brandNameMap),
-    [agencyNameMap, brandNameMap, values.entityType]
-  );
+  const selectedGstMapping = gstMappingByNumber[gst] ?? null;
 
   function formatGst(raw: string) {
     const p1 = raw.slice(0, 2);
@@ -125,7 +121,7 @@ export function BillingEntitySection({
     return formatted.length;
   }
 
-  function handleGstChange(nextDisplayValue: string, selectionStart: number | null) {
+  function handleGstInputChange(nextDisplayValue: string, selectionStart: number | null) {
     const cleanAll = nextDisplayValue.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15);
     const cleanBeforeCaret = nextDisplayValue
       .slice(0, selectionStart ?? nextDisplayValue.length)
@@ -133,13 +129,20 @@ export function BillingEntitySection({
       .replace(/[^A-Z0-9]/g, "")
       .slice(0, 15).length;
 
-    onChange("gstNumber", cleanAll);
+    onGstSelect(cleanAll);
 
     const nextDisplay = formatGst(cleanAll);
     const nextCaret = rawIndexToFormattedIndex(cleanBeforeCaret, nextDisplay);
     requestAnimationFrame(() => {
       gstInputRef.current?.setSelectionRange(nextCaret, nextCaret);
     });
+  }
+
+  function resizeAddressField() {
+    const node = addressRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = String(Math.max(node.scrollHeight, 38)) + "px";
   }
 
   return (
@@ -180,187 +183,181 @@ export function BillingEntitySection({
           }
         `}</style>
         <div className="billing-entity-grid" style={{ display: "grid", gap: 12, alignItems: "start" }}>
-        <label className="intake-field">
-          <span className="intake-label">Entity Type *</span>
-          <SearchableSelect
-            value={values.entityType}
-            options={[...ENTITY_TYPES]}
-            onChange={(next) => onChange("entityType", next as InvoiceIntakeFormValues["entityType"])}
-            data-field="entityType"
-            placeholder="Select entity type"
-            required
-          />
-          <div style={{ minHeight: 16 }}>
-            {errors.entityType ? <p className="text-danger intake-inline-error">{errors.entityType}</p> : null}
-          </div>
-        </label>
-
-        <label className="intake-field">
-          <span className="intake-label">Client Type *</span>
-          <SearchableSelect
-            value={values.clientType}
-            options={["Indian", "Foreign"]}
-            onChange={(next) => onChange("clientType", next as InvoiceIntakeFormValues["clientType"])}
-            data-field="clientType"
-            placeholder="Select client type"
-            required
-          />
-          <div style={{ minHeight: 16 }}>
-            {errors.clientType ? <p className="text-danger intake-inline-error">{errors.clientType}</p> : null}
-          </div>
-        </label>
-
-        <label className="intake-field">
-          <span className="intake-label">{values.entityType === "Agency" ? "Agency Name *" : "Brand Name *"}</span>
-          <SearchableSelect
-            value={values.agencyBrandName}
-            options={entityNameOptions}
-            allowCustom
-            panelMaxHeight={160}
-            onChange={(next) => {
-              onChange("agencyBrandName", next);
-              const mappedTradeName = tradeNameMap[next.trim().toLowerCase()];
-              if (mappedTradeName) {
-                onChange("agencyBrandTradeName", mappedTradeName);
-              }
-            }}
-            placeholder={`Select ${values.entityType.toLowerCase()} name`}
-            data-field="agencyBrandName"
-            required
-          />
-          <div style={{ minHeight: 16 }}>
-            {errors.agencyBrandName ? <p className="text-danger intake-inline-error">{errors.agencyBrandName}</p> : null}
-          </div>
-        </label>
-
-        <label className="intake-field">
-          <span className="intake-label">{values.entityType === "Agency" ? "Agency Trade Name *" : "Brand Trade Name *"}</span>
-          <SearchableSelect
-            value={values.agencyBrandTradeName}
-            options={tradeNameOptions}
-            allowCustom
-            panelMaxHeight={160}
-            onChange={(next) => {
-              onChange("agencyBrandTradeName", next);
-              const mappedEntityName = entityNameMap[next.trim().toLowerCase()];
-              if (mappedEntityName) {
-                onChange("agencyBrandName", mappedEntityName);
-              }
-            }}
-            placeholder={`Select ${values.entityType.toLowerCase()} trade name`}
-            data-field="agencyBrandTradeName"
-            required
-          />
-          <div style={{ minHeight: 16 }}>
-            {errors.agencyBrandTradeName ? <p className="text-danger intake-inline-error">{errors.agencyBrandTradeName}</p> : null}
-          </div>
-        </label>
-
-        {values.entityType === "Agency" ? (
           <label className="intake-field">
-            <span className="intake-label">Brand Name *</span>
+            <span className="intake-label">Entity Type *</span>
             <SearchableSelect
-              value={values.billingBrandName}
-              options={brandOptions}
-              allowCustom
-              panelMaxHeight={160}
-              onChange={(next) => onChange("billingBrandName", next)}
-              placeholder="Select brand name"
-              data-field="billingBrandName"
+              value={values.entityType}
+              options={[...ENTITY_TYPES]}
+              onChange={(next) => onChange("entityType", next as InvoiceIntakeFormValues["entityType"])}
+              data-field="entityType"
+              placeholder="Select entity type"
+              required
             />
             <div style={{ minHeight: 16 }}>
-              {errors.billingBrandName ? <p className="text-danger intake-inline-error">{errors.billingBrandName}</p> : null}
-            </div>
-          </label>
-        ) : null}
-
-        <label className="intake-field">
-          <span className="intake-label">GST Number{isIndianClient ? " *" : ""}</span>
-          <input
-            ref={gstInputRef}
-            className="intake-input"
-            value={isIndianClient ? formatGst(gst) : "Not applicable for foreign clients"}
-            onChange={(e) => {
-              if (!isIndianClient) return;
-              handleGstChange(e.target.value, e.target.selectionStart);
-            }}
-            onBlur={() => setGstTouched(true)}
-            placeholder="07-AAIFI5054J-1-Z-7"
-            autoComplete="off"
-            data-field="gstNumber"
-            required={isIndianClient}
-            disabled={!isIndianClient}
-            style={!isIndianClient ? { color: "#dc2626" } : undefined}
-          />
-          <div style={{ display: "grid", gap: 2, minHeight: isIndianClient ? 30 : 16 }}>
-            {isIndianClient ? (
-              <p className="text-muted intake-inline-note">(Format: state code + PAN + entity + Z + checksum. Type NA if no GST number.)</p>
-            ) : null}
-            {errors.gstNumber ? <p className="text-danger intake-inline-error">{errors.gstNumber}</p> : null}
-            {gstTouched && !gstValid && isIndianClient && !errors.gstNumber ? (
-              <p className="text-danger intake-inline-error">Enter a valid 15-character GST number or NA. Example: 07AAIFI5054J1Z7</p>
-            ) : null}
-          </div>
-        </label>
-
-        <label className="intake-field billing-entity-wide">
-          <span className="intake-label">Address *</span>
-          <input
-            className="intake-input"
-            value={values.addressLine}
-            onChange={(e) => onChange("addressLine", e.target.value)}
-            placeholder="Street / Building / Area (e.g., Unit 22, 2nd Floor, Der Deutsche Parkz, Subhash Nagar Road)"
-            data-field="addressLine"
-            autoComplete="off"
-            required
-          />
-          <div style={{ minHeight: 16 }}>
-            {errors.addressLine ? <p className="text-danger intake-inline-error">{errors.addressLine}</p> : null}
-          </div>
-        </label>
-        <div className="billing-location-grid" style={{ display: "grid", gap: 12, alignItems: "start", gridColumn: "1 / -1" }}>
-          <label className="intake-field">
-            <span className="intake-label">City *</span>
-            <input className="intake-input" value={values.city} onBlur={() => setCityTouched(true)} onChange={(e) => onChange("city", e.target.value)} placeholder="Enter city" data-field="city" autoComplete="off" />
-            <div style={{ display: "grid", gap: 2, minHeight: 30 }}>
-              {errors.city ? <p className="text-danger intake-inline-error">{errors.city}</p> : null}
-              {cityTouched && locationMismatch ? <p className="text-danger intake-inline-error">Pincode does not match selected city/state.</p> : null}
+              {errors.entityType ? <p className="text-danger intake-inline-error">{errors.entityType}</p> : null}
             </div>
           </label>
 
           <label className="intake-field">
-            <span className="intake-label">State *</span>
-            <input className="intake-input" value={values.state} onBlur={() => setStateTouched(true)} onChange={(e) => onChange("state", e.target.value)} placeholder="Enter state" data-field="state" autoComplete="off" required />
-            <div style={{ display: "grid", gap: 2, minHeight: 30 }}>
-              {errors.state ? <p className="text-danger intake-inline-error">{errors.state}</p> : null}
-              {stateTouched && locationMismatch ? <p className="text-danger intake-inline-error">Pincode does not match selected city/state.</p> : null}
-            </div>
-          </label>
-
-          <label className="intake-field">
-            <span className="intake-label">Country *</span>
-            <input className="intake-input" value={values.country} onChange={(e) => onChange("country", e.target.value)} placeholder="Enter country" data-field="country" autoComplete="off" required />
+            <span className="intake-label">Client Type *</span>
+            <SearchableSelect
+              value={values.clientType}
+              options={["Indian", "Foreign"]}
+              onChange={(next) => onChange("clientType", next as InvoiceIntakeFormValues["clientType"])}
+              data-field="clientType"
+              placeholder="Select client type"
+              required
+            />
             <div style={{ minHeight: 16 }}>
-              {errors.country ? <p className="text-danger intake-inline-error">{errors.country}</p> : null}
+              {errors.clientType ? <p className="text-danger intake-inline-error">{errors.clientType}</p> : null}
             </div>
           </label>
 
           <label className="intake-field">
-            <span className="intake-label">Pincode{isIndianClient ? " *" : ""}</span>
-            <input className="intake-input" value={values.pincode} onBlur={() => setPincodeTouched(true)} onChange={(e) => onChange("pincode", e.target.value)} placeholder="Enter pincode / postal code" data-field="pincode" autoComplete="off" required={isIndianClient} />
-            <div style={{ display: "grid", gap: 2, minHeight: 30 }}>
-              {errors.pincode ? <p className="text-danger intake-inline-error">{errors.pincode}</p> : null}
-              {pincodeTouched && !pincodeValid ? <p className="text-danger intake-inline-error">Enter a valid 6-digit Indian pincode.</p> : null}
-              {pincodeTouched && locationMismatch ? <p className="text-danger intake-inline-error">Pincode does not match selected city/state.</p> : null}
+            <span className="intake-label">{values.entityType === "Agency" ? "Agency Name *" : "Brand Name *"}</span>
+            <SearchableSelect
+              value={values.agencyBrandName}
+              options={entityNameOptions}
+              allowCustom
+              panelMaxHeight={160}
+              onChange={onEntityNameSelect}
+              placeholder={`Select ${values.entityType.toLowerCase()} name`}
+              data-field="agencyBrandName"
+              required
+            />
+            <div style={{ minHeight: 16 }}>
+              {errors.agencyBrandName ? <p className="text-danger intake-inline-error">{errors.agencyBrandName}</p> : null}
             </div>
           </label>
-        </div>
+
+          <label className="intake-field">
+            <span className="intake-label">{values.entityType === "Agency" ? "Agency Trade Name *" : "Brand Trade Name *"}</span>
+            <SearchableSelect
+              value={values.agencyBrandTradeName}
+              options={tradeNameOptions}
+              allowCustom
+              panelMaxHeight={160}
+              onChange={onTradeNameSelect}
+              placeholder={`Select ${values.entityType.toLowerCase()} trade name`}
+              data-field="agencyBrandTradeName"
+              required
+            />
+            <div style={{ minHeight: 16 }}>
+              {errors.agencyBrandTradeName ? <p className="text-danger intake-inline-error">{errors.agencyBrandTradeName}</p> : null}
+            </div>
+          </label>
+
+          {values.entityType === "Agency" ? (
+            <label className="intake-field">
+              <span className="intake-label">Brand Name *</span>
+              <input
+                className="intake-input"
+                value={values.billingBrandName}
+                onChange={(event) => onChange("billingBrandName", event.target.value)}
+                placeholder="Brand name"
+                data-field="billingBrandName"
+                required
+              />
+              <div style={{ minHeight: 16 }}>
+                {errors.billingBrandName ? <p className="text-danger intake-inline-error">{errors.billingBrandName}</p> : null}
+              </div>
+            </label>
+          ) : null}
+
+          {isIndianClient ? (
+            <label className="intake-field">
+              <span className="intake-label">GST Number</span>
+              {gstOptions.length > 0 ? (
+                <SearchableSelect
+                  value={values.gstNumber}
+                  options={gstOptions}
+                  allowCustom
+                  panelMaxHeight={180}
+                  onChange={onGstSelect}
+                  placeholder="Select or enter GST number"
+                  data-field="gstNumber"
+                />
+              ) : (
+                <input
+                  ref={gstInputRef}
+                  className="intake-input"
+                  value={formatGst(gst)}
+                  onChange={(event) => handleGstInputChange(event.target.value, event.target.selectionStart)}
+                  onBlur={() => setGstTouched(true)}
+                  placeholder="22AAAAA0000A1Z5"
+                  data-field="gstNumber"
+                />
+              )}
+              <div style={{ minHeight: 16 }}>
+                {errors.gstNumber ? <p className="text-danger intake-inline-error">{errors.gstNumber}</p> : null}
+                {!errors.gstNumber && gstTouched && gst && !gstValid ? (
+                  <p className="text-danger intake-inline-error">Enter a valid GST number or NA.</p>
+                ) : null}
+                {!errors.gstNumber && selectedGstMapping ? (
+                  <p className="text-muted intake-inline-help">Approved mapping found. Address has been auto-filled.</p>
+                ) : null}
+              </div>
+            </label>
+          ) : null}
+
+          <label className="intake-field billing-entity-wide">
+            <span className="intake-label">Address *</span>
+            <textarea
+              ref={addressRef}
+              className="intake-input"
+              rows={1}
+              value={values.addressLine}
+              onChange={(event) => {
+                onChange("addressLine", event.target.value);
+                requestAnimationFrame(resizeAddressField);
+              }}
+              onFocus={resizeAddressField}
+              placeholder="Billing address"
+              data-field="addressLine"
+              required
+              style={{ minHeight: 38, resize: "none", overflow: "hidden" }}
+            />
+            <div style={{ minHeight: 16 }}>
+              {errors.addressLine ? <p className="text-danger intake-inline-error">{errors.addressLine}</p> : null}
+            </div>
+          </label>
+
+          <div className="billing-location-grid billing-entity-wide" style={{ display: "grid", gap: 12, alignItems: "start" }}>
+            <label className="intake-field">
+              <span className="intake-label">City *</span>
+              <input className="intake-input" value={values.city} onChange={(event) => onChange("city", event.target.value)} onBlur={() => setCityTouched(true)} data-field="city" required />
+              <div style={{ minHeight: 16 }}>
+                {errors.city ? <p className="text-danger intake-inline-error">{errors.city}</p> : null}
+                {!errors.city && cityTouched && locationMismatch ? <p className="text-danger intake-inline-error">City may not match the pincode.</p> : null}
+              </div>
+            </label>
+
+            <label className="intake-field">
+              <span className="intake-label">State *</span>
+              <input className="intake-input" value={values.state} onChange={(event) => onChange("state", event.target.value)} onBlur={() => setStateTouched(true)} data-field="state" required />
+              <div style={{ minHeight: 16 }}>
+                {errors.state ? <p className="text-danger intake-inline-error">{errors.state}</p> : null}
+                {!errors.state && stateTouched && pincodeStateMismatch ? <p className="text-danger intake-inline-error">State may not match the pincode.</p> : null}
+              </div>
+            </label>
+
+            <label className="intake-field">
+              <span className="intake-label">Country *</span>
+              <input className="intake-input" value={values.country} onChange={(event) => onChange("country", event.target.value)} data-field="country" required />
+              <div style={{ minHeight: 16 }}>{errors.country ? <p className="text-danger intake-inline-error">{errors.country}</p> : null}</div>
+            </label>
+
+            <label className="intake-field">
+              <span className="intake-label">Pincode *</span>
+              <input className="intake-input" value={values.pincode} onChange={(event) => onChange("pincode", event.target.value)} onBlur={() => setPincodeTouched(true)} data-field="pincode" required />
+              <div style={{ minHeight: 16 }}>
+                {errors.pincode ? <p className="text-danger intake-inline-error">{errors.pincode}</p> : null}
+                {!errors.pincode && pincodeTouched && !pincodeValid ? <p className="text-danger intake-inline-error">Enter a valid 6 digit pincode.</p> : null}
+              </div>
+            </label>
+          </div>
         </div>
       </div>
     </section>
   );
 }
-
-
-
-

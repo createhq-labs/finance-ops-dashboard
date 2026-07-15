@@ -209,6 +209,18 @@ export async function GET(req: NextRequest) {
       previousPiMap = new Map((previousRows ?? []).map((row) => [String(row.id), row.proforma_invoice ? String(row.proforma_invoice) : null]));
     }
 
+    let previousSubmissionMap = new Map<string, Record<string, unknown>>();
+    if (previousSubmissionIds.length > 0) {
+      const { data: previousSubmissionRows, error: previousSubmissionError } = await userClient
+        .from('intake_submissions')
+        .select('id, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)')
+        .in('id', previousSubmissionIds);
+      if (previousSubmissionError) {
+        return NextResponse.json({ success: false, error: previousSubmissionError.message }, { status: 400 });
+      }
+      previousSubmissionMap = new Map((previousSubmissionRows ?? []).map((row) => [String(row.id), row as Record<string, unknown>]));
+    }
+
     const submissions = pageRows.map((row) => {
       const owner = userMap.get(String(row.submitted_by ?? ''));
       return {
@@ -216,6 +228,7 @@ export async function GET(req: NextRequest) {
         submitted_by_name: owner?.full_name ?? null,
         submitted_by_email: owner?.email ?? null,
         previous_submission_pi: row.previous_submission_id ? previousPiMap.get(String(row.previous_submission_id)) ?? null : null,
+        previous_submission_snapshot: row.previous_submission_id ? previousSubmissionMap.get(String(row.previous_submission_id)) ?? null : null,
         version_status: mapVersionStatus(row.previous_submission_id ? String(row.previous_submission_id) : null, row.is_latest_version as boolean | null | undefined),
       };
     });

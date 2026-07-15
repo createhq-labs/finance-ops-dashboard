@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../../lib/server/auth';
 import { logSubmissionAction } from '../../../../../lib/server/services/activityLog';
 import { getAccessTokenFromCookieHeader } from '../../../../../lib/server/services/authCookies';
+import { syncFollowUps } from '../../../../../lib/server/services/followUps';
 import { createEmployeeNotification, createSubmissionReopenedNotifications } from '../../../../../lib/server/services/notifications';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../../lib/server/supabase';
 
@@ -599,6 +600,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    await syncFollowUps(adminClient);
     return NextResponse.json({ success: true, changed: true, submission: updated }, { status: 200 });
   } catch (error) {
     return NextResponse.json(
@@ -607,3 +609,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
