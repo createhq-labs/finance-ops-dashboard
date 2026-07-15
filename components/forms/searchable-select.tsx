@@ -32,6 +32,7 @@ type SearchableSelectProps = {
   panelMaxHeight?: number;
   searchTextByOption?: Record<string, string>;
   searchThreshold?: number;
+  deselectOnSelectedClick?: boolean;
 };
 
 function normalizeOption(
@@ -79,6 +80,7 @@ export function SearchableSelect({
   panelMaxHeight = 220,
   searchTextByOption,
   searchThreshold = 8,
+  deselectOnSelectedClick = false,
 }: SearchableSelectProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -181,6 +183,16 @@ export function SearchableSelect({
     closeMenu({ restoreFocus: true });
   }
 
+  function toggleOption(next: string) {
+    if (deselectOnSelectedClick && next === value) {
+      if (typeof onChange === "function") onChange("");
+      closeMenu({ restoreFocus: true });
+      return;
+    }
+
+    selectOption(next);
+  }
+
   function commitCustomValue() {
     const next = query.trim();
     if (!allowCustom || !next) return;
@@ -203,13 +215,13 @@ export function SearchableSelect({
   function selectHighlightedOrFirst() {
     const highlighted = filteredOptions[highlightedIndex];
     if (highlighted && !highlighted.disabled) {
-      selectOption(highlighted.value);
+      toggleOption(highlighted.value);
       return;
     }
 
     const firstEnabled = filteredOptions.find((option) => !option.disabled);
     if (firstEnabled) {
-      selectOption(firstEnabled.value);
+      toggleOption(firstEnabled.value);
       return;
     }
 
@@ -375,7 +387,7 @@ export function SearchableSelect({
                       .join(" ")}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => {
-                      if (!option.disabled) selectOption(option.value);
+                      if (!option.disabled) toggleOption(option.value);
                     }}
                     onMouseEnter={() => {
                       if (!option.disabled) setHighlightedIndex(index);

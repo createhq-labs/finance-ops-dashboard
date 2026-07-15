@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../../../lib/server/auth';
 import { getAccessTokenFromCookieHeader } from '../../../../../../lib/server/services/authCookies';
 import { canManageMasterData, editApprovedMasterDataReview } from '../../../../../../lib/server/services/masterDataReviewWorkflow';
+import type { GstAddressReviewPayload } from '../../../../../../lib/server/services/masterDataReviews';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../../../lib/server/supabase';
 
 export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -29,6 +30,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     const body = (await req.json().catch(() => ({}))) as {
       submitted_value?: string;
       submitted_trade_name?: string | null;
+      payload?: GstAddressReviewPayload | null;
       edit_reason?: string;
     };
 
@@ -39,6 +41,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
       reviewId: id,
       submittedValue: String(body.submitted_value ?? ''),
       submittedTradeName: body.submitted_trade_name ?? null,
+      payload: body.payload ?? null,
       editReason: String(body.edit_reason ?? ''),
     });
 

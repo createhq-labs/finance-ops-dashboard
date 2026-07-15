@@ -9,13 +9,15 @@ import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
+import { useDashboardRefresh } from '../../../../lib/client/use-dashboard-refresh';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { canViewMasterData, getDefaultDashboardPath } from '../../../../lib/client/dashboard-access';
+import { inferAddressData } from '../../../../lib/shared/address-utils';
 
 type ReviewStatus = 'pending' | 'approved' | 'rejected';
-type ReviewType = 'agency' | 'brand' | 'creator';
+type ReviewType = 'agency' | 'brand' | 'creator' | 'agency_gst_address' | 'brand_gst_address';
 type StatusFilter = ReviewStatus | 'all';
-type TypeFilter = ReviewType | 'all';
+type TypeFilter = ReviewType | 'gst_address' | 'all';
 
 type MasterDataReviewItem = {
   id: string;
@@ -23,6 +25,17 @@ type MasterDataReviewItem = {
   submitted_value: string;
   normalized_value: string;
   submitted_trade_name: string | null;
+  payload?: {
+    entity_type?: string;
+    entity_name?: string;
+    entity_trade_name?: string | null;
+    gst_number?: string;
+    address?: string;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
+    pincode?: string | null;
+  } | null;
   status: ReviewStatus;
   created_from_submission_id: string | null;
   submitted_by: string;
@@ -55,10 +68,18 @@ type ApiResponse = {
   error?: string;
 };
 
+
 type EditFormState = {
   submitted_value: string;
   submitted_trade_name: string;
   edit_reason: string;
+  entity_type: string;
+  gst_number: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  pincode: string;
 };
 
 const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
@@ -73,6 +94,7 @@ const TYPE_FILTERS: Array<{ value: TypeFilter; label: string }> = [
   { value: 'agency', label: 'Agency' },
   { value: 'brand', label: 'Brand' },
   { value: 'creator', label: 'Creator' },
+  { value: 'gst_address', label: 'GST / Address' },
 ];
 
 function formatDateTime(value: string | null) {
@@ -90,6 +112,8 @@ function formatDateTime(value: string | null) {
 }
 
 function formatTypeLabel(value: ReviewType) {
+  if (value === 'agency_gst_address') return 'Agency GST';
+  if (value === 'brand_gst_address') return 'Brand GST';
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
@@ -110,11 +134,11 @@ function getStatusBadgeClass(status: ReviewStatus) {
 }
 
 function getTypeBadgeClass(type: ReviewType) {
-  if (type === 'agency') {
+  if (type === 'agency' || type === 'agency_gst_address') {
     return 'border-sky-200/70 bg-sky-50 text-sky-700 dark:border-sky-400/25 dark:bg-sky-400/14 dark:text-sky-100';
   }
 
-  if (type === 'brand') {
+  if (type === 'brand' || type === 'brand_gst_address') {
     return 'border-violet-200/70 bg-violet-50 text-violet-700 dark:border-violet-400/25 dark:bg-violet-400/14 dark:text-violet-100';
   }
 
@@ -122,9 +146,55 @@ function getTypeBadgeClass(type: ReviewType) {
 }
 
 function getTypeIcon(type: ReviewType) {
-  if (type === 'agency') return <Building2 className="h-3.5 w-3.5" />;
-  if (type === 'brand') return <Tag className="h-3.5 w-3.5" />;
+  if (type === 'agency' || type === 'agency_gst_address') return <Building2 className="h-3.5 w-3.5" />;
+  if (type === 'brand' || type === 'brand_gst_address') return <Tag className="h-3.5 w-3.5" />;
   return <UserRound className="h-3.5 w-3.5" />;
+}
+
+function getGstSummary(item: Pick<MasterDataReviewItem, 'payload'>) {
+  const gst = String(item.payload?.gst_number ?? '').trim();
+  const address = String(item.payload?.address ?? '').trim();
+  return { gst, address };
+}
+
+function isGstAddressReviewType(type: ReviewType) {
+  return type === 'agency_gst_address' || type === 'brand_gst_address';
+}
+
+function buildEditFormFromItem(item: MasterDataReviewItem): EditFormState {
+  const payload = item.payload ?? null;
+  const isGstReview = isGstAddressReviewType(item.type);
+  const inferredAddress = isGstReview ? inferAddressData(String(payload?.address ?? ''), 'Indian') : null;
+  return {
+    submitted_value: isGstReview ? String(payload?.entity_name ?? item.submitted_value ?? '') : item.submitted_value,
+    submitted_trade_name: isGstReview ? String(payload?.entity_trade_name ?? item.submitted_trade_name ?? '') : (item.submitted_trade_name ?? ''),
+    edit_reason: '',
+    entity_type: isGstReview ? String(payload?.entity_type ?? (item.type === 'agency_gst_address' ? 'Agency' : 'Brand')) : '',
+    gst_number: isGstReview ? String(payload?.gst_number ?? '') : '',
+    address: isGstReview ? String(payload?.address ?? '') : '',
+    city: isGstReview ? String(payload?.city ?? '').trim() || inferredAddress?.city || '' : '',
+    state: isGstReview ? String(payload?.state ?? '').trim() || inferredAddress?.state || '' : '',
+    country: isGstReview ? String(payload?.country ?? '').trim() || inferredAddress?.country || '' : '',
+    pincode: isGstReview ? String(payload?.pincode ?? '').trim() || inferredAddress?.pincode || '' : '',
+  };
+}
+
+function buildEditPayloadFromForm(item: MasterDataReviewItem, form: EditFormState) {
+  if (!isGstAddressReviewType(item.type)) {
+    return item.payload ?? null;
+  }
+
+  return {
+    entity_type: form.entity_type || (item.type === 'agency_gst_address' ? 'Agency' : 'Brand'),
+    entity_name: form.submitted_value.trim(),
+    entity_trade_name: form.submitted_trade_name.trim() || null,
+    gst_number: form.gst_number.trim(),
+    address: form.address.trim(),
+    city: form.city.trim() || null,
+    state: form.state.trim() || null,
+    country: form.country.trim() || null,
+    pincode: form.pincode.trim() || null,
+  };
 }
 
 function compactButtonClass(primary = false) {
@@ -192,6 +262,13 @@ export default function MasterDataPage() {
     submitted_value: '',
     submitted_trade_name: '',
     edit_reason: '',
+    entity_type: '',
+    gst_number: '',
+    address: '',
+    city: '',
+    state: '',
+    country: '',
+    pincode: '',
   });
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
   const lastHighlightedReviewIdRef = useRef<string | null>(null);
@@ -229,14 +306,20 @@ export default function MasterDataPage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!user || !canViewMasterData(user.role)) return;
-    void loadReviews(false);
-  }, [loadReviews, user]);
+
+  useDashboardRefresh({
+    enabled: Boolean(user && canViewMasterData(user.role)),
+    refresh: async () => {
+      await loadReviews(false);
+    },
+    intervalMs: 60000,
+    refreshOnFocus: true,
+  });
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
       if (statusFilter !== 'all' && item.status !== statusFilter) return false;
+      if (typeFilter === 'gst_address') return isGstAddressReviewType(item.type);
       if (typeFilter !== 'all' && item.type !== typeFilter) return false;
       return true;
     });
@@ -244,8 +327,11 @@ export default function MasterDataPage() {
 
   const availableTypes = useMemo(() => {
     const pool = items.filter((item) => statusFilter === 'all' || item.status === statusFilter);
-    return new Set(pool.map((item) => item.type));
+    const next = new Set<TypeFilter>(pool.map((item) => item.type));
+    if (pool.some((item) => isGstAddressReviewType(item.type))) next.add('gst_address');
+    return next;
   }, [items, statusFilter]);
+
 
   const applyItemUpdate = useCallback((nextItem: MasterDataReviewItem) => {
     setItems((current) => {
@@ -305,11 +391,7 @@ export default function MasterDataPage() {
     setConfirmIgnoreId(null);
     setConfirmEditId(null);
     setEditItemId(match.id);
-    setEditForm({
-      submitted_value: match.submitted_value,
-      submitted_trade_name: match.submitted_trade_name ?? '',
-      edit_reason: '',
-    });
+    setEditForm(buildEditFormFromItem(match));
 
     const params = new URLSearchParams(searchParams.toString());
     params.delete('mode');
@@ -374,11 +456,7 @@ export default function MasterDataPage() {
     setViewItemId(null);
     setActionError('');
     setConfirmEditId(item.id);
-    setEditForm({
-      submitted_value: item.submitted_value,
-      submitted_trade_name: item.submitted_trade_name ?? '',
-      edit_reason: '',
-    });
+    setEditForm(buildEditFormFromItem(item));
   }
 
   function continueEditing() {
@@ -405,6 +483,7 @@ export default function MasterDataPage() {
         body: JSON.stringify({
           submitted_value: editForm.submitted_value,
           submitted_trade_name: editItem.type === 'creator' ? null : editForm.submitted_trade_name,
+          payload: buildEditPayloadFromForm(editItem, editForm),
           edit_reason: editForm.edit_reason,
         }),
       });
@@ -454,9 +533,10 @@ export default function MasterDataPage() {
           <KpiCard title="Ignored Requests" value={String(summary.rejected)} hint="Skipped during review" variant="danger" compact />
         </div>
 
+
         <SectionCard
           title="Review Queue"
-          description="Filter pending, approved, and ignored values across agency, brand, and creator requests."
+          description="Filter pending, approved, and ignored values across agency, brand, creator, and GST/address requests."
           actions={(
             <span className="rounded-full border border-sky-300/55 bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/18 dark:text-sky-100">
               {filteredItems.length} visible
@@ -571,7 +651,8 @@ export default function MasterDataPage() {
                           </td>
                           <td className="px-3 py-3">
                             <div className="text-[15px] font-semibold text-foreground">{item.submitted_value}</div>
-                            <div className="mt-1 text-xs text-muted-foreground">{item.normalized_value}</div>
+                            {getGstSummary(item).gst ? <div className="mt-1 text-xs text-sky-700 dark:text-sky-300">GST: {getGstSummary(item).gst}</div> : null}
+                            {getGstSummary(item).address ? <div className="mt-1 text-xs text-muted-foreground line-clamp-2">{getGstSummary(item).address}</div> : <div className="mt-1 text-xs text-muted-foreground">{item.normalized_value}</div>}
                           </td>
                           <td className="px-3 py-3 text-[13px] text-muted-foreground">{item.submitted_trade_name || '—'}</td>
                           <td className="px-3 py-3">
@@ -761,10 +842,39 @@ export default function MasterDataPage() {
                   <div className="mt-1.5 text-sm font-semibold text-foreground">{viewItem.submitted_value}</div>
                 </div>
                 <div className="rounded-xl border border-border/70 bg-card p-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Current Trade Name</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Trade Name</div>
                   <div className="mt-2 text-sm font-semibold text-foreground">{viewItem.submitted_trade_name || '—'}</div>
                 </div>
               </div>
+
+              {isGstAddressReviewType(viewItem.type) ? (
+                <div className="grid gap-2.5 md:grid-cols-2">
+                  <div className="rounded-xl border border-border/70 bg-card p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">GST Number</div>
+                    <div className="mt-1.5 text-sm font-semibold text-foreground">{viewItem.payload?.gst_number || '—'}</div>
+                  </div>
+                  <div className="rounded-xl border border-border/70 bg-card p-3 md:col-span-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Address</div>
+                    <div className="mt-1.5 text-sm font-semibold text-foreground">{viewItem.payload?.address || '—'}</div>
+                  </div>
+                  <div className="rounded-xl border border-border/70 bg-card p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">City</div>
+                    <div className="mt-1.5 text-sm font-semibold text-foreground">{viewItem.payload?.city || '—'}</div>
+                  </div>
+                  <div className="rounded-xl border border-border/70 bg-card p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">State</div>
+                    <div className="mt-1.5 text-sm font-semibold text-foreground">{viewItem.payload?.state || '—'}</div>
+                  </div>
+                  <div className="rounded-xl border border-border/70 bg-card p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Country</div>
+                    <div className="mt-1.5 text-sm font-semibold text-foreground">{viewItem.payload?.country || '—'}</div>
+                  </div>
+                  <div className="rounded-xl border border-border/70 bg-card p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Pincode</div>
+                    <div className="mt-1.5 text-sm font-semibold text-foreground">{viewItem.payload?.pincode || '—'}</div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="grid gap-2 rounded-xl border border-border/70 bg-card p-2.5">
                 {viewItem.status === 'approved' ? (
@@ -863,11 +973,11 @@ export default function MasterDataPage() {
             <div className="grid auto-rows-max content-start flex-1 gap-4 overflow-y-auto px-5 py-5">
               <div className="grid items-start gap-2 md:grid-cols-3">
                 <div className="self-start rounded-lg border border-sky-200/70 bg-sky-50/70 p-2.5 text-sm dark:border-sky-400/20 dark:bg-sky-400/10 min-h-[72px]">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Type</div>
-                  <div className="mt-1 text-[15px] font-semibold leading-5 text-sky-900 dark:text-sky-100">{formatTypeLabel(editItem.type)}</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{isGstAddressReviewType(editItem.type) ? 'Agency/Brand Type' : 'Type'}</div>
+                  <div className="mt-1 text-[15px] font-semibold leading-5 text-sky-900 dark:text-sky-100">{isGstAddressReviewType(editItem.type) ? (editForm.entity_type || formatTypeLabel(editItem.type)) : formatTypeLabel(editItem.type)}</div>
                 </div>
                 <div className="self-start rounded-lg border border-emerald-200/70 bg-emerald-50/60 p-2.5 text-sm dark:border-emerald-400/20 dark:bg-emerald-400/10 min-h-[72px]">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Current Value</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{isGstAddressReviewType(editItem.type) ? 'Agency/Brand Name' : 'Current Value'}</div>
                   <div className="mt-1 text-[15px] font-semibold leading-5 text-emerald-900 dark:text-emerald-100">{editItem.submitted_value}</div>
                 </div>
                 <div className="self-start rounded-lg border border-violet-200/70 bg-violet-50/60 p-2.5 text-sm dark:border-violet-400/20 dark:bg-violet-400/10 min-h-[72px]">
@@ -877,26 +987,103 @@ export default function MasterDataPage() {
               </div>
 
               <div className="grid gap-4">
-                <label className="grid gap-2 text-sm font-medium text-foreground">
-                  Type New Value
-                  <input
-                    value={editForm.submitted_value}
-                    onChange={(event) => setEditForm((current) => ({ ...current, submitted_value: event.target.value }))}
-                    className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                    placeholder="Enter corrected value"
-                  />
-                </label>
+                {!isGstAddressReviewType(editItem.type) ? (
+                  <>
+                    <label className="grid gap-2 text-sm font-medium text-foreground">
+                      Type New Value
+                      <input
+                        value={editForm.submitted_value}
+                        onChange={(event) => setEditForm((current) => ({ ...current, submitted_value: event.target.value }))}
+                        className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                        placeholder="Enter corrected value"
+                      />
+                    </label>
 
-                {editItem.type !== 'creator' ? (
-                  <label className="grid gap-2 text-sm font-medium text-foreground">
-                    New Trade Name
-                    <input
-                      value={editForm.submitted_trade_name}
-                      onChange={(event) => setEditForm((current) => ({ ...current, submitted_trade_name: event.target.value }))}
-                      className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                      placeholder="Optional trade name"
-                    />
-                  </label>
+                    {editItem.type !== 'creator' ? (
+                      <label className="grid gap-2 text-sm font-medium text-foreground">
+                        New Trade Name
+                        <input
+                          value={editForm.submitted_trade_name}
+                          onChange={(event) => setEditForm((current) => ({ ...current, submitted_trade_name: event.target.value }))}
+                          className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                          placeholder="Optional trade name"
+                        />
+                      </label>
+                    ) : null}
+                  </>
+                ) : null}
+
+                {isGstAddressReviewType(editItem.type) ? (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground md:col-span-2">
+                      GST/address edits keep the current entity mapping and only update the approved GST details.
+                    </div>
+                    <label className="grid gap-2 text-sm font-medium text-foreground">
+                      GST Number
+                      <input
+                        value={editForm.gst_number}
+                        onChange={(event) => setEditForm((current) => ({ ...current, gst_number: event.target.value }))}
+                        className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                        placeholder="Enter GST number"
+                      />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-foreground md:col-span-2">
+                      Address
+                      <textarea
+                        value={editForm.address}
+                        onChange={(event) => {
+                          const address = event.target.value;
+                          const inferred = inferAddressData(address, 'Indian');
+                          setEditForm((current) => ({
+                            ...current,
+                            address,
+                            city: current.city || inferred.city,
+                            state: current.state || inferred.state,
+                            country: current.country || inferred.country,
+                            pincode: current.pincode || inferred.pincode,
+                          }));
+                        }}
+                        className="min-h-20 rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                        placeholder="Enter approved billing address"
+                      />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-foreground">
+                      City
+                      <input
+                        value={editForm.city}
+                        onChange={(event) => setEditForm((current) => ({ ...current, city: event.target.value }))}
+                        className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                        placeholder="City"
+                      />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-foreground">
+                      State
+                      <input
+                        value={editForm.state}
+                        onChange={(event) => setEditForm((current) => ({ ...current, state: event.target.value }))}
+                        className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                        placeholder="State"
+                      />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-foreground">
+                      Country
+                      <input
+                        value={editForm.country}
+                        onChange={(event) => setEditForm((current) => ({ ...current, country: event.target.value }))}
+                        className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                        placeholder="Country"
+                      />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-foreground">
+                      Pincode
+                      <input
+                        value={editForm.pincode}
+                        onChange={(event) => setEditForm((current) => ({ ...current, pincode: event.target.value }))}
+                        className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
+                        placeholder="Pincode"
+                      />
+                    </label>
+                  </div>
                 ) : null}
 
                 <label className="grid gap-2 text-sm font-medium text-foreground">
@@ -918,7 +1105,12 @@ export default function MasterDataPage() {
                 type="button"
                 onClick={() => void handleSaveEdit()}
                 className={compactButtonClass(true)}
-                disabled={actionLoadingId === editItem.id || !editForm.submitted_value.trim() || !editForm.edit_reason.trim()}
+                disabled={
+                  actionLoadingId === editItem.id
+                  || !editForm.submitted_value.trim()
+                  || !editForm.edit_reason.trim()
+                  || (isGstAddressReviewType(editItem.type) && (!editForm.gst_number.trim() || !editForm.address.trim()))
+                }
               >
                 <PencilLine className="mr-2 h-3.5 w-3.5" />
                 Save Changes

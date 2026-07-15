@@ -31,6 +31,7 @@ import {
   formatPaymentMadeStatus,
   formatPaymentReceivedStatus,
 } from '../../lib/client/finance-status';
+import { normalizeInvoiceStatusMachine } from '../../lib/shared/invoice-status';
 
 export type SubmissionRow = {
   id: string;
@@ -519,16 +520,7 @@ function formatSubmittedAt(value: string | null | undefined) {
 }
 
 function normalizeInvoiceStatusValue(value: string | null | undefined) {
-  const normalized = normalizeText(value).replace(/\s+/g, '_');
-  if (normalized === 'invoice_created') return 'invoice_created';
-  if (normalized === 'invoice_pending') return 'po_created_estimate';
-  if (normalized === 'po_created/estimate' || normalized === 'po_created_estimate' || normalized === 'po_createdestimate') {
-    return 'po_created_estimate';
-  }
-  if (normalized === 'invoice_cancelled') return 'invoice_cancelled';
-  if (normalized === 'debit_note') return 'debit_note';
-  if (normalized === 'invoice_+_debit_note' || normalized === 'invoice_plus_debit_note') return 'invoice_plus_debit_note';
-  return 'invoice_pending';
+  return normalizeInvoiceStatusMachine(value) || 'po_created_estimate';
 }
 
 function getEditableOptions(field: StatusEditableField) {
@@ -1753,6 +1745,21 @@ function BadgeSelectCell({
     };
   }, [active]);
 
+  const statusMenuStyle = useMemo(() => {
+    if (!menuRect || typeof window === 'undefined') return null;
+    const menuWidth = 176;
+    const menuHeight = Math.min(220, options.length * 34 + 8);
+    const fitsBelow = menuRect.bottom + 4 + menuHeight <= window.innerHeight - 12;
+    const top = fitsBelow
+      ? menuRect.bottom + 4
+      : Math.max(12, menuRect.top - menuHeight - 4);
+    const left = Math.min(
+      Math.max(12, menuRect.left),
+      Math.max(12, window.innerWidth - menuWidth - 12)
+    );
+    return { top, left, width: menuWidth };
+  }, [menuRect, options.length]);
+
   return (
     <div ref={rootRef} className="relative inline-flex max-w-full items-center gap-1.5" onDoubleClick={onCopy}>
       <CopyNotice active={copied} />
@@ -1807,12 +1814,12 @@ function BadgeSelectCell({
           <span className="truncate">{saving ? 'Saving...' : truncateStatusLabel(displayLabel)}</span>
           {editable ? <span className="inline-flex h-4 w-4 items-center justify-center text-current opacity-70">{active ? '▴' : '▾'}</span> : null}
         </button>
-        {editable && active && menuRect && typeof document !== 'undefined'
+        {editable && active && statusMenuStyle && typeof document !== 'undefined'
           ? createPortal(
           <div
             data-status-menu="true"
             className="fixed z-[9999] min-w-[152px] rounded-md border border-border/70 bg-popover p-1 text-popover-foreground shadow-sm"
-            style={{ top: menuRect.bottom + 4, left: menuRect.left }}
+            style={statusMenuStyle}
           >
             {options.map((option, index) => {
               const selected = option.value === currentValue;
@@ -1847,7 +1854,7 @@ function BadgeSelectCell({
                     void onChange(option.value).finally(onClose);
                   }}
                   className={[
-                    'flex w-full items-center justify-between rounded-sm px-2 py-1 text-left text-[11px] transition-none hover:bg-muted/40',
+                    'flex w-full items-center justify-between rounded-sm px-2 py-1 text-left text-[11px] transition-none hover:bg-sky-50 hover:text-sky-900 dark:hover:bg-sky-500/12 dark:hover:text-sky-100',
                     selected || highlightedIndex === index ? 'bg-primary/5 text-foreground' : 'text-popover-foreground',
                   ].join(' ')}
                 >
@@ -2811,6 +2818,8 @@ export function SubmissionTable({
       const isDownloading = attachmentActionKey === `${actionKeyBase}:download`;
       const title = `${attachment.file_name} • ${formatAttachmentSize(attachment.file_size_bytes)}`;
 
+      const isBusy = isViewing || isDownloading;
+
       return (
         <div className="flex min-w-0 items-center gap-1.5" title={title}>
           <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-sky-200/80 bg-sky-50 text-sky-700 dark:border-sky-400/30 dark:bg-sky-500/10 dark:text-sky-200">
@@ -2823,18 +2832,20 @@ export function SubmissionTable({
           <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
+              disabled={isBusy}
               onClick={() => void openAttachment(attachment, row, 'view')}
-              className="inline-flex h-6 items-center rounded-md border border-border/70 bg-card px-2 text-[11px] font-medium text-foreground transition-none hover:bg-muted/40"
+              className="inline-flex h-6 items-center rounded-md border border-border/70 bg-card px-2 text-[11px] font-medium text-foreground transition-none hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isViewing ? 'Opening' : 'View'}
+              {isViewing ? 'Opening...' : isDownloading ? 'Preparing...' : 'View'}
             </button>
             <button
               type="button"
+              disabled={isBusy}
               onClick={() => void openAttachment(attachment, row, 'download')}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-border/70 bg-card text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-border/70 bg-card text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
               aria-label="Download attachment"
             >
-              {isDownloading ? <Clock3 size={12} /> : <Download size={12} />}
+              {isDownloading ? <Clock3 size={12} className="animate-spin" /> : <Download size={12} />}
             </button>
           </div>
         </div>

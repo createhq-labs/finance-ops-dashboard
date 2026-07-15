@@ -13,6 +13,7 @@ import { useDashboardSession } from '../../../components/layout/dashboard-sessio
 import { WorkspaceLoader } from '../../../components/layout/workspace-loader';
 import { getLineRevenue, getRevenueSeries } from '../../../lib/client/admin-stats';
 import { getPiDisplayMeta } from '../../../lib/client/pi-display';
+import { formatInvoiceStatus } from '../../../lib/client/finance-status';
 import { canResubmitSubmission, canSubmitInvoice, getDrawerViewerRole, getInvoiceIntakePath, getOverviewTitle, isEmployeeRole, isTeamLeadRole } from '../../../lib/client/dashboard-access';
 
 type MySubmissionApiRow = {
@@ -1208,7 +1209,7 @@ export default function DashboardHomePage() {
                     meta={
                       <>
                         {formatDateTime(entry.submitted_at)}
-                        {entry.invoice_status ? ` · ${titleCaseStatus(entry.invoice_status)}` : ''}
+                        {entry.invoice_status ? ` · ${formatInvoiceStatus(entry.invoice_status)}` : ''}
                       </>
                     }
                     note={
@@ -1335,7 +1336,7 @@ export default function DashboardHomePage() {
                   meta={
                     <>
                       {entry.owner_name || 'Unknown owner'} · {formatDateTime(entry.submitted_at)}
-                      {entry.invoice_status ? ` · ${titleCaseStatus(entry.invoice_status)}` : ''}
+                      {entry.invoice_status ? ` · ${formatInvoiceStatus(entry.invoice_status)}` : ''}
                     </>
                   }
                   note={
@@ -1637,7 +1638,7 @@ export default function DashboardHomePage() {
                   meta={
                     <>
                       {entry.owner_name || 'Unknown owner'} · {formatDateTime(entry.submitted_at)}
-                      {entry.invoice_status ? ` · ${titleCaseStatus(entry.invoice_status)}` : ''}
+                      {entry.invoice_status ? ` · ${formatInvoiceStatus(entry.invoice_status)}` : ''}
                     </>
                   }
                   action={

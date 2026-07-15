@@ -202,6 +202,16 @@ export async function POST(req: NextRequest) {
       lineItemsPayload,
     });
 
+    if (!masterReviewResult.success) {
+      console.error('createPendingMasterDataReviews failed', {
+        submissionId: result.submission.id,
+        error: masterReviewResult.error,
+        code: masterReviewResult.code,
+        details: masterReviewResult.details,
+        hint: masterReviewResult.hint,
+      });
+    }
+
     let assignedPiNumber = result.submission.proforma_invoice;
 
     if (result.pi_allocation_pending) {
