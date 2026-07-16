@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../lib/server/auth';
 import { assertSupabaseEnv, createUserScopedClient } from '../../../../lib/server/supabase';
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
+import { deriveInvoiceStatusDbValue, normalizeInvoiceStatusMachine } from '../../../../lib/shared/invoice-status';
 
 const EMPTY_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -52,7 +53,20 @@ function applyFinanceFilters(query: FilterQuery, params: URLSearchParams, employ
   if (submissionId) query = query.eq('id', submissionId);
   if (businessLine && businessLine !== 'all') query = query.eq('business_line', businessLine);
   if (intakeStatus && intakeStatus !== 'all') query = query.eq('intake_status', intakeStatus);
-  if (invoiceStatus && invoiceStatus !== 'all') query = query.eq('invoice_status', invoiceStatus);
+  if (invoiceStatus && invoiceStatus !== 'all') {
+    const normalizedInvoiceStatus = normalizeInvoiceStatusMachine(invoiceStatus);
+    if (normalizedInvoiceStatus === 'invoice_cancelled') {
+      query = query.eq('intake_status', 'rejected');
+    } else if (normalizedInvoiceStatus === 'invoice_plus_debit_note') {
+      query = query.not('intake_status', 'eq', 'rejected').not('invoice_number', 'is', null).not('debit_note_number', 'is', null);
+    } else if (normalizedInvoiceStatus === 'debit_note') {
+      query = query.not('intake_status', 'eq', 'rejected').not('debit_note_number', 'is', null).is('invoice_number', null);
+    } else if (normalizedInvoiceStatus === 'invoice_created') {
+      query = query.not('intake_status', 'eq', 'rejected').not('invoice_number', 'is', null).is('debit_note_number', null);
+    } else if (normalizedInvoiceStatus === 'po_created_estimate' || normalizedInvoiceStatus === 'invoice_pending') {
+      query = query.eq('intake_status', 'accepted').is('invoice_number', null).is('debit_note_number', null);
+    }
+  }
   if (creatorInvoice && creatorInvoice !== 'all') query = query.eq('creator_invoice_status', creatorInvoice);
   if (paymentReceived && paymentReceived !== 'all') query = query.eq('payment_received_status', paymentReceived);
   if (paymentMade && paymentMade !== 'all') query = query.eq('payment_made_status', paymentMade);
@@ -209,13 +223,27 @@ export async function GET(req: NextRequest) {
       previousPiMap = new Map((previousRows ?? []).map((row) => [String(row.id), row.proforma_invoice ? String(row.proforma_invoice) : null]));
     }
 
+    let previousSubmissionMap = new Map<string, Record<string, unknown>>();
+    if (previousSubmissionIds.length > 0) {
+      const { data: previousSubmissionRows, error: previousSubmissionError } = await userClient
+        .from('intake_submissions')
+        .select('id, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)')
+        .in('id', previousSubmissionIds);
+      if (previousSubmissionError) {
+        return NextResponse.json({ success: false, error: previousSubmissionError.message }, { status: 400 });
+      }
+      previousSubmissionMap = new Map((previousSubmissionRows ?? []).map((row) => [String(row.id), row as Record<string, unknown>]));
+    }
+
     const submissions = pageRows.map((row) => {
       const owner = userMap.get(String(row.submitted_by ?? ''));
       return {
         ...row,
+        invoice_status: deriveInvoiceStatusDbValue(row),
         submitted_by_name: owner?.full_name ?? null,
         submitted_by_email: owner?.email ?? null,
         previous_submission_pi: row.previous_submission_id ? previousPiMap.get(String(row.previous_submission_id)) ?? null : null,
+        previous_submission_snapshot: row.previous_submission_id ? previousSubmissionMap.get(String(row.previous_submission_id)) ?? null : null,
         version_status: mapVersionStatus(row.previous_submission_id ? String(row.previous_submission_id) : null, row.is_latest_version as boolean | null | undefined),
       };
     });

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -8,6 +8,7 @@ import {
   canAccessDashboardPath,
   canManageDeliverables,
   canViewAnalyticsPage,
+  canViewFollowUps,
   canViewNotifications,
   canViewTeamSubmissions,
   canViewTransferredSubmissions,
@@ -55,6 +56,9 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
       ...(canViewTeamSubmissions(role ?? 'employee')
         ? [{ href: '/dashboard/team-submissions', label: 'Team Submissions', icon: ListChecks, group: 'operations' as const }]
         : []),
+      ...(canViewFollowUps(role ?? 'employee')
+        ? [{ href: '/dashboard/follow-ups', label: 'Follow-ups', icon: ClipboardList, group: 'operations' as const }]
+        : []),
       ...(canViewTransferredSubmissions(role ?? 'employee')
         ? [{ href: '/dashboard/transferred-submissions', label: 'Transferred Submissions', icon: ListChecks, group: 'operations' as const }]
         : []),
@@ -69,24 +73,25 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
       ...(role === 'developer' ? [{ href: '/dashboard/system', label: 'System', group: 'admin' as const }] : []),
     ];
 
-    return base.filter((i) => {
-      if (!role) return i.href === '/dashboard';
-      if (i.href === '/dashboard/team-submissions') return canViewTeamSubmissions(role);
-      if (i.href === '/dashboard/transferred-submissions') return canViewTransferredSubmissions(role);
-      return canAccessDashboardPath(role, i.href);
+    return base.filter((item) => {
+      if (!role) return item.href === '/dashboard';
+      if (item.href === '/dashboard/team-submissions') return canViewTeamSubmissions(role);
+      if (item.href === '/dashboard/follow-ups') return canViewFollowUps(role);
+      if (item.href === '/dashboard/transferred-submissions') return canViewTransferredSubmissions(role);
+      return canAccessDashboardPath(role, item.href);
     });
   }, [unreadCount, user?.role]);
 
   const groupOrder = ['workspace', 'operations', 'admin'] as const;
   const groupLabels: Record<string, string> = {
-    workspace:  'Workspace',
+    workspace: 'Workspace',
     operations: 'Operations',
-    admin:      'Admin',
+    admin: 'Admin',
   };
 
   const grouped = groupOrder
-    .map((g) => ({ key: g, label: groupLabels[g], items: items.filter((i) => i.group === g) }))
-    .filter((g) => g.items.length > 0);
+    .map((group) => ({ key: group, label: groupLabels[group], items: items.filter((item) => item.group === group) }))
+    .filter((group) => group.items.length > 0);
 
   if (loading) {
     return (
@@ -126,110 +131,103 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
           transition: 'grid-template-columns 0.25s ease',
         }}
       >
-      <aside
-        className={`sidebar ${collapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          padding: '16px 10px',
-          height: 'calc(100vh - 64px)',
-          position: 'sticky',
-          top: 64,
-          overflowY: 'auto',
-          minHeight: 0,
-        }}
-        onMouseEnter={() => setCollapsed(false)}
-        onMouseLeave={() => setCollapsed(true)}
-      >
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 0, flex: 1, alignContent: 'start' }}>
-          {grouped.map((group) => (
-            <div key={group.key} className="sidebar-group">
+        <aside
+          className={`sidebar ${collapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '16px 10px',
+            height: 'calc(100vh - 64px)',
+            position: 'sticky',
+            top: 64,
+            overflowY: 'auto',
+            minHeight: 0,
+          }}
+          onMouseEnter={() => setCollapsed(false)}
+          onMouseLeave={() => setCollapsed(true)}
+        >
+          <nav style={{ display: 'flex', flexDirection: 'column', gap: 0, flex: 1, alignContent: 'start' }}>
+            {grouped.map((group) => (
+              <div key={group.key} className="sidebar-group">
+                <span className="sidebar-group-label" style={{ opacity: collapsed ? 0 : 1 }}>
+                  {group.label}
+                </span>
 
-              <span
-                className="sidebar-group-label"
-                style={{ opacity: collapsed ? 0 : 1 }}
-              >
-                {group.label}
-              </span>
+                <div style={{ display: 'grid', gap: 1, gridAutoRows: 'max-content' }}>
+                  {group.items.map((item) => {
+                    const active = pathname === item.href || (item.href === getInvoiceIntakePath() && pathname === '/dashboard/submit');
+                    const Icon = item.icon;
 
-              <div style={{ display: 'grid', gap: 1, gridAutoRows: 'max-content' }}>
-                {group.items.map((item) => {
-                  const active = pathname === item.href || (item.href === getInvoiceIntakePath() && pathname === '/dashboard/submit');
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={`nav-item ${active ? 'nav-item-active' : ''}`}
-                      title={collapsed ? item.label : undefined}
-                      style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
-                    >
-                      {/* Single nav-icon — no active variant */}
-                      <span className="nav-icon">
-                        {Icon ? <Icon size={15} style={{ flexShrink: 0 }} /> : <span style={{ width: 15 }} />}
-                      </span>
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`nav-item ${active ? 'nav-item-active' : ''}`}
+                        title={collapsed ? item.label : undefined}
+                        style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
+                      >
+                        <span className="nav-icon">
+                          {Icon ? <Icon size={15} style={{ flexShrink: 0 }} /> : <span style={{ width: 15 }} />}
+                        </span>
 
-                      <span className="sidebar-nav-label" style={{ opacity: collapsed ? 0 : 1 }}>
-                        {item.label}
-                      </span>
+                        <span className="sidebar-nav-label" style={{ opacity: collapsed ? 0 : 1 }}>
+                          {item.label}
+                        </span>
 
-                      {!collapsed && 'badge' in item && item.badge ? (
-                        <span className="nav-badge">{item.badge}</span>
-                      ) : null}
-                    </Link>
-                  );
-                })}
+                        {!collapsed && 'badge' in item && item.badge ? (
+                          <span className="nav-badge">{item.badge}</span>
+                        ) : null}
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
+            ))}
+          </nav>
 
-            </div>
-          ))}
-        </nav>
-
-        <div className="sidebar-bottom">
-          <Link
-            href="/dashboard/settings"
-            className="nav-item nav-item-bottom"
-            title={collapsed ? 'Settings' : undefined}
-            style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
-          >
-            <span className="nav-icon">
-              <Settings size={14} style={{ flexShrink: 0 }} />
-            </span>
-            <span className="sidebar-nav-label" style={{ opacity: collapsed ? 0 : 1 }}>
-              Settings
-            </span>
-          </Link>
-
-          <form action="/api/auth/logout" method="post">
-            <button
-              type="submit"
-              className="nav-item nav-item-bottom nav-item-logout w-full"
-              title={collapsed ? 'Logout' : undefined}
+          <div className="sidebar-bottom">
+            <Link
+              href="/dashboard/settings"
+              className="nav-item nav-item-bottom"
+              title={collapsed ? 'Settings' : undefined}
               style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
             >
               <span className="nav-icon">
-                <LogOut size={14} style={{ flexShrink: 0 }} />
+                <Settings size={14} style={{ flexShrink: 0 }} />
               </span>
               <span className="sidebar-nav-label" style={{ opacity: collapsed ? 0 : 1 }}>
-                Logout
+                Settings
               </span>
-            </button>
-          </form>
-        </div>
-      </aside>
+            </Link>
 
-      <main
-        className="min-w-0"
-        style={{
-          height: 'calc(100vh - 64px)',
-          overflowY: 'auto',
-          minHeight: 0,
-        }}
-      >
-        <div className="p-5">
-          {children}
-        </div>
-      </main>
+            <form action="/api/auth/logout" method="post">
+              <button
+                type="submit"
+                className="nav-item nav-item-bottom nav-item-logout w-full"
+                title={collapsed ? 'Logout' : undefined}
+                style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
+              >
+                <span className="nav-icon">
+                  <LogOut size={14} style={{ flexShrink: 0 }} />
+                </span>
+                <span className="sidebar-nav-label" style={{ opacity: collapsed ? 0 : 1 }}>
+                  Logout
+                </span>
+              </button>
+            </form>
+          </div>
+        </aside>
+
+        <main
+          className="min-w-0"
+          style={{
+            height: 'calc(100vh - 64px)',
+            overflowY: 'auto',
+            minHeight: 0,
+          }}
+        >
+          <div className="p-5">{children}</div>
+        </main>
       </div>
     </div>
   );

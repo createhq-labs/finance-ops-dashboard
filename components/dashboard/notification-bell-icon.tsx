@@ -5,6 +5,7 @@ import { AlertTriangle, Bell, Check, CheckCircle2, ExternalLink, X } from 'lucid
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDashboardSession } from '../layout/dashboard-session';
 import { isEmployeeRole } from '../../lib/client/dashboard-access';
+import { useDashboardRefresh } from '../../lib/client/use-dashboard-refresh';
 import {
   getNotificationDisplayType,
   getNotificationTone,
@@ -88,6 +89,7 @@ export function NotificationBellIcon({ onUnreadCountChange, variant = 'default' 
   );
 
   const loadNotifications = useCallback(async () => {
+    if (!user) return;
     setLoading(true);
     try {
       const res = await fetch('/api/notifications/my?limit=100', {
@@ -105,15 +107,14 @@ export function NotificationBellIcon({ onUnreadCountChange, variant = 'default' 
     } finally {
       setLoading(false);
     }
-  }, [onUnreadCountChange]);
+  }, [onUnreadCountChange, user]);
 
-  useEffect(() => {
-    void loadNotifications();
-    const interval = window.setInterval(() => {
-      void loadNotifications();
-    }, 30000);
-    return () => window.clearInterval(interval);
-  }, [loadNotifications]);
+  useDashboardRefresh({
+    enabled: Boolean(user),
+    refresh: loadNotifications,
+    intervalMs: 30000,
+    refreshOnFocus: true,
+  });
 
   useEffect(() => {
     if (!open) return undefined;

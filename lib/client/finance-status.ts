@@ -1,3 +1,5 @@
+import { normalizeInvoiceStatusMachine } from '../shared/invoice-status';
+
 export const INVOICE_STATUS_LABELS = {
   invoice_pending: 'PI Created / Estimate',
   invoice_created: 'Invoice Created',
@@ -5,15 +7,6 @@ export const INVOICE_STATUS_LABELS = {
   invoice_cancelled: 'Cancelled',
   debit_note: 'Debit Note',
   invoice_plus_debit_note: 'Invoice + Debit Note',
-} as const;
-
-const LEGACY_INVOICE_STATUS_TO_MACHINE = {
-  'Invoice Pending': 'invoice_pending',
-  'Invoice created': 'invoice_created',
-  'Po Created/Estimate': 'po_created_estimate',
-  'Invoice Cancelled': 'invoice_cancelled',
-  'Debit Note': 'debit_note',
-  'Invoice + Debit Note': 'invoice_plus_debit_note',
 } as const;
 
 export const PAYMENT_RECEIVED_STATUS_LABELS = {
@@ -75,7 +68,7 @@ function fallbackLabel(value: string | null | undefined) {
 }
 
 export function formatInvoiceStatus(value: string | null | undefined) {
-  const machineValue = LEGACY_INVOICE_STATUS_TO_MACHINE[value as keyof typeof LEGACY_INVOICE_STATUS_TO_MACHINE] || value;
+  const machineValue = normalizeInvoiceStatusMachine(value) || value;
   return INVOICE_STATUS_LABELS[machineValue as keyof typeof INVOICE_STATUS_LABELS] || fallbackLabel(value);
 }
 

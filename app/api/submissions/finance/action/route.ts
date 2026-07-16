@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../../lib/server/auth';
 import { logSubmissionAction } from '../../../../../lib/server/services/activityLog';
 import { getAccessTokenFromCookieHeader } from '../../../../../lib/server/services/authCookies';
+import { syncFollowUps } from '../../../../../lib/server/services/followUps';
+import { deriveInvoiceStatusDbValue, normalizeInvoiceStatusMachine, toDbInvoiceStatus } from '../../../../../lib/shared/invoice-status';
 import { createEmployeeNotification, createSubmissionReopenedNotifications } from '../../../../../lib/server/services/notifications';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../../lib/server/supabase';
 
@@ -27,20 +29,6 @@ type FinanceActionRequest = {
   finance_external_notes?: string;
   finance_comment?: string;
 };
-
-const DB_INVOICE_STATUS_BY_MACHINE = {
-  invoice_pending: 'Invoice Pending',
-  invoice_created: 'Invoice created',
-  po_created_estimate: 'Po Created/Estimate',
-  invoice_cancelled: 'Invoice Cancelled',
-  debit_note: 'Debit Note',
-  invoice_plus_debit_note: 'Invoice + Debit Note',
-} as const;
-
-function toDbInvoiceStatus(status: FinanceActionRequest['invoice_status'] | string | null | undefined) {
-  if (!status) return null;
-  return DB_INVOICE_STATUS_BY_MACHINE[status as keyof typeof DB_INVOICE_STATUS_BY_MACHINE] || status;
-}
 
 function toLegacyPaymentReceived(status: FinanceActionRequest['payment_received_status']) {
   if (status === 'full') return 'Yes - Full';
@@ -106,6 +94,15 @@ function invoiceStatusLabel(status: FinanceActionRequest['invoice_status'] | str
   return 'PI Created / Estimate';
 }
 
+function deriveNextInvoiceStatusDbValue(source: {
+  intake_status?: string | null | undefined;
+  invoice_status?: string | null | undefined;
+  invoice_number?: string | null | undefined;
+  debit_note_number?: string | null | undefined;
+}) {
+  return deriveInvoiceStatusDbValue(source);
+}
+
 export async function POST(req: NextRequest) {
   try {
     assertSupabaseEnv();
@@ -161,7 +158,7 @@ export async function POST(req: NextRequest) {
         submission: {
           id: currentSubmission.id,
           intake_status: currentSubmission.intake_status,
-          invoice_status: currentSubmission.invoice_status,
+          invoice_status: deriveNextInvoiceStatusDbValue(currentSubmission),
           invoice_number: currentSubmission.invoice_number,
           debit_note_number: currentSubmission.debit_note_number,
           finance_comment: currentSubmission.finance_comment,
@@ -183,6 +180,10 @@ export async function POST(req: NextRequest) {
       patch.reviewed_at = now;
       patch.rejection_note = null;
       patch.finance_comment = null;
+      patch.invoice_status = deriveNextInvoiceStatusDbValue({
+        ...currentSubmission,
+        intake_status: 'accepted',
+      });
       activityAction = 'submission_approved';
       activityFromStatus = currentSubmission.intake_status ?? null;
       activityToStatus = 'accepted';
@@ -205,6 +206,10 @@ export async function POST(req: NextRequest) {
       patch.reviewed_at = now;
       patch.rejection_note = note;
       patch.finance_comment = note;
+      patch.invoice_status = deriveNextInvoiceStatusDbValue({
+        ...currentSubmission,
+        intake_status: 'rejected',
+      });
       activityAction = 'submission_rejected';
       activityFromStatus = currentSubmission.intake_status ?? null;
       activityToStatus = 'rejected';
@@ -227,6 +232,10 @@ export async function POST(req: NextRequest) {
       patch.reviewed_at = now;
       patch.rejection_note = note;
       patch.finance_comment = note;
+      patch.invoice_status = deriveNextInvoiceStatusDbValue({
+        ...currentSubmission,
+        intake_status: 'rejected',
+      });
       activityAction = 'resubmission_requested';
       activityFromStatus = currentSubmission.intake_status ?? null;
       activityToStatus = 'rejected';
@@ -238,17 +247,22 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.action === 'mark_invoice_created') {
-      const nextInvoiceStatus = body.invoice_status ? toDbInvoiceStatus(body.invoice_status) : currentSubmission.invoice_status;
       const nextInvoiceNumber = body.invoice_number !== undefined ? body.invoice_number.trim() || null : currentSubmission.invoice_number || null;
       const nextDebitNoteNumber = body.debit_note_number !== undefined ? body.debit_note_number.trim() || null : currentSubmission.debit_note_number || null;
+      const nextInvoiceStatus = deriveNextInvoiceStatusDbValue({
+        ...currentSubmission,
+        invoice_status: body.invoice_status ?? currentSubmission.invoice_status,
+        invoice_number: nextInvoiceNumber,
+        debit_note_number: nextDebitNoteNumber,
+      });
       if (
-        currentSubmission.invoice_status === nextInvoiceStatus &&
+        normalizeInvoiceStatusMachine(currentSubmission.invoice_status) === normalizeInvoiceStatusMachine(nextInvoiceStatus) &&
         (currentSubmission.invoice_number || null) === nextInvoiceNumber &&
         (currentSubmission.debit_note_number || null) === nextDebitNoteNumber
       ) {
         return noChange('Invoice tracking is already up to date.');
       }
-      if (body.invoice_status && nextInvoiceStatus) patch.invoice_status = nextInvoiceStatus;
+      patch.invoice_status = nextInvoiceStatus;
       patch.reviewed_by = appUser.id;
       patch.reviewed_at = now;
       if (body.invoice_number !== undefined) patch.invoice_number = body.invoice_number.trim() || null;
@@ -269,11 +283,16 @@ export async function POST(req: NextRequest) {
       const debitNoteNumber = body.debit_note_number?.trim();
       if (!debitNoteNumber) throw new Error('debit_note_number is required');
       const nextInvoiceNumber = body.invoice_number?.trim() || currentSubmission.invoice_number || null;
-      const nextInvoiceStatus = toDbInvoiceStatus(body.invoice_status ?? (nextInvoiceNumber ? 'invoice_plus_debit_note' : 'debit_note'));
+      const nextInvoiceStatus = deriveNextInvoiceStatusDbValue({
+        ...currentSubmission,
+        invoice_status: body.invoice_status ?? currentSubmission.invoice_status,
+        invoice_number: nextInvoiceNumber,
+        debit_note_number: debitNoteNumber,
+      });
       if (
         (currentSubmission.debit_note_number || null) === debitNoteNumber &&
         (currentSubmission.invoice_number || null) === nextInvoiceNumber &&
-        currentSubmission.invoice_status === nextInvoiceStatus
+        normalizeInvoiceStatusMachine(currentSubmission.invoice_status) === normalizeInvoiceStatusMachine(nextInvoiceStatus)
       ) {
         return noChange('Debit note details are already saved.');
       }
@@ -599,7 +618,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, changed: true, submission: updated }, { status: 200 });
+    await syncFollowUps(adminClient);
+    return NextResponse.json({
+      success: true,
+      changed: true,
+      submission: {
+        ...updated,
+        invoice_status: deriveNextInvoiceStatusDbValue(updated),
+      },
+    }, { status: 200 });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : 'Failed to update submission.' },

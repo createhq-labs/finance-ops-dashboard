@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../lib/server/auth';
 import { assertSupabaseEnv, createUserScopedClient } from '../../../../lib/server/supabase';
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
+import { deriveInvoiceStatusDbValue } from '../../../../lib/shared/invoice-status';
 
 type FilterQuery = {
   eq: (column: string, value: unknown) => FilterQuery;
@@ -153,6 +154,7 @@ export async function GET(req: NextRequest) {
 
     const submissions = pageRows.map((row) => ({
       ...row,
+      invoice_status: deriveInvoiceStatusDbValue(row),
       previous_submission_pi: row.previous_submission_id ? previousPiMap.get(String(row.previous_submission_id)) ?? null : null,
       version_status: mapVersionStatus(row.previous_submission_id ? String(row.previous_submission_id) : null, row.is_latest_version as boolean | null | undefined),
     }));
