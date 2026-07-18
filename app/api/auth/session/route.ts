@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { assertSupabaseEnv, createUserScopedClient } from '@/lib/server/supabase';
+import { getAuthenticatedSupabaseUser } from '@/lib/server/auth';
 import { getAccessTokenFromCookieHeader } from '@/lib/server/services/authCookies';
 
 export async function GET(req: NextRequest) {
@@ -11,15 +12,15 @@ export async function GET(req: NextRequest) {
     }
 
     const anon = createUserScopedClient(token);
-    const { data, error } = await anon.auth.getUser(token);
-    if (error || !data.user) {
+    const authUser = await getAuthenticatedSupabaseUser(anon, token).catch(() => null);
+    if (!authUser) {
       return NextResponse.json({ authenticated: false }, { status: 401 });
     }
 
     const { data: appUser, error: appUserError } = await anon
       .from('users')
       .select('id, email, full_name, role, status, business_line')
-      .eq('supabase_auth_id', data.user.id)
+      .eq('supabase_auth_id', authUser.id)
       .single();
 
     if (appUserError || !appUser) {

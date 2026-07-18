@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { FilterBar } from '../../../../components/dashboard/filter-bar';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
-import { SearchableSelect } from '../../../../components/forms/searchable-select';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { getDrawerViewerRole } from '../../../../lib/client/dashboard-access';
@@ -188,6 +188,16 @@ function mergeRows(current: SubmissionRow[], incoming: SubmissionRow[]) {
     const rightTime = new Date(right.submitted_at || '').getTime();
     return rightTime - leftTime;
   });
+}
+
+function resetTeamFilters(
+  setQuery: (value: string) => void,
+  setStatusFilter: (value: 'all' | SubmissionRow['intake_status']) => void,
+  setMemberQuery: (value: string) => void,
+) {
+  setQuery('');
+  setStatusFilter('all');
+  setMemberQuery('');
 }
 
 export default function TeamSubmissionsPage() {
@@ -442,39 +452,42 @@ export default function TeamSubmissionsPage() {
             </section>
 
             <SectionCard padding={12}>
-              <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)]">
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Search</span>
-                  <input
-                    className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
-                    placeholder="Search PI, entity, creator, or brand"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Status</span>
-                  <SearchableSelect
-                    value={statusFilter}
-                    onChange={(next) => setStatusFilter(next as 'all' | SubmissionRow['intake_status'])}
-                    options={[
+              <FilterBar
+                searchPlaceholder="Search PI, entity, creator, or brand"
+                searchValue={query}
+                primaryFilters={[
+                  {
+                    key: 'status',
+                    label: 'Status',
+                    value: statusFilter,
+                    options: [
                       { value: 'all', label: 'All' },
                       { value: 'submitted', label: 'Submitted' },
                       { value: 'accepted', label: 'Accepted' },
                       { value: 'rejected', label: 'Rejected' },
-                    ]}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Team Member</span>
-                  <input
-                    className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
-                    placeholder="Search member name or email"
-                    value={memberQuery}
-                    onChange={(e) => setMemberQuery(e.target.value)}
-                  />
-                </label>
-              </div>
+                    ],
+                  },
+                ]}
+                advancedFilters={[
+                  {
+                    key: 'teamMember',
+                    label: 'Team Member',
+                    value: memberQuery,
+                    type: 'text',
+                    placeholder: 'Search member name or email',
+                  },
+                ]}
+                onSearch={setQuery}
+                onPrimaryChange={(key, value) => {
+                  if (key === 'status') {
+                    setStatusFilter((value || 'all') as 'all' | SubmissionRow['intake_status']);
+                  }
+                }}
+                onAdvancedChange={(filters) => {
+                  setMemberQuery(filters.teamMember || '');
+                }}
+                onReset={() => resetTeamFilters(setQuery, setStatusFilter, setMemberQuery)}
+              />
             </SectionCard>
 
             <SectionCard padding={0}>

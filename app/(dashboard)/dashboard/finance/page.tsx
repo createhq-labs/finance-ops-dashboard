@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
+import { FilterBar } from '../../../../components/dashboard/filter-bar';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
@@ -34,6 +35,36 @@ type SubmissionAttachmentApiRow = {
   file_size_bytes: number;
   mime_type: string;
   uploaded_at?: string | null;
+};
+
+type FinancePreviousSubmissionSnapshot = {
+  proforma_invoice?: string | null;
+  currency?: string | null;
+  agency_brand_name?: string | null;
+  agency_brand_trade_name?: string | null;
+  gst_number?: string | null;
+  address?: string | null;
+  bill_due?: string | null;
+  invoice_type?: string | null;
+  deliverables?: string | null;
+  creator_creators_name?: string | null;
+  brand_name?: string | null;
+  campaign_code?: string | null;
+  campaign_name?: string | null;
+  campaign_brand?: string | null;
+  commercials?: number | string | null;
+  additional_agency_commission?: number | string | null;
+  reimbursement_amount?: number | string | null;
+  reimbursement_receipts?: string | null;
+  additional_information?: string | null;
+  business_line?: 'TM' | 'IM' | null | string;
+  entry_type?: 'SC' | 'MC' | null | string;
+  entity_type?: 'Agency' | 'Brand' | null | string;
+  client_type?: 'Indian' | 'Foreign' | null | string;
+  agency_name?: string | null;
+  agency_trade_name?: string | null;
+  brand_trade_name?: string | null;
+  intake_line_items?: SubmissionRow['intake_line_items'];
 };
 
 type FinanceApiRow = {
@@ -94,6 +125,7 @@ type FinanceApiRow = {
   invoice_number?: string | null;
   debit_note_number?: string | null;
   submission_attachments?: SubmissionAttachmentApiRow[];
+  previous_submission_snapshot?: FinancePreviousSubmissionSnapshot | null;
 };
 
 type FinanceAction =
@@ -107,10 +139,21 @@ type FinanceAction =
 
 type MasterDataReviewApiRow = {
   id: string;
-  type: 'agency' | 'brand' | 'creator';
+  type: 'agency' | 'brand' | 'creator' | 'agency_gst_address' | 'brand_gst_address';
   status: 'pending' | 'approved' | 'rejected';
   submitted_value: string;
   submitted_trade_name?: string | null;
+  payload?: {
+    entity_type?: string;
+    entity_name?: string;
+    entity_trade_name?: string | null;
+    gst_number?: string;
+    address?: string;
+    city?: string | null;
+    state?: string | null;
+    country?: string | null;
+    pincode?: string | null;
+  } | null;
   reviewed_by_name?: string | null;
   reviewed_at?: string | null;
   rejection_reason?: string | null;
@@ -216,55 +259,6 @@ function normalizeInvoiceStatus(value: string | null | undefined) {
   return 'invoice_pending';
 }
 
-function formatDateDigitsInput(value: string) {
-  const digits = value.replace(/\D/g, '').slice(0, 8);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-}
-
-function parseDateFilterInput(value: string) {
-  const digits = value.replace(/\D/g, '').slice(0, 8);
-  const display = formatDateDigitsInput(value);
-
-  if (!digits.length) {
-    return { display: '', iso: '', complete: false, valid: true };
-  }
-
-  if (digits.length < 8) {
-    return { display, iso: '', complete: false, valid: true };
-  }
-
-  const day = Number(digits.slice(0, 2));
-  const month = Number(digits.slice(2, 4));
-  const year = Number(digits.slice(4, 8));
-
-  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) {
-    return { display, iso: '', complete: true, valid: false };
-  }
-
-  const iso = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  const date = new Date(`${iso}T00:00:00`);
-  const isValid = !Number.isNaN(date.getTime())
-    && date.getFullYear() === year
-    && date.getMonth() + 1 === month
-    && date.getDate() === day;
-
-  return {
-    display,
-    iso: isValid ? iso : '',
-    complete: true,
-    valid: isValid,
-  };
-}
-
-function formatDateFilterInput(value: string) {
-  if (!value) return '';
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return value;
-  const [, year, month, day] = match;
-  return `${day}/${month}/${year}`;
-}
 
 
 function mergeSubmissionRows(current: SubmissionRow[], incoming: SubmissionRow[]) {
@@ -276,6 +270,40 @@ function mergeSubmissionRows(current: SubmissionRow[], incoming: SubmissionRow[]
     const rightTime = new Date(right.submitted_at || '').getTime();
     return rightTime - leftTime;
   });
+}
+
+function mapPreviousSubmissionSnapshot(snapshot: FinancePreviousSubmissionSnapshot | null | undefined): Partial<SubmissionRow> | null {
+  if (!snapshot) return null;
+
+  return {
+    pi: snapshot.proforma_invoice ?? '',
+    entity: snapshot.agency_brand_name || '-',
+    amount: Number(snapshot.commercials ?? 0),
+    currency: snapshot.currency || 'INR',
+    trade_name: snapshot.agency_brand_trade_name || null,
+    gst_number: snapshot.gst_number || null,
+    address: snapshot.address || null,
+    bill_due: snapshot.bill_due || null,
+    invoice_type: snapshot.invoice_type || null,
+    creator_creators_name: snapshot.creator_creators_name || null,
+    brand_name: snapshot.brand_name || null,
+    campaign_code: snapshot.campaign_code || null,
+    campaign_name: snapshot.campaign_name || null,
+    campaign_brand: snapshot.campaign_brand || null,
+    deliverables: snapshot.deliverables || null,
+    additional_agency_commission: Number(snapshot.additional_agency_commission ?? 0),
+    reimbursement_amount: Number(snapshot.reimbursement_amount ?? 0),
+    reimbursement_receipts: snapshot.reimbursement_receipts || null,
+    additional_information: snapshot.additional_information || null,
+    business_line: normalizeBusinessLine(snapshot.business_line),
+    entry_type: snapshot.entry_type || null,
+    entity_type: snapshot.entity_type || null,
+    client_type: snapshot.client_type || null,
+    agency_name: snapshot.agency_name || null,
+    agency_trade_name: snapshot.agency_trade_name || null,
+    brand_trade_name: snapshot.brand_trade_name || null,
+    intake_line_items: snapshot.intake_line_items || [],
+  };
 }
 
 function mapFinanceSubmissionRow(item: FinanceApiRow): SubmissionRow {
@@ -312,6 +340,7 @@ function mapFinanceSubmissionRow(item: FinanceApiRow): SubmissionRow {
     additional_information: item.additional_information || null,
     previous_submission_id: item.previous_submission_id || null,
     previous_submission_pi: item.previous_submission_pi || null,
+    previous_submission_snapshot: mapPreviousSubmissionSnapshot(item.previous_submission_snapshot),
     version_status: item.version_status || 'original',
     business_line: normalizeBusinessLine(item.business_line),
     entry_type: item.entry_type || null,
@@ -351,6 +380,7 @@ function mapMasterDataReviews(items: MasterDataReviewApiRow[]): MasterDataReview
       status: item.status,
       submitted_value: item.submitted_value,
       submitted_trade_name: item.submitted_trade_name ?? null,
+      payload: item.payload ?? null,
       reviewed_by_name: item.reviewed_by_name ?? null,
       reviewed_at: item.reviewed_at ?? null,
       rejection_reason: item.rejection_reason ?? null,
@@ -364,6 +394,8 @@ function mapMasterDataReviews(items: MasterDataReviewApiRow[]): MasterDataReview
     } else if (item.type === 'brand') {
       bucket.brand_name ??= summary;
       bucket.brand_trade_name ??= summary;
+    } else if (item.type === 'agency_gst_address' || item.type === 'brand_gst_address') {
+      bucket.gst_number ??= summary;
     } else {
       bucket.creator_name ??= summary;
     }
@@ -419,57 +451,6 @@ function TrackingRow({
   );
 }
 
-function DateFilterInput({
-  label,
-  committedValue,
-  onCommit,
-}: {
-  label: string;
-  committedValue: string;
-  onCommit: (value: string) => void;
-}) {
-  const [inputValue, setInputValue] = useState(() => formatDateFilterInput(committedValue));
-  const [invalid, setInvalid] = useState(false);
-
-  useEffect(() => {
-    setInputValue(formatDateFilterInput(committedValue));
-    if (!committedValue) setInvalid(false);
-  }, [committedValue]);
-
-  return (
-    <label className="grid gap-1">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <input
-        className={`intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20 ${invalid ? 'border-destructive focus:border-destructive focus:ring-destructive/15' : ''}`}
-        type="text"
-        inputMode="numeric"
-        placeholder="dd/mm/yyyy"
-        value={inputValue}
-        onChange={(e) => {
-          const parsed = parseDateFilterInput(e.target.value);
-          setInputValue(parsed.display);
-          if (!parsed.display) {
-            setInvalid(false);
-            onCommit('');
-            return;
-          }
-          if (!parsed.complete) {
-            setInvalid(false);
-            return;
-          }
-          if (!parsed.valid) {
-            setInvalid(true);
-            return;
-          }
-          setInvalid(false);
-          onCommit(parsed.iso);
-        }}
-      />
-      {invalid ? <span className="text-xs text-destructive">Enter a valid date.</span> : null}
-    </label>
-  );
-}
-
 export default function FinanceReviewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -497,7 +478,6 @@ export default function FinanceReviewPage() {
   const [versionStatusFilter, setVersionStatusFilter] = useState<'all' | 'original' | 'resubmitted' | 'superseded'>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [actionError, setActionError] = useState('');
   const [rejectionNote, setRejectionNote] = useState('');
@@ -1004,18 +984,12 @@ export default function FinanceReviewPage() {
   const pendingCount = rows.filter((entry) => entry.intake_status === 'submitted').length;
   const acceptedCount = rows.filter((entry) => entry.intake_status === 'accepted').length;
   const rejectedCount = rows.filter((entry) => entry.intake_status === 'rejected').length;
-  const activeAdvancedFilterCount = [
-    invoiceStatusFilter !== 'all',
-    creatorInvoiceReceivedFilter !== 'all',
-    paymentReceivedFilter !== 'all',
-    paymentMadeFilter !== 'all',
-    closedStatusFilter !== 'all',
-    versionStatusFilter !== 'all',
-    Boolean(dateFrom),
-    Boolean(dateTo),
-  ].filter(Boolean).length;
 
-  function resetAdvancedFilters() {
+  function resetAllFilters() {
+    setQuery('');
+    setBusinessLineFilter('all');
+    setIntakeStatusFilter('all');
+    setEmployeeFilter('all');
     setInvoiceStatusFilter('all');
     setCreatorInvoiceReceivedFilter('all');
     setPaymentReceivedFilter('all');
@@ -1277,124 +1251,117 @@ export default function FinanceReviewPage() {
         </section>
 
       <SectionCard padding={16} className="overflow-visible">
-        <div className="grid gap-3">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,0.7fr))_auto]">
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Search</span>
-              <input className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search PI, creator, agency, or brand" />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Business Line</span>
-              <SearchableSelect
-                value={businessLineFilter}
-                onChange={(next) => setBusinessLineFilter(next as 'all' | 'TM' | 'IM')}
-                options={[
-                  { value: 'all', label: 'All' },
-                  { value: 'TM', label: 'TM' },
-                  { value: 'IM', label: 'IM' },
-                ]}
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Status</span>
-              <SearchableSelect
-                value={intakeStatusFilter}
-                onChange={(next) => setIntakeStatusFilter(next as 'all' | 'submitted' | 'accepted' | 'rejected')}
-                options={[
-                  { value: 'all', label: 'All' },
-                  { value: 'submitted', label: 'Submitted' },
-                  { value: 'accepted', label: 'Accepted' },
-                  { value: 'rejected', label: 'Rejected' },
-                ]}
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Employee</span>
-              <SearchableSelect
-                value={employeeFilter === 'all' ? '' : employeeFilter}
-                options={employeeOptions}
-                onChange={(next) => setEmployeeFilter(next || 'all')}
-                placeholder="Search employee email"
-                panelMaxHeight={220}
-                searchTextByOption={Object.fromEntries(employeeOptions.map((email) => [email, `${email} ${employeeDirectory[email] || ''}`]))}
-                className="border-border/70 bg-card text-foreground"
-              />
-            </label>
-            <div className="flex items-end">
-              <button className="btn w-full xl:w-auto shrink-0" type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
-                More Filters{activeAdvancedFilterCount > 0 ? ` (${activeAdvancedFilterCount})` : ''}
-              </button>
-            </div>
-          </div>
-
-          {showAdvancedFilters ? (
-            <div className="rounded-xl border border-border/60 bg-card/90 p-3 dark:bg-card/70">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <DateFilterInput label="Date From" committedValue={dateFrom} onCommit={setDateFrom} />
-                <DateFilterInput label="Date To" committedValue={dateTo} onCommit={setDateTo} />
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Invoice Status</span>
-                  <SearchableSelect
-                    value={invoiceStatusFilter}
-                    onChange={(next) => setInvoiceStatusFilter(next)}
-                    options={[
-                      { value: 'all', label: 'All' },
-                      ...invoiceStatusOptions.map((status) => ({ value: status, label: formatInvoiceStatus(status) })),
-                    ]}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Creator Invoice Received</span>
-                  <SearchableSelect
-                    value={creatorInvoiceReceivedFilter}
-                    onChange={(next) => setCreatorInvoiceReceivedFilter(next as 'all' | 'received' | 'pending')}
-                    options={[{ value: 'all', label: 'All' }, ...CREATOR_INVOICE_STATUS_OPTIONS]}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Payment Received</span>
-                  <SearchableSelect
-                    value={paymentReceivedFilter}
-                    onChange={(next) => setPaymentReceivedFilter(next)}
-                    options={[{ value: 'all', label: 'All' }, ...PAYMENT_RECEIVED_STATUS_OPTIONS]}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Payment Made</span>
-                  <SearchableSelect
-                    value={paymentMadeFilter}
-                    onChange={(next) => setPaymentMadeFilter(next)}
-                    options={[{ value: 'all', label: 'All' }, ...PAYMENT_MADE_STATUS_OPTIONS]}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Closed Status</span>
-                  <SearchableSelect
-                    value={closedStatusFilter}
-                    onChange={(next) => setClosedStatusFilter(next)}
-                    options={[{ value: 'all', label: 'All' }, ...CLOSURE_STATUS_OPTIONS]}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Version Status</span>
-                  <SearchableSelect
-                    value={versionStatusFilter}
-                    onChange={(next) => setVersionStatusFilter(next as 'all' | 'original' | 'resubmitted' | 'superseded')}
-                    options={[
-                      { value: 'all', label: 'All' },
-                      { value: 'original', label: 'Original' },
-                      { value: 'resubmitted', label: 'Resubmitted' },
-                      { value: 'superseded', label: 'Superseded' },
-                    ]}
-                  />
-                </label>
-              </div>
-              <div className="mt-3 flex justify-end">
-                <button className="btn" type="button" onClick={resetAdvancedFilters}>Reset Advanced</button>
-              </div>
-            </div>
-          ) : null}
-        </div>
+        <FilterBar
+          searchPlaceholder="Search PI, creator, agency, or brand"
+          searchValue={query}
+          primaryFilters={[
+            {
+              key: 'businessLine',
+              label: 'Business Line',
+              value: businessLineFilter,
+              options: [
+                { value: 'all', label: 'All Business Lines' },
+                { value: 'TM', label: 'TM' },
+                { value: 'IM', label: 'IM' },
+              ],
+            },
+            {
+              key: 'status',
+              label: 'Status',
+              value: intakeStatusFilter,
+              options: [
+                { value: 'all', label: 'All Statuses' },
+                { value: 'submitted', label: 'Submitted' },
+                { value: 'accepted', label: 'Accepted' },
+                { value: 'rejected', label: 'Rejected' },
+              ],
+            },
+            {
+              key: 'employee',
+              label: 'Employee',
+              value: employeeFilter === 'all' ? '' : employeeFilter,
+              options: employeeOptions.map((email) => ({
+                value: email,
+                label: email,
+              })),
+              placeholder: 'Search employee email',
+              searchTextByOption: Object.fromEntries(
+                employeeOptions.map((email) => [email, email + ' ' + (employeeDirectory[email] || '')])
+              ),
+            },
+          ]}
+          advancedFilters={[
+            { key: 'dateFrom', label: 'Date From', value: dateFrom, type: 'date' },
+            { key: 'dateTo', label: 'Date To', value: dateTo, type: 'date' },
+            {
+              key: 'invoiceStatus',
+              label: 'Invoice Status',
+              value: invoiceStatusFilter,
+              type: 'select',
+              options: [
+                { value: 'all', label: 'All' },
+                ...invoiceStatusOptions.map((status) => ({ value: status, label: formatInvoiceStatus(status) })),
+              ],
+            },
+            {
+              key: 'creatorInvoice',
+              label: 'Creator Invoice Received',
+              value: creatorInvoiceReceivedFilter,
+              type: 'select',
+              options: [{ value: 'all', label: 'All' }, ...CREATOR_INVOICE_STATUS_OPTIONS],
+            },
+            {
+              key: 'paymentReceived',
+              label: 'Payment Received',
+              value: paymentReceivedFilter,
+              type: 'select',
+              options: [{ value: 'all', label: 'All' }, ...PAYMENT_RECEIVED_STATUS_OPTIONS],
+            },
+            {
+              key: 'paymentMade',
+              label: 'Payment Made',
+              value: paymentMadeFilter,
+              type: 'select',
+              options: [{ value: 'all', label: 'All' }, ...PAYMENT_MADE_STATUS_OPTIONS],
+            },
+            {
+              key: 'closedStatus',
+              label: 'Closed Status',
+              value: closedStatusFilter,
+              type: 'select',
+              options: [{ value: 'all', label: 'All' }, ...CLOSURE_STATUS_OPTIONS],
+            },
+            {
+              key: 'versionStatus',
+              label: 'Version Status',
+              value: versionStatusFilter,
+              type: 'select',
+              options: [
+                { value: 'all', label: 'All' },
+                { value: 'original', label: 'Original' },
+                { value: 'resubmitted', label: 'Resubmitted' },
+                { value: 'superseded', label: 'Superseded' },
+              ],
+            },
+          ]}
+          onSearch={setQuery}
+          onPrimaryChange={(key, value) => {
+            if (key === 'businessLine') setBusinessLineFilter((value || 'all') as 'all' | 'TM' | 'IM');
+            if (key === 'status') setIntakeStatusFilter((value || 'all') as 'all' | 'submitted' | 'accepted' | 'rejected');
+            if (key === 'employee') setEmployeeFilter(value || 'all');
+          }}
+          onAdvancedChange={(filters) => {
+            setDateFrom(filters.dateFrom || '');
+            setDateTo(filters.dateTo || '');
+            setInvoiceStatusFilter(filters.invoiceStatus || 'all');
+            setCreatorInvoiceReceivedFilter((filters.creatorInvoice || 'all') as 'all' | 'received' | 'pending');
+            setPaymentReceivedFilter(filters.paymentReceived || 'all');
+            setPaymentMadeFilter(filters.paymentMade || 'all');
+            setClosedStatusFilter(filters.closedStatus || 'all');
+            setVersionStatusFilter((filters.versionStatus || 'all') as 'all' | 'original' | 'resubmitted' | 'superseded');
+          }}
+          onReset={resetAllFilters}
+        />
       </SectionCard>
 
       {rowsLoading ? <WorkspaceLoader variant="section" label="Loading finance submissions..." /> : null}

@@ -1,7 +1,7 @@
+import type { SubmissionCurrency } from '../../shared/currency';
 import type { SubmissionAttachmentSummary } from '../../shared/submission-attachments';
 
 export type AppRole = 'employee' | 'team_lead' | 'finance' | 'admin' | 'developer';
-export type SubmissionCurrency = 'INR' | 'USD' | 'EUR' | 'GBP' | 'AED';
 export type BusinessLine = 'IM' | 'TM';
 
 export type CreateLineItemInput = {
@@ -128,3 +128,4 @@ export type SubmissionAttachmentRecord = SubmissionAttachmentSummary & {
   uploaded_by: string;
   uploaded_at: string;
 };
+

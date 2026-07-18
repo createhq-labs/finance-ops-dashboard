@@ -35,7 +35,7 @@ type FilterBarProps = {
   onSearch: (value: string) => void;
   onPrimaryChange: (key: string, value: string) => void;
   onAdvancedChange: (filters: Record<string, string>) => void;
-  onReset: () => void;
+  onReset?: () => void;
 };
 
 function isAppliedValue(value: string | undefined) {
@@ -91,6 +91,17 @@ export function FilterBar({
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [advancedFilters, open]);
 
+  const appliedPrimaryEntries = useMemo(
+    () =>
+      primaryFilters
+        .map((filter) => ({
+          filter,
+          value: String(filter.value || ""),
+        }))
+        .filter(({ value }) => isAppliedValue(value)),
+    [primaryFilters]
+  );
+
   const appliedAdvancedEntries = useMemo(
     () =>
       advancedFilters
@@ -102,6 +113,7 @@ export function FilterBar({
     [advancedFilters]
   );
 
+  const appliedSearchValue = String(searchValue || "").trim();
   const activeAdvancedCount = appliedAdvancedEntries.length;
 
   function updateDraftValue(key: string, value: string) {
@@ -125,7 +137,21 @@ export function FilterBar({
     const cleared = Object.fromEntries(advancedFilters.map((filter) => [filter.key, ""]));
     setDraftAdvancedFilters(cleared);
     setOpen(false);
-    onReset();
+    onSearch("");
+    for (const filter of primaryFilters) {
+      onPrimaryChange(filter.key, filter.options[0]?.value ?? "");
+    }
+    onAdvancedChange(cleared);
+    onReset?.();
+  }
+
+  function handleDismissSearch() {
+    onSearch("");
+  }
+
+  function handleDismissPrimaryFilter(key: string) {
+    const filter = primaryFilters.find((entry) => entry.key === key);
+    onPrimaryChange(key, filter?.options[0]?.value ?? "");
   }
 
   function handleDismissAppliedFilter(key: string) {
@@ -257,8 +283,39 @@ export function FilterBar({
         </div>
       </div>
 
-      {appliedAdvancedEntries.length > 0 ? (
+      {appliedSearchValue || appliedPrimaryEntries.length > 0 || appliedAdvancedEntries.length > 0 ? (
         <div className="flex flex-wrap gap-2">
+          {appliedSearchValue ? (
+            <span className="inline-flex items-center gap-2 rounded-full border border-sky-300/70 bg-sky-100/95 px-3 py-1 text-xs font-medium text-sky-950 dark:border-sky-300/30 dark:bg-sky-400/16 dark:text-sky-50">
+              <span>Search: {appliedSearchValue}</span>
+              <button
+                type="button"
+                onClick={handleDismissSearch}
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full text-current transition-colors duration-150 hover:bg-sky-200/80 dark:hover:bg-sky-400/18"
+                aria-label="Remove search"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ) : null}
+
+          {appliedPrimaryEntries.map(({ filter, value }) => (
+            <span
+              key={filter.key}
+              className="inline-flex items-center gap-2 rounded-full border border-sky-300/70 bg-sky-100/95 px-3 py-1 text-xs font-medium text-sky-950 dark:border-sky-300/30 dark:bg-sky-400/16 dark:text-sky-50"
+            >
+              <span>{filter.label}: {filter.options.find((option) => option.value === value)?.label || value}</span>
+              <button
+                type="button"
+                onClick={() => handleDismissPrimaryFilter(filter.key)}
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full text-current transition-colors duration-150 hover:bg-sky-200/80 dark:hover:bg-sky-400/18"
+                aria-label={"Remove " + filter.label}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+
           {appliedAdvancedEntries.map(({ filter, value }) => (
             <span
               key={filter.key}
@@ -271,7 +328,7 @@ export function FilterBar({
                 type="button"
                 onClick={() => handleDismissAppliedFilter(filter.key)}
                 className="inline-flex h-4 w-4 items-center justify-center rounded-full text-current transition-colors duration-150 hover:bg-sky-200/80 dark:hover:bg-sky-400/18"
-                aria-label={`Remove ${filter.label}`}
+                aria-label={"Remove " + filter.label}
               >
                 <X className="h-3 w-3" />
               </button>

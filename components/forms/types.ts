@@ -1,7 +1,8 @@
+import type { SubmissionCurrency } from "../../lib/shared/currency";
+
 export type BusinessLine = "TM" | "IM";
 export type EntryType = "SC" | "MC";
 export type EntityType = "Agency" | "Brand";
-export type SubmissionCurrency = "INR" | "USD" | "EUR" | "GBP" | "AED";
 
 export type MasterBrand = {
   name: string;
