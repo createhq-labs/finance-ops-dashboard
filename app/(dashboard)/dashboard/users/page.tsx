@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { CheckCircle2, CircleOff, Copy, Info, KeyRound, UserPlus, X } from 'lucide-react';
+import { FilterBar } from '../../../../components/dashboard/filter-bar';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
@@ -397,6 +398,14 @@ export default function UsersManagementPage() {
     return () => window.clearTimeout(handle);
   }, [searchInput]);
 
+  function resetUserFilters() {
+    setSearchInput('');
+    setSearch('');
+    setRoleFilter('all');
+    setStatusFilter('all');
+    setBusinessLineFilter('all');
+  }
+
   useEffect(() => {
     if (loading || !user) return;
     if (!canManageUsers(user.role)) {
@@ -710,60 +719,39 @@ export default function UsersManagementPage() {
           description="Search, filter, provision, and maintain dashboard access safely."
           contentClassName="grid gap-4"
         >
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.8fr)_220px_220px_180px]">
-            <label className="grid gap-1.5 text-sm font-medium text-foreground">
-              Search
-              <input
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="Search by name or email"
-                className="h-10 rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-              />
-            </label>
-
-            <label className="grid gap-1.5 text-sm font-medium text-foreground">
-              Role
-              <SearchableSelect
-                value={roleFilter}
-                onChange={(next) => setRoleFilter(next as AppRole | 'all')}
-                options={ROLE_FILTERS.map((entry) => ({ value: entry.value, label: entry.label }))}
-              />
-            </label>
-
-            <label className="grid gap-1.5 text-sm font-medium text-foreground">
-              Status
-              <SearchableSelect
-                value={statusFilter}
-                onChange={(next) => setStatusFilter(next as UserStatus | 'all')}
-                options={STATUS_OPTIONS.map((entry) => ({ value: entry.value, label: entry.label }))}
-              />
-            </label>
-
-            <div className="grid gap-1.5">
-              <span className="text-sm font-medium text-foreground">Business Line</span>
-              <div className="flex items-center gap-2">
-                <SearchableSelect
-                  value={businessLineFilter}
-                  onChange={(next) => setBusinessLineFilter(next as BusinessLine | 'all')}
-                  options={BUSINESS_LINE_FILTERS.map((entry) => ({ value: entry.value, label: entry.label }))}
-                  className="min-w-0 flex-1"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchInput('');
-                    setSearch('');
-                    setRoleFilter('all');
-                    setStatusFilter('all');
-                    setBusinessLineFilter('all');
-                  }}
-                  className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                >
-                  Reset
-                </button>
-              </div>
-            </div>
-          </div>
+          <FilterBar
+            searchPlaceholder="Search by name or email"
+            searchValue={searchInput}
+            primaryFilters={[
+              {
+                key: 'role',
+                label: 'Role',
+                value: roleFilter,
+                options: ROLE_FILTERS.map((entry) => ({ value: entry.value, label: entry.label })),
+              },
+              {
+                key: 'status',
+                label: 'Status',
+                value: statusFilter,
+                options: STATUS_OPTIONS.map((entry) => ({ value: entry.value, label: entry.label })),
+              },
+              {
+                key: 'businessLine',
+                label: 'Business Line',
+                value: businessLineFilter,
+                options: BUSINESS_LINE_FILTERS.map((entry) => ({ value: entry.value, label: entry.label })),
+              },
+            ]}
+            advancedFilters={[]}
+            onSearch={(value) => setSearchInput(value)}
+            onPrimaryChange={(key, value) => {
+              if (key === 'role') setRoleFilter((value || 'all') as AppRole | 'all');
+              if (key === 'status') setStatusFilter((value || 'all') as UserStatus | 'all');
+              if (key === 'businessLine') setBusinessLineFilter((value || 'all') as BusinessLine | 'all');
+            }}
+            onAdvancedChange={() => undefined}
+            onReset={resetUserFilters}
+          />
 
           {actionError ? (
             <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">

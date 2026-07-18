@@ -25,7 +25,7 @@ export function AdditionalInfoSection({
     const element = textareaRef.current;
     if (!element) return;
     element.style.height = "auto";
-    element.style.height = `${Math.min(Math.max(element.scrollHeight, 40), 180)}px`;
+    element.style.height = `${Math.min(Math.max(element.scrollHeight, 56), 140)}px`;
   }, [values.additionalInformation]);
 
   return (
@@ -56,15 +56,33 @@ export function AdditionalInfoSection({
           <div className="additional-info-po-grid" style={{ display: 'grid', gap: 12, alignItems: 'start' }}>
             <label className="intake-field">
               <span className="intake-label">Internal Notes / Additional Information</span>
-              <textarea
-                ref={textareaRef}
-                className="intake-input intake-textarea"
-                rows={1}
-                value={values.additionalInformation}
-                onChange={(e) => onChange("additionalInformation", e.target.value)}
-                data-field="additionalInformation"
-                style={{ minHeight: 36, maxHeight: 160, overflowY: "auto", resize: "vertical" }}
-              />
+              <div style={{ position: "relative" }}>
+                <textarea
+                  ref={textareaRef}
+                  className="intake-input intake-textarea"
+                  rows={1}
+                  value={values.additionalInformation}
+                  onChange={(e) => onChange("additionalInformation", e.target.value)}
+                  data-field="additionalInformation"
+                  style={{ minHeight: 56, maxHeight: 140, overflowY: "auto", resize: "none", paddingRight: 24, paddingBottom: 18 }}
+                />
+                <span
+                  aria-hidden="true"
+                  style={{
+                    position: "absolute",
+                    right: 10,
+                    bottom: 9,
+                    pointerEvents: "none",
+                    color: "var(--text-muted)",
+                    fontSize: 11,
+                    lineHeight: 1,
+                    letterSpacing: "-0.08em",
+                    opacity: 0.9,
+                  }}
+                >
+                  //
+                </span>
+              </div>
               <div style={{ minHeight: 16 }}>
                 {errors.additionalInformation ? <p className="text-danger intake-inline-error">{errors.additionalInformation}</p> : null}
               </div>
@@ -77,6 +95,8 @@ export function AdditionalInfoSection({
                 file={referencePoFile}
                 error={referencePoError}
                 onChange={onReferencePoFileChange}
+                titleText="Attach reference PO file"
+                helperText="PDF, PNG, JPG, or WEBP. Max 10 MB."
               />
             </div>
           </div>

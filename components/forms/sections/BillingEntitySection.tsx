@@ -35,14 +35,12 @@ export function BillingEntitySection({
   gstOptions,
   gstMappingByNumber,
 }: Props) {
-  const [gstTouched, setGstTouched] = useState(false);
   const [pincodeTouched, setPincodeTouched] = useState(false);
   const [cityTouched, setCityTouched] = useState(false);
   const [stateTouched, setStateTouched] = useState(false);
   const addressRef = useRef<HTMLTextAreaElement | null>(null);
   const gst = (values.gstNumber || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const isIndianClient = values.clientType === "Indian";
-  const gstValid = !isIndianClient || !gst ? true : gst === "NA" || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gst);
   const pincodeValid = !isIndianClient || !values.pincode ? true : /^\d{6}$/.test(values.pincode.trim());
   const pincodePrefix = values.pincode.trim().slice(0, 2);
   const pincodeStateMap: Record<string, string> = {
@@ -102,7 +100,6 @@ export function BillingEntitySection({
   const locationMismatch = pincodeStateMismatch || pincodeCityMismatch;
   const entityNameOptions = values.entityType === "Agency" ? agencyOptions : brandOptions;
   const tradeNameOptions = values.entityType === "Agency" ? agencyTradeNameOptions : brandTradeNameOptions;
-  const selectedGstMapping = gstMappingByNumber[gst] ?? null;
   const gstEntries = gstOptions.map((gstNumber) => gstMappingByNumber[gstNumber]).filter(Boolean);
 
   function resizeAddressField() {
@@ -219,11 +216,14 @@ export function BillingEntitySection({
           {values.entityType === "Agency" ? (
             <label className="intake-field">
               <span className="intake-label">Brand Name *</span>
-              <input
-                className="intake-input"
+              <SearchableSelect
                 value={values.billingBrandName}
-                onChange={(event) => onChange("billingBrandName", event.target.value)}
-                placeholder="Brand name"
+                options={brandOptions}
+                allowCustom
+                panelMaxHeight={160}
+                onChange={(next) => onChange("billingBrandName", next)}
+                deselectOnSelectedClick
+                placeholder="Select brand name"
                 data-field="billingBrandName"
                 required
               />
@@ -241,25 +241,17 @@ export function BillingEntitySection({
                 mode={values.gstSelectionMode}
                 options={gstEntries}
                 onSelect={(next) => {
-                  setGstTouched(true);
                   onGstSelect(next);
                 }}
                 onStartAddNew={() => {
-                  setGstTouched(false);
                   onAddNewGstSelect();
                 }}
                 onClear={() => {
-                  setGstTouched(false);
                   onChange("gstSelectionMode", "existing");
                   onChange("gstNumber", "");
                 }}
               />
-              <div style={{ minHeight: 16 }}>
-                {errors.gstNumber ? <p className="text-danger intake-inline-error">{errors.gstNumber}</p> : null}
-                {!errors.gstNumber && gstTouched && gst && !gstValid ? (
-                  <p className="text-danger intake-inline-error">Enter a valid GST number or NA.</p>
-                ) : null}
-              </div>
+              <div style={{ minHeight: 0 }} />
             </div>
           ) : null}
 

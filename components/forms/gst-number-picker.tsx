@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Search, X } from "lucide-react";
+import { AlertCircle, ChevronDown, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { inferAddressData } from "../../lib/shared/address-utils";
 import type { GstMappingOption } from "./types";
@@ -36,12 +36,16 @@ function formatGstForDisplay(value: string) {
 }
 
 function deriveCity(option: GstMappingOption) {
-  if (option.city?.trim()) return option.city.trim();
   const address = option.address?.trim() ?? "";
-  if (!address) return "";
+  if (address) {
+    const inferred = inferAddressData(address, option.country?.trim().toLowerCase() === "india" ? "Indian" : "Foreign");
+    if (inferred.city.trim()) return inferred.city.trim();
+  }
 
-  const inferred = inferAddressData(address, option.country?.trim().toLowerCase() === "india" ? "Indian" : "Foreign");
-  return inferred.city.trim();
+  const fallback = option.city?.trim() ?? "";
+  if (/^[0-9]{4,}$/.test(fallback)) return "";
+  if (fallback.toLowerCase() == (option.country || "").trim().toLowerCase()) return "";
+  return fallback;
 }
 
 function highlightMatch(text: string, query: string, stripSpaces = false) {
@@ -91,20 +95,6 @@ function highlightMatch(text: string, query: string, stripSpaces = false) {
 }
 
 function StatusPill({ pending }: { pending: boolean }) {
-  const [isDarkMode, setIsDarkMode] = useState(false);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const syncTheme = () => setIsDarkMode(root.classList.contains("dark"));
-
-    syncTheme();
-
-    const observer = new MutationObserver(syncTheme);
-    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-
-    return () => observer.disconnect();
-  }, []);
-
   return (
     <span
       className={pending ? "gst-picker-badge gst-picker-badge-warning" : "gst-picker-badge gst-picker-badge-success"}
@@ -122,13 +112,9 @@ function StatusPill({ pending }: { pending: boolean }) {
         outline: 0,
         boxShadow: "none",
         background: pending
-          ? isDarkMode
-            ? "rgba(245, 112, 11, 0.24)"
-            : "rgba(217, 119, 6, 0.14)"
-          : isDarkMode
-            ? "rgba(7, 245, 35, 0.24)"
-            : "rgba(25, 222, 97, 0.14)",
-        color: pending ? (isDarkMode ? "#ffb806" : "#fa750f") : isDarkMode ? "#12f565" : "#4ed633",
+          ? "color-mix(in srgb, var(--chart-5) 18%, transparent)"
+          : "color-mix(in srgb, var(--success) 18%, transparent)",
+        color: pending ? "var(--chart-5)" : "var(--success)",
       }}
     >
       {pending ? "Pending" : "Approved"}
@@ -141,6 +127,7 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [showInvalidHint, setShowInvalidHint] = useState(false);
 
   const normalizedValue = normalizeGstInput(value);
   const selectedEntry = useMemo(
@@ -165,12 +152,20 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
 
   const showAddState = normalizedQuery.length > 0 && filteredOptions.length === 0;
   const remainingCharacters = Math.max(15 - normalizedQuery.length, 0);
+  const hasCompleteInvalidGst = normalizedQuery.length === 15 && !canAddNew;
 
   useEffect(() => {
     if (!open) return;
     setQuery("");
+    setShowInvalidHint(false);
     requestAnimationFrame(() => searchRef.current?.focus());
   }, [open]);
+
+  useEffect(() => {
+    if (!hasCompleteInvalidGst) {
+      setShowInvalidHint(false);
+    }
+  }, [hasCompleteInvalidGst]);
 
   useEffect(() => {
     if (!open) return;
@@ -275,48 +270,33 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
           {filteredOptions.length > 0 ? <div className="gst-picker-section-label">Saved entries</div> : null}
 
           {filteredOptions.length > 0 ? (
-            <div className="gst-picker-entry-list">
+            <div className="gst-picker-entry-list" style={{ maxHeight: filteredOptions.length > 3 ? 186 : undefined }}>
               {filteredOptions.map((option) => {
                 const isSelected = normalizeGstInput(option.gstNumber) === normalizedValue && !pendingSelection;
                 const displayGst = formatGstForDisplay(option.gstNumber);
                 const cityText = deriveCity(option);
-                const metaText = [option.entityName, cityText].filter(Boolean).join(" - ");
+                const metaText = [option.entityName, cityText].filter(Boolean).join(" • ");
+                const optionPending = Boolean((option as GstMappingOption & { pending?: boolean }).pending);
 
                 return (
                   <button
                     key={`${option.entityType}-${option.entityName}-${option.gstNumber}`}
                     type="button"
                     className={`gst-picker-entry ${isSelected ? "gst-picker-entry-selected" : ""}`}
-                    style={{
-                      display: "flex",
-                      width: "100%",
-                      alignItems: "center",
-                      gap: 12,
-                      borderTop: "0.5px solid var(--border)",
-                      padding: 12,
-                      textAlign: "left",
-                      background: isSelected ? "color-mix(in srgb, var(--ring) 10%, transparent)" : "transparent",
-                    }}
                     onClick={() => {
+                      if (isSelected) {
+                        onClear();
+                        setOpen(false);
+                        setQuery("");
+                        return;
+                      }
+
                       onSelect(normalizeGstInput(option.gstNumber));
                       setOpen(false);
                       setQuery("");
                     }}
                   >
-                    <span
-                      className={`gst-picker-radio ${isSelected ? "gst-picker-radio-selected" : ""}`}
-                      style={{
-                        display: "inline-flex",
-                        height: 15,
-                        width: 15,
-                        flex: "0 0 auto",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        borderRadius: 999,
-                        border: `1px solid ${isSelected ? "var(--ring)" : "color-mix(in srgb, var(--foreground) 34%, var(--border))"}`,
-                        background: isSelected ? "var(--ring)" : "transparent",
-                      }}
-                    >
+                    <span className={`gst-picker-radio ${isSelected ? "gst-picker-radio-selected" : ""}`}>
                       <span
                         className="gst-picker-radio-dot"
                         style={{
@@ -330,15 +310,15 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
                     </span>
 
                     <span className="min-w-0 flex-1 text-left">
-                      <span className="block truncate font-mono gst-picker-gst-text" style={{ fontSize: 13, fontWeight: 300 }}>
+                      <span className="block truncate font-mono gst-picker-gst-text">
                         {highlightMatch(displayGst, query, true)}
                       </span>
-                      <span className="block truncate gst-picker-meta-text" style={{ fontSize: 11, fontWeight: 300, color: "var(--muted-foreground)" }}>
+                      <span className="block truncate gst-picker-meta-text">
                         {highlightMatch(metaText, query)}
                       </span>
                     </span>
 
-                    <StatusPill pending={false} />
+                    <StatusPill pending={optionPending} />
                   </button>
                 );
               })}
@@ -346,53 +326,53 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
           ) : null}
 
           {showAddState ? (
-            <div className="gst-picker-add-state" style={{ background: "var(--card)", padding: "10px 12px 12px" }}>
-              <p className="gst-picker-add-caption" style={{ fontSize: 11, color: "var(--muted-foreground)" }}>No match - add as new GST?</p>
+            <div className="gst-picker-add-state">
+              <p className="gst-picker-add-caption">No match - add as new GST?</p>
               <div
                 className="gst-picker-add-card"
-                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 8 }}
               >
                 <span
-                  className="gst-picker-add-preview truncate font-mono text-[13px] text-app"
-                  style={{
-                    display: "inline-flex",
-                    minHeight: 38,
-                    minWidth: 0,
-                    flex: "1 1 auto",
-                    alignItems: "center",
-                    borderRadius: 10,
-                    border: "0.5px solid var(--border)",
-                    background: "var(--card)",
-                    padding: "0 14px",
-                  }}
+                  className={"gst-picker-add-preview truncate font-mono text-[13px]" + (hasCompleteInvalidGst ? " gst-picker-add-preview-invalid" : "")}
                 >
-                  {formatGstForDisplay(normalizedQuery)}
+                  {hasCompleteInvalidGst ? (
+                    <span className="gst-picker-invalid-anchor">
+                      <button
+                        type="button"
+                        aria-label="Invalid GST number format"
+                        className="gst-picker-invalid-button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setShowInvalidHint((current) => !current);
+                        }}
+                      >
+                        <AlertCircle className="h-4 w-4" />
+                      </button>
+                      {showInvalidHint ? (
+                        <span className="gst-picker-invalid-popover">
+                          Invalid GST number format
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : null}
+                  <span className="truncate">{formatGstForDisplay(normalizedQuery)}</span>
                 </span>
                 <button
                   type="button"
-                  className={`btn btn-primary gst-picker-add-action ${canAddNew ? "" : "gst-picker-add-disabled"}`}
-                  style={{
-                    minHeight: 38,
-                    borderRadius: 10,
-                    paddingInline: 14,
-                    background: "linear-gradient(135deg, var(--accent), var(--primary-strong))",
-                    backgroundImage: "none",
-                    color: "#ffffff",
-                    boxShadow: "none",
-                    opacity: canAddNew ? 1 : 0.45,
-                    pointerEvents: canAddNew ? "auto" : "none",
-                  }}
+                  className={"btn btn-primary gst-picker-add-action" + (canAddNew ? "" : " gst-picker-add-disabled")}
                   disabled={!canAddNew}
                   onClick={handleAddNew}
                 >
                   Add GST
                 </button>
               </div>
-              <p className={`text-[11px] ${canAddNew ? "text-success" : "text-muted"}`} style={{ marginTop: 6 }}>
-                {canAddNew
-                  ? "Valid GST - press Enter or click Add GST."
-                  : `${remainingCharacters} more character${remainingCharacters === 1 ? "" : "s"} needed`}
-              </p>
+              {!hasCompleteInvalidGst ? (
+                <p className={"gst-picker-add-helper text-[11px] " + (canAddNew ? "text-success" : "text-muted")}>
+                  {canAddNew
+                    ? "Valid GST - press Enter or click Add GST."
+                    : remainingCharacters + " more character" + (remainingCharacters === 1 ? "" : "s") + " needed"}
+                </p>
+              ) : null}
             </div>
           ) : null}
         </div>

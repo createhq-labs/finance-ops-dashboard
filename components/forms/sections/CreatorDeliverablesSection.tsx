@@ -1,3 +1,5 @@
+import { Check, ChevronDown, Search, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MultiCreatorRows, ProductReimbursementField, SingleCreatorRows } from "../invoice-line-items";
 import { SearchableSelect } from "../searchable-select";
 import type { InvoiceIntakeFormValues } from "../types";
@@ -52,6 +54,207 @@ function CurrencyField({
   );
 }
 
+function normalizeSelectedDeliverables(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function isProductReimbursement(value: string) {
+  return value === "Product Reimbursement";
+}
+
+function ImDeliverablesField({
+  options,
+  selected,
+  error,
+  onChange,
+}: {
+  options: string[];
+  selected: string[];
+  error?: string;
+  onChange: (next: string[]) => void;
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const normalizedOptions = useMemo(() => Array.from(new Set(options.map((option) => option.trim()).filter(Boolean))), [options]);
+  const filteredOptions = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return normalizedOptions;
+    return normalizedOptions.filter((option) => option.toLowerCase().includes(needle));
+  }, [normalizedOptions, query]);
+
+  useEffect(() => {
+    if (!open) {
+      setQuery("");
+      return;
+    }
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [open]);
+
+  function toggleOption(option: string) {
+    if (selected.includes(option)) {
+      onChange(selected.filter((entry) => entry !== option));
+      return;
+    }
+    onChange([...selected, option]);
+  }
+
+  return (
+    <div
+      ref={rootRef}
+      className="intake-searchable-root"
+      style={{ position: "relative", zIndex: open ? 90 : undefined }}
+      onBlurCapture={() => {
+        requestAnimationFrame(() => {
+          if (rootRef.current?.contains(document.activeElement)) return;
+          setOpen(false);
+        });
+      }}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        className={`intake-select-trigger${open ? " intake-select-trigger-open" : ""}${selected.length === 0 ? " intake-select-trigger-placeholder" : ""}`}
+        data-field="campaignDeliverable"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
+            event.preventDefault();
+            setOpen(true);
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setOpen(false);
+          }
+        }}
+        style={{ minHeight: 38, height: "auto", maxWidth: "100%", alignItems: "flex-start", paddingRight: 34, paddingBlock: 8, overflow: "hidden" }}
+      >
+        <span className="intake-select-trigger-label" style={{ display: "flex", flex: 1, minWidth: 0, maxWidth: "100%", flexDirection: "column", alignItems: "flex-start", gap: 6, paddingBlock: 2, overflow: "hidden" }}>
+          {selected.length === 0 ? (
+            <span>Select deliverables</span>
+          ) : (
+            selected.map((deliverable) => {
+              const isWarning = isProductReimbursement(deliverable);
+              return (
+                <span
+                  key={deliverable}
+                  className={[
+                    "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium",
+                    "border border-sky-300/70 bg-sky-100/95 text-sky-950 dark:border-sky-300/30 dark:bg-sky-400/16 dark:text-sky-50",
+                  ].join(" ")}
+                >
+                  <span className="truncate" style={{ display: "block", maxWidth: "calc(100% - 20px)" }}>{deliverable}</span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Remove ${deliverable}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onChange(selected.filter((entry) => entry !== deliverable));
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onChange(selected.filter((entry) => entry !== deliverable));
+                      }
+                    }}
+                    className="inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                  >
+                    <X size={10} />
+                  </span>
+                </span>
+              );
+            })
+          )}
+        </span>
+        <ChevronDown className={`intake-select-chevron${open ? " intake-select-chevron-open" : ""}`} size={16} />
+      </button>
+
+      {open ? (
+        <div className="intake-searchable-panel intake-select-panel" style={{ maxHeight: 240 }} role="listbox">
+          <div className="intake-select-search-shell" style={{ position: "sticky", top: 0, zIndex: 1 }}>
+            <div className="flex items-center gap-2 px-3">
+              <Search size={16} className="text-muted-foreground" />
+              <input
+                ref={searchInputRef}
+                className="intake-select-search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setOpen(false);
+                    requestAnimationFrame(() => triggerRef.current?.focus());
+                  }
+                }}
+                placeholder="Search..."
+                autoComplete="off"
+                style={{ paddingInline: 0 }}
+              />
+            </div>
+          </div>
+
+          <div className="intake-select-options">
+            {filteredOptions.length === 0 ? (
+              <div className="intake-select-empty">No matching option</div>
+            ) : (
+              filteredOptions.map((option) => {
+                const isSelected = selected.includes(option);
+                const isWarning = isProductReimbursement(option);
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    className={["intake-searchable-option", isSelected ? "intake-searchable-option-selected" : ""].filter(Boolean).join(" ")}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => toggleOption(option)}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border"
+                        style={isSelected
+                          ? { borderColor: "var(--ring)", backgroundColor: "var(--bg-accent)", color: "var(--text-accent)" }
+                          : { borderColor: "var(--border)" }}
+                      >
+                        {isSelected ? <Check size={12} /> : null}
+                      </span>
+                      <span className={`truncate ${isSelected ? "font-medium" : ""}`} style={isSelected ? { color: "var(--text-accent)" } : undefined}>{option}</span>
+                    </span>
+                    <span className="intake-searchable-option-check" aria-hidden="true" />
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      <div style={{ minHeight: 16 }}>
+        {error ? <p className="text-danger intake-inline-error">{error}</p> : null}
+      </div>
+    </div>
+  );
+}
+
 export function CreatorDeliverablesSection({
   values,
   onChange,
@@ -65,9 +268,6 @@ export function CreatorDeliverablesSection({
   addMcRow,
   removeMcRow,
   patchMcRow,
-  addImDeliverable,
-  removeImDeliverable,
-  patchImDeliverable,
   onPatchScCreator,
   onPatchMcCreator,
   getProductReimbursementFile,
@@ -75,6 +275,35 @@ export function CreatorDeliverablesSection({
   onProductReimbursementFileChange,
 }: Props) {
   const showCurrency = values.clientType === "Foreign";
+  const selectedImDeliverables = useMemo(
+    () => normalizeSelectedDeliverables([values.campaignDeliverable, ...values.campaignExtraDeliverables]),
+    [values.campaignDeliverable, values.campaignExtraDeliverables]
+  );
+  const previousImDeliverablesRef = useRef<string[]>(selectedImDeliverables);
+
+  useEffect(() => {
+    const previous = previousImDeliverablesRef.current;
+    const hadProductReimbursement = previous.includes("Product Reimbursement");
+    const hasProductReimbursement = selectedImDeliverables.includes("Product Reimbursement");
+
+    if (hadProductReimbursement && !hasProductReimbursement) {
+      onProductReimbursementFileChange("campaign-0", null);
+    }
+
+    previousImDeliverablesRef.current = selectedImDeliverables;
+  }, [onProductReimbursementFileChange, selectedImDeliverables]);
+
+  function updateImDeliverables(nextDeliverables: string[]) {
+    const normalized = normalizeSelectedDeliverables(nextDeliverables);
+    onChange("campaignDeliverable", (normalized[0] ?? "") as InvoiceIntakeFormValues["campaignDeliverable"]);
+    onChange("campaignExtraDeliverables", normalized.slice(1) as InvoiceIntakeFormValues["campaignExtraDeliverables"]);
+  }
+
+  const imDeliverableError =
+    errors.campaignDeliverable ||
+    Object.keys(errors).find((key) => key.startsWith("campaignExtraDeliverables."))
+      ? (errors.campaignDeliverable || "Check selected deliverables.")
+      : "";
 
   if (values.businessLine === "TM" && values.entryType === "SC") {
     return (
@@ -144,12 +373,6 @@ export function CreatorDeliverablesSection({
             gap: 12px;
             grid-template-columns: repeat(1, minmax(0, 1fr));
           }
-          .campaign-extra-grid {
-            display: grid;
-            gap: 12px;
-            grid-template-columns: repeat(1, minmax(0, 1fr));
-            align-items: start;
-          }
           @media (min-width: 640px) {
             .campaign-grid {
               grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -160,13 +383,10 @@ export function CreatorDeliverablesSection({
           }
           @media (min-width: 1024px) {
             .campaign-grid {
-              grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+              grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr);
             }
             .campaign-grid-foreign {
-              grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 160px minmax(0, 1fr);
-            }
-            .campaign-extra-grid {
-              grid-template-columns: repeat(3, minmax(0, 1fr));
+              grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr) minmax(0, 1fr) 140px minmax(0, 1.55fr);
             }
           }
         `}</style>
@@ -201,69 +421,25 @@ export function CreatorDeliverablesSection({
 
           <label className="intake-field">
             <span className="intake-label">Deliverable *</span>
-            <SearchableSelect
-              value={values.campaignDeliverable}
+            <ImDeliverablesField
               options={deliverableOptions.IM}
-              onChange={(next) => onChange("campaignDeliverable", next)}
-              placeholder="Select deliverable"
-              data-field="campaignDeliverable"
+              selected={selectedImDeliverables}
+              error={String(imDeliverableError || "")}
+              onChange={updateImDeliverables}
             />
-            <div style={{ minHeight: 16 }}>
-              {errors.campaignDeliverable ? <p className="text-danger intake-inline-error">{errors.campaignDeliverable}</p> : null}
-            </div>
-            {values.campaignDeliverable === "Product Reimbursement" ? (
+            {selectedImDeliverables.includes("Product Reimbursement") ? (
               <div style={{ marginTop: 6 }}>
                 <ProductReimbursementField
                   fieldKey="campaign-0"
                   file={getProductReimbursementFile("campaign-0")}
                   error={getProductReimbursementError("campaign-0")}
                   onChange={onProductReimbursementFileChange}
+                  helperText="PDF, PNG, JPG, or WEBP. Max 10 MB."
+                  formError={errors["campaign-0"]}
                 />
               </div>
             ) : null}
           </label>
-        </div>
-
-        {values.campaignExtraDeliverables.length ? (
-          <div className="campaign-extra-grid">
-            {values.campaignExtraDeliverables.map((deliverable, index) => (
-              <div key={`im-deliverable-${index}`} className="grid gap-2">
-                <label className="intake-field">
-                  <span className="intake-label">Additional Deliverable *</span>
-                  <SearchableSelect
-                    value={deliverable}
-                    options={deliverableOptions.IM}
-                    onChange={(next) => patchImDeliverable(index, next)}
-                    placeholder="Select deliverable"
-                    data-field={`campaignExtraDeliverables.${index}`}
-                  />
-                  <div style={{ minHeight: 16 }}>
-                    {errors[`campaignExtraDeliverables.${index}`] ? <p className="text-danger intake-inline-error">{errors[`campaignExtraDeliverables.${index}`]}</p> : null}
-                  </div>
-                </label>
-                <button className="btn intake-row-action" type="button" onClick={() => removeImDeliverable(index)} style={{ width: "fit-content" }}>
-                  Remove
-                </button>
-                {deliverable === "Product Reimbursement" ? (
-                  <ProductReimbursementField
-                    fieldKey={`campaign-${index + 1}`}
-                    file={getProductReimbursementFile(`campaign-${index + 1}`)}
-                    error={getProductReimbursementError(`campaign-${index + 1}`)}
-                    onChange={onProductReimbursementFileChange}
-                  />
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        <div>
-          <button className="btn" type="button" onClick={addImDeliverable}>
-            + Add Deliverable
-          </button>
-          <div style={{ minHeight: 16, marginTop: 6 }}>
-            {errors.creatorDeliverables ? <p className="text-danger intake-inline-error">{errors.creatorDeliverables}</p> : null}
-          </div>
         </div>
       </div>
     </section>

@@ -1,3 +1,4 @@
+import type { SubmissionCurrency } from '../../shared/currency';
 import type { SubmissionAttachmentSummary } from '../../shared/submission-attachments';
 import type { SubmissionCurrency } from '../../shared/currency';
 
@@ -128,3 +129,4 @@ export type SubmissionAttachmentRecord = SubmissionAttachmentSummary & {
   uploaded_by: string;
   uploaded_at: string;
 };
+

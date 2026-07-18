@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { FilterBar } from '../../../../components/dashboard/filter-bar';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
-import { SearchableSelect } from '../../../../components/forms/searchable-select';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { getDefaultDashboardPath, getDrawerViewerRole } from '../../../../lib/client/dashboard-access';
@@ -171,6 +171,20 @@ function mergeRows(current: SubmissionRow[], incoming: SubmissionRow[]) {
     const rightTime = new Date(right.submitted_at || '').getTime();
     return rightTime - leftTime;
   });
+}
+
+function resetTransferredFilters(
+  setQuery: (value: string) => void,
+  setStatusFilter: (value: 'all' | SubmissionRow['intake_status']) => void,
+  setOriginalEmployeeQuery: (value: string) => void,
+  setDateFrom: (value: string) => void,
+  setDateTo: (value: string) => void,
+) {
+  setQuery('');
+  setStatusFilter('all');
+  setOriginalEmployeeQuery('');
+  setDateFrom('');
+  setDateTo('');
 }
 
 export default function TransferredSubmissionsClient() {
@@ -393,47 +407,56 @@ export default function TransferredSubmissionsClient() {
           </section>
 
           <SectionCard padding={12}>
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)_180px_180px_180px]">
-              <label className="grid gap-1">
-                <span className="text-xs font-medium text-muted-foreground">Search</span>
-                <input
-                  className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
-                  placeholder="Search PI, entity, creator, or brand"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-medium text-muted-foreground">Original Employee</span>
-                <input
-                  className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
-                  placeholder="Search employee name or email"
-                  value={originalEmployeeQuery}
-                  onChange={(event) => setOriginalEmployeeQuery(event.target.value)}
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-medium text-muted-foreground">Status</span>
-                <SearchableSelect
-                  value={statusFilter}
-                  onChange={(next) => setStatusFilter(next as 'all' | SubmissionRow['intake_status'])}
-                  options={[
+            <FilterBar
+              searchPlaceholder="Search PI, entity, creator, or brand"
+              searchValue={query}
+              primaryFilters={[
+                {
+                  key: 'status',
+                  label: 'Status',
+                  value: statusFilter,
+                  options: [
                     { value: 'all', label: 'All' },
                     { value: 'submitted', label: 'Submitted' },
                     { value: 'accepted', label: 'Accepted' },
                     { value: 'rejected', label: 'Rejected' },
-                  ]}
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-medium text-muted-foreground">Transferred From</span>
-                <input type="date" className="intake-input border-border/70 bg-card text-foreground" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs font-medium text-muted-foreground">Transferred To</span>
-                <input type="date" className="intake-input border-border/70 bg-card text-foreground" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-              </label>
-            </div>
+                  ],
+                },
+              ]}
+              advancedFilters={[
+                {
+                  key: 'originalEmployee',
+                  label: 'Original Employee',
+                  value: originalEmployeeQuery,
+                  type: 'text',
+                  placeholder: 'Search employee name or email',
+                },
+                {
+                  key: 'dateFrom',
+                  label: 'Transferred From',
+                  value: dateFrom,
+                  type: 'date',
+                },
+                {
+                  key: 'dateTo',
+                  label: 'Transferred To',
+                  value: dateTo,
+                  type: 'date',
+                },
+              ]}
+              onSearch={setQuery}
+              onPrimaryChange={(key, value) => {
+                if (key === 'status') {
+                  setStatusFilter((value || 'all') as 'all' | SubmissionRow['intake_status']);
+                }
+              }}
+              onAdvancedChange={(filters) => {
+                setOriginalEmployeeQuery(filters.originalEmployee || '');
+                setDateFrom(filters.dateFrom || '');
+                setDateTo(filters.dateTo || '');
+              }}
+              onReset={() => resetTransferredFilters(setQuery, setStatusFilter, setOriginalEmployeeQuery, setDateFrom, setDateTo)}
+            />
           </SectionCard>
 
           <SectionCard padding={0}>
