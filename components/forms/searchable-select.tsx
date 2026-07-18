@@ -24,6 +24,7 @@ type SearchableSelectProps = {
   options: SearchableSelectOption[];
   onChange?: (next: string) => void;
   allowCustom?: boolean;
+  deselectOnSelectedClick?: boolean;
   placeholder?: string;
   disabled?: boolean;
   dataField?: string;
@@ -71,6 +72,7 @@ export function SearchableSelect({
   options,
   onChange,
   allowCustom = false,
+  deselectOnSelectedClick = false,
   placeholder = "Select option",
   disabled = false,
   dataField,
@@ -177,7 +179,9 @@ export function SearchableSelect({
   }
 
   function selectOption(next: string) {
-    if (typeof onChange === "function") onChange(next);
+    if (typeof onChange === "function") {
+      onChange(deselectOnSelectedClick && next === value ? "" : next);
+    }
     closeMenu({ restoreFocus: true });
   }
 
