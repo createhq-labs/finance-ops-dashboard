@@ -66,22 +66,22 @@ export function AdditionalInfoSection({
                   data-field="additionalInformation"
                   style={{ minHeight: 56, maxHeight: 140, overflowY: "auto", resize: "none", paddingRight: 24, paddingBottom: 18 }}
                 />
-                <span
-                  aria-hidden="true"
-                  style={{
-                    position: "absolute",
-                    right: 10,
-                    bottom: 9,
-                    pointerEvents: "none",
-                    color: "var(--text-muted)",
-                    fontSize: 11,
-                    lineHeight: 1,
-                    letterSpacing: "-0.08em",
-                    opacity: 0.9,
-                  }}
-                >
-                  //
-                </span>
+               <span
+  aria-hidden="true"
+  style={{
+    position: "absolute",
+    right: 10,
+    bottom: 9,
+    pointerEvents: "none",
+    color: "var(--text-muted)",
+    fontSize: 11,
+    lineHeight: 1,
+    letterSpacing: "-0.08em",
+    opacity: 0.9,
+  }}
+>
+  {"//"}
+</span>
               </div>
               <div style={{ minHeight: 16 }}>
                 {errors.additionalInformation ? <p className="text-danger intake-inline-error">{errors.additionalInformation}</p> : null}
