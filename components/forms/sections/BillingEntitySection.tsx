@@ -10,6 +10,7 @@ type Props = {
   onEntityNameSelect: (value: string) => void;
   onTradeNameSelect: (value: string) => void;
   onGstSelect: (value: string) => void;
+  onGstClear: () => void;
   onAddNewGstSelect: () => void;
   errors?: Record<string, string>;
   agencyOptions: string[];
@@ -26,6 +27,7 @@ export function BillingEntitySection({
   onEntityNameSelect,
   onTradeNameSelect,
   onGstSelect,
+  onGstClear,
   onAddNewGstSelect,
   errors = {},
   agencyOptions,
@@ -186,6 +188,7 @@ export function BillingEntitySection({
               panelMaxHeight={160}
               onChange={onEntityNameSelect}
               deselectOnSelectedClick
+              clearable
               placeholder={`Select ${values.entityType.toLowerCase()} name`}
               data-field="agencyBrandName"
               required
@@ -204,6 +207,7 @@ export function BillingEntitySection({
               panelMaxHeight={160}
               onChange={onTradeNameSelect}
               deselectOnSelectedClick
+              clearable
               placeholder={`Select ${values.entityType.toLowerCase()} trade name`}
               data-field="agencyBrandTradeName"
               required
@@ -223,6 +227,7 @@ export function BillingEntitySection({
                 panelMaxHeight={160}
                 onChange={(next) => onChange("billingBrandName", next)}
                 deselectOnSelectedClick
+                clearable
                 placeholder="Select brand name"
                 data-field="billingBrandName"
                 required
@@ -247,8 +252,7 @@ export function BillingEntitySection({
                   onAddNewGstSelect();
                 }}
                 onClear={() => {
-                  onChange("gstSelectionMode", "existing");
-                  onChange("gstNumber", "");
+                  onGstClear();
                 }}
               />
               <div style={{ minHeight: 0 }} />

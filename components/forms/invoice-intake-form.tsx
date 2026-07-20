@@ -122,6 +122,24 @@ function sumAmounts(values: string[]) {
   return values.reduce((total, value) => total + parseAmount(value), 0);
 }
 
+function isProductReimbursementDeliverable(value: string) {
+  return value.trim().toLowerCase() === "product reimbursement";
+}
+
+function sumProductReimbursementRows(rows: Array<{ deliverable: string; amount: string }>) {
+  return rows.reduce(
+    (total, row) => total + (isProductReimbursementDeliverable(row.deliverable) ? parseAmount(row.amount) : 0),
+    0
+  );
+}
+
+function sumNonReimbursementRows(rows: Array<{ deliverable: string; amount: string }>) {
+  return rows.reduce(
+    (total, row) => total + (isProductReimbursementDeliverable(row.deliverable) ? 0 : parseAmount(row.amount)),
+    0
+  );
+}
+
 function normalizeGstNumber(value: string) {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
@@ -377,18 +395,19 @@ export function InvoiceIntakeForm({
 
   const totalAmount = useMemo(() => {
     const commissionValue = parseAmount(values.commission);
+    const reimbursementValue = values.reimbursementIncluded === "yes" ? parseAmount(values.reimbursementAmount) : 0;
 
     if (values.businessLine === "TM" && values.entryType === "SC") {
-      const total = sumAmounts(values.scDeliverables.map((row) => row.amount)) + commissionValue;
+      const total = sumAmounts(values.scDeliverables.map((row) => row.amount)) + commissionValue + reimbursementValue;
       return total > 0 ? String(total) : "";
     }
     if (values.businessLine === "TM" && values.entryType === "MC") {
-      const total = sumAmounts(values.mcRows.map((row) => row.amount)) + commissionValue;
+      const total = sumAmounts(values.mcRows.map((row) => row.amount)) + commissionValue + reimbursementValue;
       return total > 0 ? String(total) : "";
     }
-    const imTotal = parseAmount(values.imCommercials) + commissionValue;
+    const imTotal = parseAmount(values.imCommercials) + commissionValue + reimbursementValue;
     return imTotal > 0 ? String(imTotal) : "";
-  }, [values.businessLine, values.entryType, values.imCommercials, values.mcRows, values.scDeliverables, values.commission]);
+  }, [values.businessLine, values.entryType, values.imCommercials, values.mcRows, values.scDeliverables, values.commission, values.reimbursementAmount, values.reimbursementIncluded]);
 
   const agencyOptions = useMemo(() => masters.agencies.map((row) => row.name), [masters.agencies]);
   const agencyTradeNameOptions = useMemo(
@@ -519,39 +538,142 @@ export function InvoiceIntakeForm({
       setAutoFilledLocation((prev) => ({ ...prev, [key]: false }));
     }
 
+    if (key === "entityType") {
+      setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+      setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+      setValues((prev) => ({
+        ...prev,
+        entityType: nextValue as InvoiceIntakeFormValues["entityType"],
+        agencyBrandName: "",
+        agencyBrandTradeName: "",
+        billingBrandName: "",
+        gstSelectionMode: "existing",
+        gstNumber: "",
+        addressLine: "",
+        city: "",
+        state: "",
+        country: prev.clientType === "Indian" ? "India" : "",
+        pincode: "",
+      }));
+      clearErrors(["entityType", "agencyBrandName", "agencyBrandTradeName", "billingBrandName", "gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+      setError("");
+      return;
+    }
+
     setValues((prev) => ({ ...prev, [key]: nextValue }));
     clearErrors([String(key), "creatorDeliverables"]);
     setError("");
   }
 
+  function clearMappedGstAndAddress() {
+    setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+    setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+    setValues((prev) => ({
+      ...prev,
+      gstSelectionMode: "existing",
+      gstNumber: "",
+      addressLine: "",
+      city: "",
+      state: "",
+      country: prev.clientType === "Indian" ? "India" : "",
+      pincode: "",
+    }));
+    clearErrors(["gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+    setError("");
+  }
+
   function handleEntityNameSelect(next: string) {
     if (!next.trim()) {
-      update("agencyBrandName", "");
-      update("agencyBrandTradeName", "");
+      setHasInteracted(true);
+      setValues((prev) => ({
+        ...prev,
+        agencyBrandName: "",
+        agencyBrandTradeName: "",
+        gstSelectionMode: "existing",
+        gstNumber: "",
+        addressLine: "",
+        city: "",
+        state: "",
+        country: prev.clientType === "Indian" ? "India" : "",
+        pincode: "",
+      }));
+      setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+      setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+      clearErrors(["agencyBrandName", "agencyBrandTradeName", "gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+      setError("");
       return;
     }
 
-    update("agencyBrandName", next);
     const tradeNameMap = values.entityType === "Agency" ? agencyTradeNameMap : brandTradeNameMap;
     const mappedTradeName = tradeNameMap[next.trim().toLowerCase()];
-    if (mappedTradeName) {
-      update("agencyBrandTradeName", mappedTradeName);
-    }
+    setHasInteracted(true);
+    setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+    setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+    setValues((prev) => ({
+      ...prev,
+      agencyBrandName: next,
+      ...(mappedTradeName ? { agencyBrandTradeName: mappedTradeName } : {}),
+      ...(prev.clientType === "Indian"
+        ? {
+            gstSelectionMode: "existing" as const,
+            gstNumber: "",
+            addressLine: "",
+            city: "",
+            state: "",
+            country: "India",
+            pincode: "",
+          }
+        : {}),
+    }));
+    clearErrors(["agencyBrandName", "agencyBrandTradeName", "gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+    setError("");
   }
 
   function handleTradeNameSelect(next: string) {
     if (!next.trim()) {
-      update("agencyBrandTradeName", "");
-      update("agencyBrandName", "");
+      setHasInteracted(true);
+      setValues((prev) => ({
+        ...prev,
+        agencyBrandTradeName: "",
+        agencyBrandName: "",
+        gstSelectionMode: "existing",
+        gstNumber: "",
+        addressLine: "",
+        city: "",
+        state: "",
+        country: prev.clientType === "Indian" ? "India" : "",
+        pincode: "",
+      }));
+      setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+      setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+      clearErrors(["agencyBrandTradeName", "agencyBrandName", "gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+      setError("");
       return;
     }
 
-    update("agencyBrandTradeName", next);
     const entityNameMap = values.entityType === "Agency" ? agencyNameMap : brandNameMap;
     const mappedEntityName = entityNameMap[next.trim().toLowerCase()];
-    if (mappedEntityName) {
-      update("agencyBrandName", mappedEntityName);
-    }
+    setHasInteracted(true);
+    setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+    setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+    setValues((prev) => ({
+      ...prev,
+      agencyBrandTradeName: next,
+      ...(mappedEntityName ? { agencyBrandName: mappedEntityName } : {}),
+      ...(prev.clientType === "Indian"
+        ? {
+            gstSelectionMode: "existing" as const,
+            gstNumber: "",
+            addressLine: "",
+            city: "",
+            state: "",
+            country: "India",
+            pincode: "",
+          }
+        : {}),
+    }));
+    clearErrors(["agencyBrandTradeName", "agencyBrandName", "gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+    setError("");
   }
 
   function handleGstSelect(next: string) {
@@ -584,6 +706,11 @@ export function InvoiceIntakeForm({
     }));
     clearErrors(["gstNumber", "addressLine", "city", "state", "country", "pincode"]);
     setError("");
+  }
+
+  function handleGstClear() {
+    setHasInteracted(true);
+    clearMappedGstAndAddress();
   }
 
   function handleAddNewGstSelect() {
@@ -1093,10 +1220,20 @@ export function InvoiceIntakeForm({
               line_order: idx,
             }));
 
+    const rowProductReimbursement =
+      values.businessLine === "TM" && values.entryType === "SC"
+        ? sumProductReimbursementRows(values.scDeliverables)
+        : values.businessLine === "TM" && values.entryType === "MC"
+          ? sumProductReimbursementRows(values.mcRows)
+          : 0;
+    const explicitProductReimbursement = values.reimbursementIncluded === "yes" ? parseAmount(values.reimbursementAmount) : 0;
+    const reimbursementAmount = rowProductReimbursement + explicitProductReimbursement;
     const commercials =
       values.businessLine === "IM"
         ? parseAmount(values.imCommercials)
-        : parseAmount(totalAmount);
+        : values.entryType === "SC"
+          ? sumNonReimbursementRows(values.scDeliverables)
+          : sumNonReimbursementRows(values.mcRows);
 
     return {
       previous_submission_id: previousSubmissionId || null,
@@ -1123,7 +1260,7 @@ export function InvoiceIntakeForm({
       commercials,
       additional_information: values.additionalInformation,
       additional_agency_commission: parseAmount(values.commission),
-      reimbursement_amount: values.reimbursementIncluded === "yes" ? parseAmount(values.reimbursementAmount) : 0,
+      reimbursement_amount: reimbursementAmount,
       reimbursement_receipts: values.reimbursementIncluded === "yes" ? values.reimbursementProof : "",
       line_items: lineItems,
       campaign_code: values.businessLine === "IM" ? values.campaignCode : "",
@@ -1294,6 +1431,7 @@ export function InvoiceIntakeForm({
         onEntityNameSelect={handleEntityNameSelect}
         onTradeNameSelect={handleTradeNameSelect}
         onGstSelect={handleGstSelect}
+        onGstClear={handleGstClear}
         onAddNewGstSelect={handleAddNewGstSelect}
         errors={visibleFieldErrors}
         agencyOptions={agencyOptions}

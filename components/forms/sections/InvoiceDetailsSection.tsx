@@ -74,6 +74,7 @@ export function InvoiceDetailsSection({ values, onChange, errors = {} }: Props) 
                 setInvoiceTypeInput(next);
                 addInvoiceType(next);
               }}
+              deselectOnSelectedClick
               data-field="invoiceType"
               placeholder="Select invoice type"
             />
@@ -104,6 +105,8 @@ export function InvoiceDetailsSection({ values, onChange, errors = {} }: Props) 
             value={values.billDue}
             options={[...BILL_DUE_OPTIONS]}
             onChange={(next) => onChange("billDue", next)}
+            deselectOnSelectedClick
+            clearable
             data-field="billDue"
             placeholder="Select bill due"
           />
