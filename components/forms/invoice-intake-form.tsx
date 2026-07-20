@@ -157,6 +157,7 @@ export function InvoiceIntakeForm({
     submitterEmail,
   });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [activeField, setActiveField] = useState<string>("submitterName");
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
@@ -966,7 +967,7 @@ export function InvoiceIntakeForm({
       if (!hasFile) {
         errors.creatorDeliverables = errors.creatorDeliverables || "Upload a Product Reimbursement document before submitting.";
         visibleKeys.forEach((key) => {
-          if (!productReimbursementErrors[key]) errors[key] = PRODUCT_REIMBURSEMENT_UPLOAD_HINT;
+          if (!productReimbursementErrors[key]) errors[key] = "Upload a Product Reimbursement document before submitting.";
         });
       } else if (hasFileError) {
         errors.creatorDeliverables = errors.creatorDeliverables || "Fix the Product Reimbursement document before submitting.";
@@ -976,14 +977,57 @@ export function InvoiceIntakeForm({
     return errors;
   }
 
+
+  function isDeliverableFieldKey(key: string | null) {
+    if (!key) return false;
+    return key === "campaignDeliverable" || key.startsWith("campaignExtraDeliverables.") || key.includes(".deliverable") || key.startsWith("sc-") || key.startsWith("mc-") || key.startsWith("campaign-");
+  }
+
+  const visibleFieldErrors = useMemo(() => {
+    const next: Record<string, string> = {};
+
+    Object.entries(fieldErrors).forEach(([key, message]) => {
+      if (!message) return;
+      if (key === activeField) {
+        next[key] = message;
+        return;
+      }
+      if (key === "creatorDeliverables" && isDeliverableFieldKey(activeField)) {
+        next[key] = message;
+      }
+    });
+
+    return next;
+  }, [activeField, fieldErrors]);
+
   function focusFirstInvalid(nextErrors: Record<string, string>) {
     const form = formRef.current;
     if (!form) return;
-    const firstKey = Object.keys(nextErrors).find((key) => !OPTIONAL_FIELDS.has(key));
+
+    let firstKey = Object.keys(nextErrors).find((key) => !OPTIONAL_FIELDS.has(key));
     if (!firstKey) return;
+
+    if (firstKey === "creatorDeliverables") {
+      const visibleUploadKey = getVisibleProductReimbursementKeys(values)[0];
+      if (visibleUploadKey && nextErrors[visibleUploadKey]) {
+        firstKey = visibleUploadKey;
+      } else if (values.businessLine === "IM") {
+        firstKey = "campaignDeliverable";
+      } else if (values.businessLine === "TM" && values.entryType === "SC") {
+        firstKey = values.scDeliverables.findIndex((row) => !row.deliverable.trim()) >= 0
+          ? `scDeliverables.${values.scDeliverables.findIndex((row) => !row.deliverable.trim())}.deliverable`
+          : "scDeliverables.0.deliverable";
+      } else if (values.businessLine === "TM" && values.entryType === "MC") {
+        firstKey = values.mcRows.findIndex((row) => !row.deliverable.trim()) >= 0
+          ? `mcRows.${values.mcRows.findIndex((row) => !row.deliverable.trim())}.deliverable`
+          : "mcRows.0.deliverable";
+      }
+    }
+
     const escapedKey = firstKey.replace(/"/g, '\\"');
     const field = form.querySelector<HTMLElement>(`[data-field="${escapedKey}"]`);
     if (!field) return;
+    setActiveField(firstKey);
     field.scrollIntoView({ behavior: "smooth", block: "center" });
     if ("focus" in field) field.focus();
   }
@@ -1137,12 +1181,24 @@ export function InvoiceIntakeForm({
     setReferencePoError('');
     previousBillingBrandRef.current = "";
     setFieldErrors({});
+    setActiveField("submitterName");
     setHasInteracted(false);
     setError("");
   }
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} className="intake-form" autoComplete="off">
+    <form
+      ref={formRef}
+      onSubmit={handleSubmit}
+      className="intake-form"
+      autoComplete="off"
+      onFocusCapture={(event) => {
+        const target = event.target as HTMLElement | null;
+        const field = target?.closest?.("[data-field]") as HTMLElement | null;
+        const fieldKey = field?.getAttribute("data-field");
+        if (fieldKey) setActiveField(fieldKey);
+      }}
+    >
       <section className="intake-section">
         <div className="intake-section-header">
           <div>
@@ -1154,12 +1210,12 @@ export function InvoiceIntakeForm({
           <label className="intake-field" style={{ minWidth: 0 }}>
             <span className="intake-label">Name *</span>
             <input className="intake-input" value={values.submitterName} readOnly data-field="submitterName" autoComplete="off" required />
-            {fieldErrors.submitterName ? <p className="text-danger intake-inline-error">{fieldErrors.submitterName}</p> : null}
+            {visibleFieldErrors.submitterName ? <p className="text-danger intake-inline-error">{visibleFieldErrors.submitterName}</p> : null}
           </label>
           <label className="intake-field" style={{ minWidth: 0 }}>
             <span className="intake-label">Email *</span>
             <input className="intake-input" type="email" value={values.submitterEmail} readOnly data-field="submitterEmail" required />
-            {fieldErrors.submitterEmail ? <p className="text-danger intake-inline-error">{fieldErrors.submitterEmail}</p> : null}
+            {visibleFieldErrors.submitterEmail ? <p className="text-danger intake-inline-error">{visibleFieldErrors.submitterEmail}</p> : null}
           </label>
         </div>
       </section>
@@ -1239,7 +1295,7 @@ export function InvoiceIntakeForm({
         onTradeNameSelect={handleTradeNameSelect}
         onGstSelect={handleGstSelect}
         onAddNewGstSelect={handleAddNewGstSelect}
-        errors={fieldErrors}
+        errors={visibleFieldErrors}
         agencyOptions={agencyOptions}
         brandOptions={brandOptions}
         agencyTradeNameOptions={agencyTradeNameOptions}
@@ -1247,11 +1303,11 @@ export function InvoiceIntakeForm({
         gstOptions={gstOptions}
         gstMappingByNumber={gstMappingByNumber}
       />
-      <InvoiceDetailsSection values={values} onChange={update} errors={fieldErrors} />
+      <InvoiceDetailsSection values={values} onChange={update} errors={visibleFieldErrors} />
       <CreatorDeliverablesSection
         values={values}
         onChange={update}
-        errors={fieldErrors}
+        errors={visibleFieldErrors}
         brandOptions={brandOptions}
         creatorOptions={creatorOptions}
         deliverableOptions={deliverableOptions}
@@ -1270,14 +1326,14 @@ export function InvoiceIntakeForm({
         onPatchScCreator={patchScCreator}
         onPatchMcCreator={patchMcCreator}
       />
-      <CommercialsSection values={values} totalAmount={totalAmount} onChange={update} errors={fieldErrors} />
+      <CommercialsSection values={values} totalAmount={totalAmount} onChange={update} errors={visibleFieldErrors} />
       <AdditionalInfoSection
         values={values}
         referencePoFile={referencePoFile}
         referencePoError={referencePoError}
         onReferencePoFileChange={onReferencePoFileChange}
         onChange={update}
-        errors={fieldErrors}
+        errors={visibleFieldErrors}
       />
       <FormActions onReset={handleReset} submitting={submitting} submitEnabled={submitEnabled && Boolean(onSubmit)} />
 

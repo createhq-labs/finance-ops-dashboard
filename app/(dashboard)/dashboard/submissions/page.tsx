@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FilterBar } from '../../../../components/dashboard/filter-bar';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
-import { SearchableSelect } from '../../../../components/forms/searchable-select';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
@@ -185,7 +185,6 @@ export default function EmployeeSubmissionsPage() {
   const [intakeStatusFilter, setIntakeStatusFilter] = useState<'all' | SubmissionRow['intake_status']>('all');
   const [versionStatusFilter, setVersionStatusFilter] = useState<'all' | NonNullable<SubmissionRow['version_status']>>('all');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<EmployeePaymentFilter>('all');
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [rows, setRows] = useState<SubmissionRow[]>([]);
   const [rowsLoading, setRowsLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -283,9 +282,10 @@ export default function EmployeeSubmissionsPage() {
   }, [hasMore, loadMore, loadingMore]);
 
   const row = useMemo(() => rows.find((entry) => entry.id === openId) || null, [rows, openId]);
-  const activeAdvancedFilterCount = [versionStatusFilter !== 'all', paymentStatusFilter !== 'all'].filter(Boolean).length;
 
-  function resetAdvancedFilters() {
+  function resetAllFilters() {
+    setQuery('');
+    setIntakeStatusFilter('all');
     setVersionStatusFilter('all');
     setPaymentStatusFilter('all');
   }
@@ -376,68 +376,55 @@ export default function EmployeeSubmissionsPage() {
       />
 
       <SectionCard padding={16}>
-        <div className="grid gap-3">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1.5fr)_minmax(0,0.8fr)_auto]">
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Search</span>
-              <input
-                className="intake-input border-border/70 bg-card text-foreground focus:border-sky-400 focus:ring-2 focus:ring-sky-200 dark:focus:border-cyan-300 dark:focus:ring-cyan-400/20"
-                placeholder="Search PI, entity, creator, or brand"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Status</span>
-              <SearchableSelect
-                value={intakeStatusFilter}
-                onChange={(next) => setIntakeStatusFilter(next as 'all' | SubmissionRow['intake_status'])}
-                options={[
-                  { value: 'all', label: 'All' },
-                  { value: 'submitted', label: 'Submitted' },
-                  { value: 'accepted', label: 'Accepted' },
-                  { value: 'rejected', label: 'Rejected' },
-                ]}
-              />
-            </label>
-            <div className="flex items-end">
-              <button className="btn w-full md:w-auto" type="button" onClick={() => setShowAdvancedFilters((current) => !current)}>
-                {'More Filters' + (activeAdvancedFilterCount > 0 ? ' (' + activeAdvancedFilterCount + ')' : '')}
-              </button>
-            </div>
-          </div>
-
-          {showAdvancedFilters ? (
-            <div className="rounded-xl border border-border/60 bg-card/90 p-3 dark:bg-card/70">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-2">
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Version Status</span>
-                  <SearchableSelect
-                    value={versionStatusFilter}
-                    onChange={(next) => setVersionStatusFilter(next as 'all' | NonNullable<SubmissionRow['version_status']>)}
-                    options={[
-                      { value: 'all', label: 'All' },
-                      { value: 'original', label: 'Original' },
-                      { value: 'resubmitted', label: 'Resubmitted' },
-                      { value: 'superseded', label: 'Superseded' },
-                    ]}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Payment Status</span>
-                  <SearchableSelect
-                    value={paymentStatusFilter}
-                    onChange={(next) => setPaymentStatusFilter(next as EmployeePaymentFilter)}
-                    options={[{ value: 'all', label: 'All' }, ...PAYMENT_RECEIVED_STATUS_OPTIONS]}
-                  />
-                </label>
-              </div>
-              <div className="mt-3 flex justify-end">
-                <button className="btn" type="button" onClick={resetAdvancedFilters}>Reset Advanced</button>
-              </div>
-            </div>
-          ) : null}
-        </div>
+        <FilterBar
+          searchPlaceholder="Search PI, entity, creator, or brand"
+          searchValue={query}
+          primaryFilters={[
+            {
+              key: 'status',
+              label: 'Status',
+              value: intakeStatusFilter,
+              options: [
+                { value: 'all', label: 'All Statuses' },
+                { value: 'submitted', label: 'Submitted' },
+                { value: 'accepted', label: 'Accepted' },
+                { value: 'rejected', label: 'Rejected' },
+              ],
+            },
+          ]}
+          advancedFilters={[
+            {
+              key: 'versionStatus',
+              label: 'Version Status',
+              value: versionStatusFilter,
+              type: 'select',
+              options: [
+                { value: 'all', label: 'All' },
+                { value: 'original', label: 'Original' },
+                { value: 'resubmitted', label: 'Resubmitted' },
+                { value: 'superseded', label: 'Superseded' },
+              ],
+            },
+            {
+              key: 'paymentStatus',
+              label: 'Payment Status',
+              value: paymentStatusFilter,
+              type: 'select',
+              options: [{ value: 'all', label: 'All' }, ...PAYMENT_RECEIVED_STATUS_OPTIONS],
+            },
+          ]}
+          onSearch={setQuery}
+          onPrimaryChange={(key, value) => {
+            if (key === 'status') {
+              setIntakeStatusFilter((value || 'all') as 'all' | SubmissionRow['intake_status']);
+            }
+          }}
+          onAdvancedChange={(filters) => {
+            setVersionStatusFilter((filters.versionStatus || 'all') as 'all' | NonNullable<SubmissionRow['version_status']>);
+            setPaymentStatusFilter((filters.paymentStatus || 'all') as EmployeePaymentFilter);
+          }}
+          onReset={resetAllFilters}
+        />
       </SectionCard>
 
       {rowsLoading ? <WorkspaceLoader variant="section" label="Loading submissions..." /> : null}

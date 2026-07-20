@@ -335,33 +335,43 @@ const STATUS_AUDIT_FIELDS = new Set<StatusEditableField>([
   'closed_status',
 ]);
 
-const RESUBMISSION_CHANGE_FIELDS: Array<{ label: string; getValue: (row: Partial<SubmissionRow>) => unknown }> = [
-  { label: 'Entity Name', getValue: (row) => row.entity },
-  { label: 'Legal Name', getValue: (row) => row.trade_name },
-  { label: 'GST Number', getValue: (row) => row.gst_number },
-  { label: 'Address', getValue: (row) => row.address },
-  { label: 'Payment Terms', getValue: (row) => row.bill_due },
-  { label: 'Invoice Type', getValue: (row) => row.invoice_type },
-  { label: 'Creator / Creators', getValue: (row) => row.creator_creators_name },
-  { label: 'Brand Name', getValue: (row) => row.brand_name },
-  { label: 'Campaign Code', getValue: (row) => row.campaign_code },
-  { label: 'Campaign Name', getValue: (row) => row.campaign_name },
-  { label: 'Campaign Brand', getValue: (row) => row.campaign_brand },
-  { label: 'Deliverables', getValue: (row) => row.deliverables },
-  { label: 'Deal Amount', getValue: (row) => row.amount },
-  { label: 'Product Reimbursement', getValue: (row) => row.reimbursement_amount },
-  { label: 'Product Reimbursement File', getValue: (row) => row.reimbursement_receipts },
-  { label: 'Additional Agency Commission', getValue: (row) => row.additional_agency_commission },
-  { label: 'Additional Information', getValue: (row) => row.additional_information },
-  { label: 'Business Line', getValue: (row) => row.business_line },
-  { label: 'Entry Type', getValue: (row) => row.entry_type },
-  { label: 'Entity Type', getValue: (row) => row.entity_type },
-  { label: 'Client Type', getValue: (row) => row.client_type },
-  { label: 'Agency Name', getValue: (row) => row.agency_name },
-  { label: 'Agency Trade Name', getValue: (row) => row.agency_trade_name },
-  { label: 'Brand Trade Name', getValue: (row) => row.brand_trade_name },
-  { label: 'Currency', getValue: (row) => row.currency },
-  { label: 'Line Items', getValue: (row) => row.intake_line_items ?? [] },
+type ResubmissionFieldType = 'scalar' | 'complex';
+
+type ResubmissionChangeField = {
+  key: string;
+  label: string;
+  type: ResubmissionFieldType;
+  column?: SheetColumnId;
+  getValue: (row: Partial<SubmissionRow>) => unknown;
+  formatValue?: (value: unknown, row: Partial<SubmissionRow>) => string;
+};
+
+const RESUBMISSION_CHANGE_FIELDS: ResubmissionChangeField[] = [
+  { key: 'entity_name', label: 'Entity Name', type: 'complex', column: 'agency_name', getValue: (row) => row.entity },
+  { key: 'legal_name', label: 'Legal Name', type: 'complex', column: 'agency_trade_name', getValue: (row) => row.trade_name },
+  { key: 'gst_number', label: 'GST Number', type: 'scalar', column: 'gst_number', getValue: (row) => row.gst_number },
+  { key: 'address', label: 'Address', type: 'complex', column: 'address', getValue: (row) => row.address },
+  { key: 'payment_terms', label: 'Payment Terms', type: 'scalar', column: 'bill_due', getValue: (row) => row.bill_due },
+  { key: 'invoice_type', label: 'Invoice Type', type: 'scalar', column: 'invoice_type', getValue: (row) => row.invoice_type },
+  { key: 'creator_creators_name', label: 'Creator / Creators', type: 'complex', column: 'creator_name', getValue: (row) => row.creator_creators_name },
+  { key: 'brand_name', label: 'Brand Name', type: 'scalar', column: 'brand_name', getValue: (row) => row.brand_name },
+  { key: 'campaign_code', label: 'Campaign Code', type: 'complex', column: 'campaign_code', getValue: (row) => row.campaign_code },
+  { key: 'campaign_name', label: 'Campaign Name', type: 'complex', column: 'campaign_name', getValue: (row) => row.campaign_name },
+  { key: 'campaign_brand', label: 'Campaign Brand', type: 'complex', column: 'campaign_brand', getValue: (row) => row.campaign_brand },
+  { key: 'deliverables', label: 'Deliverables', type: 'complex', column: 'deliverables', getValue: (row) => row.deliverables },
+  { key: 'deal_amount', label: 'Deal Amount', type: 'scalar', column: 'commercials', getValue: (row) => row.amount, formatValue: (value, row) => money(Number(value ?? 0), row.currency) },
+  { key: 'product_reimbursement', label: 'Product Reimbursement', type: 'complex', column: 'product_reimbursement_upload', getValue: (row) => row.reimbursement_amount, formatValue: (value, row) => money(Number(value ?? 0), row.currency) },
+  { key: 'product_reimbursement_file', label: 'Product Reimbursement File', type: 'complex', column: 'product_reimbursement_file', getValue: (row) => row.reimbursement_receipts },
+  { key: 'additional_agency_commission', label: 'Additional Agency Commission', type: 'complex', column: 'additional_agency_commission', getValue: (row) => row.additional_agency_commission, formatValue: (value, row) => money(Number(value ?? 0), row.currency) },
+  { key: 'additional_information', label: 'Additional Information', type: 'complex', column: 'additional_information', getValue: (row) => row.additional_information },
+  { key: 'business_line', label: 'Business Line', type: 'complex', column: 'business_line', getValue: (row) => row.business_line },
+  { key: 'entry_type', label: 'Entry Type', type: 'complex', column: 'entry_type', getValue: (row) => row.entry_type },
+  { key: 'entity_type', label: 'Entity Type', type: 'complex', column: 'entity_type', getValue: (row) => row.entity_type },
+  { key: 'client_type', label: 'Client Type', type: 'complex', column: 'client_type', getValue: (row) => row.client_type },
+  { key: 'agency_name', label: 'Agency Name', type: 'complex', column: 'agency_name', getValue: (row) => row.agency_name },
+  { key: 'agency_trade_name', label: 'Agency Trade Name', type: 'complex', column: 'agency_trade_name', getValue: (row) => row.agency_trade_name },
+  { key: 'brand_trade_name', label: 'Brand Trade Name', type: 'complex', column: 'brand_trade_name', getValue: (row) => row.brand_trade_name },
+  { key: 'currency', label: 'Currency', type: 'scalar', column: 'commercials', getValue: (row) => row.currency },
 ];
 
 const COLLAPSED_COLUMN_WIDTHS: Record<'invoice_number' | 'debit_note_number' | 'campaign_code' | 'campaign_name' | 'city' | 'state' | 'country' | 'pincode', number> = {
@@ -425,16 +435,27 @@ function normalizeComparableValue(value: unknown): string {
   return text;
 }
 
-function getResubmissionChangedFields(row: SubmissionRow): string[] {
+function getResubmissionChangedFieldConfigs(row: SubmissionRow): ResubmissionChangeField[] {
   if (!row.previous_submission_snapshot) return [];
   const previous = row.previous_submission_snapshot;
-  const changed: string[] = [];
+  const changed: ResubmissionChangeField[] = [];
   for (const field of RESUBMISSION_CHANGE_FIELDS) {
     const currentValue = normalizeComparableValue(field.getValue(row));
     const previousValue = normalizeComparableValue(field.getValue(previous));
-    if (currentValue !== previousValue) changed.push(field.label);
+    if (currentValue !== previousValue) changed.push(field);
   }
   return changed;
+}
+
+function getResubmissionChangedFields(row: SubmissionRow): string[] {
+  return getResubmissionChangedFieldConfigs(row).map((field) => field.label);
+}
+
+function formatResubmissionFieldValue(field: ResubmissionChangeField, row: Partial<SubmissionRow>): string {
+  const rawValue = field.getValue(row);
+  if (field.formatValue) return field.formatValue(rawValue, row);
+  if (rawValue === null || rawValue === undefined || rawValue === '') return '-';
+  return String(rawValue);
 }
 
 function fieldValue(value: string | number | null | undefined) {
@@ -652,7 +673,7 @@ function renderStatusLabel(field: StatusEditableField, value: string | null | un
   if (field === 'closed_status') return formatClosureStatus(value);
   if (!value) return 'Pending';
   if (value === 'accepted') return 'Accepted';
-  if (value === 'rejected') return 'Resubmission';
+  if (value === 'rejected') return 'Resubmission Requested';
   return 'Submitted';
 }
 
@@ -661,6 +682,9 @@ function getStatusTextTone(field: StatusEditableField, value: string | null | un
   if (viewer === 'employee' || viewer === 'team_lead') {
     if (field === 'intake_status' && normalized === 'submitted') {
       return 'text-[#A68835] dark:text-[#FCCD49]';
+    }
+    if ((field === 'invoice_status' || field === 'payment_received' || field === 'payment_made') && normalized === 'cancelled') {
+      return 'text-slate-700 dark:text-slate-200';
     }
     if (
       (field === 'invoice_status' || field === 'creator_invoice_received' || field === 'payment_received' || field === 'payment_made') &&
@@ -835,11 +859,11 @@ function getColumns(
     'campaign_name',
     'campaign_brand',
     'campaign_code',
+    'additional_information',
     'commercials',
     'product_reimbursement_upload',
     'additional_agency_commission',
     'gross_amount',
-    'additional_information',
     'product_reimbursement_file',
     'reference_po_file',
   ];
@@ -1069,6 +1093,8 @@ function ExpandableText({
   title,
   className,
   collapseSignal,
+  forcedExpanded,
+  lockExpanded,
 }: {
   value: string;
   copied: boolean;
@@ -1076,14 +1102,17 @@ function ExpandableText({
   title?: string;
   className?: string;
   collapseSignal?: string;
+  forcedExpanded?: boolean;
+  lockExpanded?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const textRef = useRef<HTMLDivElement | null>(null);
   const [needsClamp, setNeedsClamp] = useState(value.length > 36 || value.includes('\n'));
+  const isExpanded = expanded || Boolean(forcedExpanded);
 
   useEffect(() => {
-    if (!expanded) return undefined;
+    if (!isExpanded || lockExpanded) return undefined;
     function handleOutside(event: MouseEvent) {
       if (ref.current && !ref.current.contains(event.target as Node)) {
         setExpanded(false);
@@ -1091,11 +1120,12 @@ function ExpandableText({
     }
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
-  }, [expanded]);
+  }, [isExpanded, lockExpanded]);
 
   useEffect(() => {
+    if (forcedExpanded) return;
     setExpanded(false);
-  }, [collapseSignal]);
+  }, [collapseSignal, forcedExpanded]);
 
   useEffect(() => {
     const element = textRef.current;
@@ -1111,7 +1141,7 @@ function ExpandableText({
     const observer = new ResizeObserver(checkOverflow);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [expanded, value]);
+  }, [isExpanded, value]);
 
   return (
     <div
@@ -1119,17 +1149,17 @@ function ExpandableText({
       data-expandable-root="true"
       className="relative h-full max-w-full"
       onClick={(event) => {
-        if (!needsClamp || event.detail !== 1) return;
+        if (!needsClamp || event.detail !== 1 || forcedExpanded) return;
         setExpanded((current) => !current);
       }}
       onDoubleClick={onCopy}
       title={title || value}
       onKeyDown={(event) => {
         if (!needsClamp) return;
-        if (event.key === 'Enter' || event.key === ' ') {
+        if ((event.key === 'Enter' || event.key === ' ') && !forcedExpanded) {
           event.preventDefault();
           setExpanded((current) => !current);
-        } else if (event.key === 'Escape') {
+        } else if (event.key === 'Escape' && !forcedExpanded) {
           event.preventDefault();
           setExpanded(false);
         }
@@ -1139,7 +1169,7 @@ function ExpandableText({
       <div
         ref={textRef}
         className={[
-          expanded
+          isExpanded
             ? `whitespace-pre-line break-words pr-7 text-[13px] leading-4 text-foreground ${className || ''}`
             : `line-clamp-2 break-words pr-7 text-[13px] leading-4 text-foreground ${className || ''}`,
         ].join(' ')}
@@ -1152,6 +1182,7 @@ function ExpandableText({
           onMouseDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
+            if (forcedExpanded) return;
             setExpanded((current) => !current);
           }}
           className="absolute bottom-0 right-0 inline-flex h-6 w-6 items-center justify-center rounded-md text-[0.68rem] font-semibold text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground"
@@ -2016,6 +2047,7 @@ const MemoDataCell = memo(function MemoDataCell({
   cellStyle,
   isFocused,
   isActiveEditor,
+  isLockedExpanded,
   isCopied,
   flash,
   isSaving,
@@ -2033,6 +2065,7 @@ const MemoDataCell = memo(function MemoDataCell({
   cellStyle: CSSProperties;
   isFocused: boolean;
   isActiveEditor: boolean;
+  isLockedExpanded: boolean;
   isCopied: boolean;
   flash: FlashState | null;
   isSaving: boolean;
@@ -2056,7 +2089,7 @@ const MemoDataCell = memo(function MemoDataCell({
       onKeyDown={(event) => onKeyDownCell(event, rowRef.id, columnIndex)}
       className={[
   'relative h-9 max-h-10 border-b border-r border-border/50 px-2.5 py-1 align-middle text-[12px] leading-4 text-foreground outline-none',
-  isActiveEditor ? 'z-50 overflow-visible' : 'overflow-hidden',
+  isActiveEditor || isLockedExpanded ? 'z-50 overflow-visible' : 'overflow-hidden',
   rowClosed
     ? sticky
       ? 'border-r border-border/60 bg-emerald-50 dark:bg-emerald-950'
@@ -2095,6 +2128,7 @@ const MemoDataCell = memo(function MemoDataCell({
   prev.rowClosed === next.rowClosed &&
   prev.isFocused === next.isFocused &&
   prev.isActiveEditor === next.isActiveEditor &&
+  prev.isLockedExpanded === next.isLockedExpanded &&
   prev.isCopied === next.isCopied &&
   prev.isSaving === next.isSaving &&
   prev.rowHighlighted === next.rowHighlighted &&
@@ -2180,10 +2214,28 @@ export function SubmissionTable({
   const [reopenReason, setReopenReason] = useState('');
   const [reopenError, setReopenError] = useState('');
   const [reopenSubmitting, setReopenSubmitting] = useState(false);
-  const [changeSummaryDialog, setChangeSummaryDialog] = useState<{ pi: string; fields: string[] } | null>(null);
+  const [lockedExpandedCells, setLockedExpandedCells] = useState<string[]>([]);
+  const [changeSummaryExpandedKey, setChangeSummaryExpandedKey] = useState<string | null>(null);
+  const [pendingComparisonJump, setPendingComparisonJump] = useState<{
+    groupId: string;
+    rowId: string;
+    previousRowId: string;
+    column: SheetColumnId;
+    cellKeys: string[];
+  } | null>(null);
+  const [changeSummaryDialog, setChangeSummaryDialog] = useState<{
+    pi: string;
+    rowId: string;
+    previousRowId: string;
+    groupId: string;
+    fields: ResubmissionChangeField[];
+  } | null>(null);
+  const [changeSummaryPosition, setChangeSummaryPosition] = useState<{ top: number; left: number } | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const cellRefs = useRef(new Map<string, HTMLTableCellElement>());
   const lastHighlightedRowIdRef = useRef<string | null>(null);
+  const changeSummaryAnchorRef = useRef<HTMLButtonElement | null>(null);
+  const changeSummaryPopoverRef = useRef<HTMLDivElement | null>(null);
   const stickyLefts = useMemo(() => {
     const piWidth = getColumnWidth('pi', collapsedColumns);
     const invoiceVisible = activeColumns.includes('invoice_number');
@@ -2268,7 +2320,7 @@ export function SubmissionTable({
   }, [showAddressColumns, showImCampaignColumns, showInvoiceColumns]);
 
   useEffect(() => {
-    if (expandedPiGroups.length === 0) return undefined;
+    if (expandedPiGroups.length === 0 || changeSummaryDialog) return undefined;
     function handleOutside(event: MouseEvent) {
       const target = event.target as HTMLElement | null;
       if (target?.closest?.('[data-pi-group-toggle="true"]')) return;
@@ -2277,7 +2329,7 @@ export function SubmissionTable({
     }
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
-  }, [expandedPiGroups]);
+  }, [changeSummaryDialog, expandedPiGroups]);
 
   const groupedPiData = useMemo(() => {
     const rowMap = new Map(rows.map((entry) => [entry.id, entry]));
@@ -2340,14 +2392,31 @@ export function SubmissionTable({
   }, [rows]);
 
   const expandedPiGroupSet = useMemo(() => new Set(expandedPiGroups), [expandedPiGroups]);
+  const rowById = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows]);
+
   const resubmissionChangeMap = useMemo(() => {
-    const next = new Map<string, string[]>();
+    const next = new Map<string, ResubmissionChangeField[]>();
     for (const row of rows) {
       if (!row.previous_submission_id || !row.previous_submission_snapshot) continue;
-      next.set(row.id, getResubmissionChangedFields(row));
+      next.set(row.id, getResubmissionChangedFieldConfigs(row));
     }
     return next;
   }, [rows]);
+
+  const resubmissionChangeFrequencyByGroup = useMemo(() => {
+    const next = new Map<string, Map<string, number>>();
+    for (const group of groupedPiData.groupedRows) {
+      const counts = new Map<string, number>();
+      for (const row of [group.latest, ...group.history]) {
+        if (!row.previous_submission_id || !row.previous_submission_snapshot) continue;
+        for (const field of getResubmissionChangedFieldConfigs(row)) {
+          counts.set(field.key, (counts.get(field.key) ?? 0) + 1);
+        }
+      }
+      next.set(group.groupId, counts);
+    }
+    return next;
+  }, [groupedPiData.groupedRows]);
 
   useEffect(() => {
     if (!highlightedRowId) {
@@ -2580,6 +2649,93 @@ export function SubmissionTable({
   }
 
 
+
+  const closeChangeSummaryDialog = useCallback(() => {
+    setChangeSummaryDialog(null);
+    setChangeSummaryPosition(null);
+    setChangeSummaryExpandedKey(null);
+    changeSummaryAnchorRef.current = null;
+    setLockedExpandedCells([]);
+    setPendingComparisonJump(null);
+  }, []);
+
+  const updateChangeSummaryPosition = useCallback(() => {
+    if (!changeSummaryDialog || !changeSummaryAnchorRef.current || !changeSummaryPopoverRef.current || !viewportRef.current || typeof window === 'undefined') {
+      return;
+    }
+
+    const anchorRect = changeSummaryAnchorRef.current.getBoundingClientRect();
+    const viewportRect = viewportRef.current.getBoundingClientRect();
+    const navbarBottom = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0;
+    const popoverHeight = changeSummaryPopoverRef.current.offsetHeight || 0;
+    const popoverWidth = 252;
+    const viewportPadding = 8;
+    const gap = 8;
+
+    let left = viewportRect.left;
+    if (left + popoverWidth > window.innerWidth - viewportPadding) {
+      left = window.innerWidth - popoverWidth - viewportPadding;
+    }
+    left = Math.max(viewportPadding, left);
+
+    let top = anchorRect.top - popoverHeight - gap;
+    if (top < navbarBottom) {
+      top = anchorRect.bottom + gap;
+    }
+    const maxTop = Math.max(navbarBottom, window.innerHeight - popoverHeight - viewportPadding);
+    top = Math.min(Math.max(navbarBottom, top), maxTop);
+
+    setChangeSummaryPosition((current) =>
+      current && current.top === top && current.left === left ? current : { top, left }
+    );
+  }, [changeSummaryDialog]);
+
+  const handleComplexComparisonJump = useCallback((field: ResubmissionChangeField) => {
+    if (!changeSummaryDialog || !field.column) return;
+    const cellKeys = [
+      `${changeSummaryDialog.rowId}:${field.column}`,
+      `${changeSummaryDialog.previousRowId}:${field.column}`,
+    ];
+
+    setLockedExpandedCells(cellKeys);
+    setExpandedPiGroups((current) =>
+      current.includes(changeSummaryDialog.groupId) ? current : [...current, changeSummaryDialog.groupId]
+    );
+    setPendingComparisonJump({
+      groupId: changeSummaryDialog.groupId,
+      rowId: changeSummaryDialog.rowId,
+      previousRowId: changeSummaryDialog.previousRowId,
+      column: field.column,
+      cellKeys,
+    });
+  }, [changeSummaryDialog]);
+
+  const openChangeSummaryPopover = useCallback((
+    row: SubmissionRow,
+    fields: ResubmissionChangeField[],
+    event: ReactMouseEvent<HTMLButtonElement>
+  ) => {
+    event.stopPropagation();
+
+    if (changeSummaryDialog?.rowId === row.id) {
+      closeChangeSummaryDialog();
+      return;
+    }
+
+    const groupId = groupedPiData.groupIdByRowId[row.id] || row.id;
+    changeSummaryAnchorRef.current = event.currentTarget;
+    setExpandedPiGroups((current) => (current.includes(groupId) ? current : [...current, groupId]));
+    setChangeSummaryExpandedKey(null);
+    setChangeSummaryPosition(null);
+    setChangeSummaryDialog({
+      pi: formatPiNumber(row),
+      rowId: row.id,
+      previousRowId: row.previous_submission_id!,
+      groupId,
+      fields,
+    });
+  }, [changeSummaryDialog?.rowId, closeChangeSummaryDialog, groupedPiData.groupIdByRowId]);
+
   function openMasterDataPopover(review: MasterDataReviewSummary, event: ReactMouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     const rect = event.currentTarget.getBoundingClientRect();
@@ -2636,6 +2792,84 @@ export function SubmissionTable({
       current.includes(groupId) ? current.filter((entry) => entry !== groupId) : [...current, groupId]
     );
   }
+
+
+  useEffect(() => {
+    if (!changeSummaryDialog) return undefined;
+    const frame = window.requestAnimationFrame(() => updateChangeSummaryPosition());
+    return () => window.cancelAnimationFrame(frame);
+  }, [changeSummaryDialog, updateChangeSummaryPosition]);
+
+  useEffect(() => {
+    if (!changeSummaryDialog) return undefined;
+
+    const handleWindowChange = () => updateChangeSummaryPosition();
+    const handleOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && changeSummaryPopoverRef.current?.contains(target)) return;
+      if (target && changeSummaryAnchorRef.current?.contains(target)) return;
+      closeChangeSummaryDialog();
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeChangeSummaryDialog();
+    };
+
+    window.addEventListener('resize', handleWindowChange);
+    window.addEventListener('scroll', handleWindowChange, true);
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('resize', handleWindowChange);
+      window.removeEventListener('scroll', handleWindowChange, true);
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [changeSummaryDialog, closeChangeSummaryDialog, updateChangeSummaryPosition]);
+
+  useEffect(() => {
+    if (!pendingComparisonJump) return;
+
+    setLockedExpandedCells(pendingComparisonJump.cellKeys);
+
+    const columnIndex = activeColumns.indexOf(pendingComparisonJump.column);
+    if (columnIndex < 0) {
+      setPendingComparisonJump(null);
+      return;
+    }
+
+    const latestCell = cellRefs.current.get(`${pendingComparisonJump.rowId}:${columnIndex}`);
+    const previousCell = cellRefs.current.get(`${pendingComparisonJump.previousRowId}:${columnIndex}`);
+    const viewport = viewportRef.current;
+    if (!latestCell || !previousCell || !viewport) return;
+
+    const viewportRect = viewport.getBoundingClientRect();
+    const latestRect = latestCell.getBoundingClientRect();
+    const previousRect = previousCell.getBoundingClientRect();
+    const minLeft = Math.min(latestRect.left, previousRect.left);
+    const maxRight = Math.max(latestRect.right, previousRect.right);
+    const minTop = Math.min(latestRect.top, previousRect.top);
+    const maxBottom = Math.max(latestRect.bottom, previousRect.bottom);
+    const stickyWidth = stickyLefts.intake_status + getColumnWidth('intake_status', collapsedColumns);
+    const desiredLeft = viewportRect.left + stickyWidth + 48;
+
+    viewport.scrollLeft += minLeft - desiredLeft;
+
+    const adjustedLatestRect = latestCell.getBoundingClientRect();
+    const adjustedPreviousRect = previousCell.getBoundingClientRect();
+    const adjustedMaxRight = Math.max(adjustedLatestRect.right, adjustedPreviousRect.right);
+    if (adjustedMaxRight > viewportRect.right - 16) {
+      viewport.scrollLeft += adjustedMaxRight - (viewportRect.right - 16);
+    }
+
+    if (minTop < viewportRect.top + 40) {
+      viewport.scrollTop -= viewportRect.top + 40 - minTop;
+    } else if (maxBottom > viewportRect.bottom - 12) {
+      viewport.scrollTop += maxBottom - (viewportRect.bottom - 12);
+    }
+
+    setFocusedCell({ rowId: pendingComparisonJump.rowId, columnIndex });
+    setPendingComparisonJump(null);
+  }, [activeColumns, collapsedColumns, pendingComparisonJump, stickyLefts, visibleDataRows]);
 
   async function handleReopenClosedRow() {
     if (!reopenDialog || !onFinanceUpdate) return;
@@ -2913,16 +3147,22 @@ export function SubmissionTable({
     const creatorData = getCreatorData(row);
     const isCopied = copiedKey === cellKey;
     const isSaving = savingKey === `${row.id}:${column}`;
-    const commonText = (value: string, title?: string, copyValue = value, className?: string) => (
-      <ExpandableText
-        value={value}
-        copied={isCopied}
-        onCopy={() => void copyCell(cellKey, copyValue)}
-        title={title}
-        className={className}
-        collapseSignal={focusedCell ? `${focusedCell.rowId}:${focusedCell.columnIndex}` : ''}
-      />
-    );
+    const commonText = (value: string, title?: string, copyValue = value, className?: string) => {
+      const lockKey = `${row.id}:${column}`;
+      const isLockedExpanded = lockedExpandedCells.includes(lockKey);
+      return (
+        <ExpandableText
+          value={value}
+          copied={isCopied}
+          onCopy={() => void copyCell(cellKey, copyValue)}
+          title={title}
+          className={className}
+          collapseSignal={focusedCell ? `${focusedCell.rowId}:${focusedCell.columnIndex}` : ''}
+          forcedExpanded={isLockedExpanded}
+          lockExpanded={isLockedExpanded}
+        />
+      );
+    };
     const renderAttachmentCell = (attachment: SubmissionAttachmentSummary | null | undefined, row: SubmissionRow) => {
       if (!attachment) return commonText('-');
       const actionKeyBase = `${row.id}:${attachment.id}`;
@@ -3106,7 +3346,7 @@ export function SubmissionTable({
               onMouseDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
-                setChangeSummaryDialog({ pi: formatPiNumber(row), fields: changeFields });
+                openChangeSummaryPopover(row, changeFields, event);
               }}
               className="inline-flex h-5 min-w-[24px] items-center justify-center rounded-full border border-rose-300 bg-rose-50 px-1.5 text-[10px] font-semibold leading-none text-rose-700 transition-none hover:bg-rose-100 dark:border-rose-400/35 dark:bg-rose-500/12 dark:text-rose-200 dark:hover:bg-rose-500/20"
               title="View changes in latest resubmission"
@@ -3557,6 +3797,7 @@ export function SubmissionTable({
                         }}
                         isFocused={isFocused}
                         isActiveEditor={activeEditor?.rowId === row.id && activeEditor?.columnIndex === columnIndex}
+                        isLockedExpanded={lockedExpandedCells.includes(`${row.id}:${column}`)}
                         isCopied={copiedKey === `${row.id}:${column}`}
                         flash={flashForCell}
                         isSaving={savingKey === `${row.id}:${column}`}
@@ -3611,40 +3852,120 @@ export function SubmissionTable({
       ) : null}
       {changeSummaryDialog && typeof document !== 'undefined'
         ? createPortal(
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/35 px-4">
-              <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="text-base font-semibold text-foreground">Changes in Latest Resubmission</div>
-                    <div className="mt-1 text-sm text-muted-foreground">{changeSummaryDialog.pi}</div>
+            (() => {
+              const currentRow = rowById.get(changeSummaryDialog.rowId) ?? null;
+              const previousRow = currentRow?.previous_submission_snapshot ?? null;
+              const scalarFields = changeSummaryDialog.fields.filter((field) => field.type === 'scalar');
+              const complexFields = changeSummaryDialog.fields.filter((field) => field.type === 'complex');
+              const frequencyMap = resubmissionChangeFrequencyByGroup.get(changeSummaryDialog.groupId) ?? new Map<string, number>();
+              const showDivider = scalarFields.length > 0 && complexFields.length > 0;
+
+              return (
+                <div
+                  ref={changeSummaryPopoverRef}
+                  data-resubmission-change-dialog="true"
+                  className="fixed z-[10050] flex w-[252px] max-h-[320px] flex-col overflow-hidden rounded-xl border bg-popover dark:bg-muted"
+                  style={{
+                    top: changeSummaryPosition?.top ?? -9999,
+                    left: changeSummaryPosition?.left ?? -9999,
+                    borderColor: 'var(--ring)',
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-2 border-b border-border/60 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-medium text-muted-foreground">Changes &middot; latest vs previous</div>
+                      <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{changeSummaryDialog.pi}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeChangeSummaryDialog}
+                      className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                      aria-label="Close changes summary"
+                    >
+                      <X size={12} />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setChangeSummaryDialog(null)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border/70 text-muted-foreground hover:bg-muted/30 hover:text-foreground"
-                    aria-label="Close changes summary"
-                  >
-                    <X size={14} />
-                  </button>
+                  <div className="flex-1 overflow-visible px-0 py-2">
+                    {scalarFields.length > 0 ? (
+                      <div className="ml-3 border-l-2 border-l-sky-400/80 pl-2.5">
+                        <div className="pb-1 text-[10px] font-medium uppercase tracking-[0.05em] text-sky-700 dark:text-sky-300">Value changes</div>
+                        <div className="space-y-0.5">
+                          {scalarFields.map((field) => {
+                            const frequency = frequencyMap.get(field.key) ?? 0;
+                            const isExpanded = changeSummaryExpandedKey === field.key;
+                            return (
+                              <div key={field.key}>
+                                <button
+                                  type="button"
+                                  onClick={() => setChangeSummaryExpandedKey((current) => current === field.key ? null : field.key)}
+                                  className="flex h-[34px] w-full items-center justify-between gap-3 rounded-[4px] px-2 text-left transition-none hover:bg-sky-500/10 dark:hover:bg-sky-400/15"
+                                >
+                                  <div className="min-w-0 flex-1 text-[12px] font-medium text-foreground">
+                                    <span>{field.label}</span>
+                                    {frequency >= 3 ? <span className="ml-1 text-[10px] font-normal text-muted-foreground">&middot; {frequency}x</span> : null}
+                                  </div>
+                                  <ChevronRight size={12} className={["shrink-0 text-muted-foreground transition-transform", isExpanded ? "rotate-90" : "rotate-0"].join(' ')} />
+                                </button>
+                                {isExpanded ? (
+                                  <div className="px-2 pb-2 pt-1">
+                                    <div className="grid gap-1 font-mono text-[11px] leading-4">
+                                      <div className="flex flex-wrap items-center gap-1">
+                                        <span className="font-medium text-rose-600 dark:text-rose-300">Was</span>
+                                        <span className="text-muted-foreground">&rarr;</span>
+                                        <span className="text-rose-600 line-through dark:text-rose-300">{previousRow ? formatResubmissionFieldValue(field, previousRow) : '-'}</span>
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-1">
+                                        <span className="font-medium text-emerald-700 dark:text-emerald-300">Now</span>
+                                        <span className="text-muted-foreground">&rarr;</span>
+                                        <span className="text-emerald-700 dark:text-emerald-300">{currentRow ? formatResubmissionFieldValue(field, currentRow) : '-'}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                    {showDivider ? null : null}
+                    {complexFields.length > 0 ? (
+                      <div className="ml-3 mt-2 border-l-2 border-l-amber-400/80 pl-2.5">
+                        <div className="pb-1 text-[10px] font-medium uppercase tracking-[0.05em] text-amber-700 dark:text-amber-300">Needs comparison</div>
+                        <div className="space-y-0.5">
+                          {complexFields.map((field) => {
+                            const frequency = frequencyMap.get(field.key) ?? 0;
+                            return (
+                              <button
+                                key={field.key}
+                                type="button"
+                                onClick={() => handleComplexComparisonJump(field)}
+                                className="group flex h-[34px] w-full items-center justify-between gap-3 rounded-[4px] px-2 text-left transition-none hover:bg-sky-500/10 dark:hover:bg-sky-400/15"
+                              >
+                                <div className="min-w-0 flex-1 text-[12px] font-medium text-foreground">
+                                  <span>{field.label}</span>
+                                  {frequency >= 3 ? <span className="ml-1 text-[10px] font-normal text-muted-foreground">&middot; {frequency}x</span> : null}
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1.5">
+                                  <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300">Modified</span>
+                                  <ChevronRight size={12} className="text-muted-foreground transition-none group-hover:text-sky-700 dark:group-hover:text-sky-300" />
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                    {changeSummaryDialog.fields.length === 0 ? (
+                      <div className="px-3 py-3 text-[12px] text-muted-foreground">No comparable business fields changed.</div>
+                    ) : null}
+                  </div>
+                  <div className="border-t border-border/60 px-3 pb-2 pt-1.5 text-[10px] text-muted-foreground">
+                    Click Modified fields to jump and compare
+                  </div>
                 </div>
-                <div className="mt-4">
-                  <div className="text-sm font-medium text-foreground">Changed Fields:</div>
-                  {changeSummaryDialog.fields.length > 0 ? (
-                    <ul className="mt-2 grid gap-2 text-sm text-foreground">
-                      {changeSummaryDialog.fields.map((field) => (
-                        <li key={field} className="flex items-start gap-2">
-                          <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-rose-500" />
-                          <span>{field}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-2 text-sm text-muted-foreground">No comparable business fields changed.</p>
-                  )}
-                </div>
-                <p className="mt-4 text-xs text-muted-foreground">Detailed history is available by expanding the PI entry.</p>
-              </div>
-            </div>,
+              );
+            })(),
             document.body
           )
         : null}

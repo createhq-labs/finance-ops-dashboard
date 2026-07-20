@@ -19,6 +19,7 @@ export const PAYMENT_RECEIVED_STATUS_LABELS = {
   not_received: 'No',
   partial_left: 'Some Amount Left',
   credit_note_issued: 'Pending (Credit Note Issued Along)',
+  cancelled: 'Cancelled',
 } as const;
 
 export const CREATOR_INVOICE_STATUS_LABELS = {
@@ -38,6 +39,7 @@ export const PAYMENT_MADE_STATUS_LABELS = {
   not_paid: 'No',
   multiple_creators: 'Multiple Creators',
   gst_left: 'GST Left',
+  cancelled: 'Cancelled',
 } as const;
 
 export const CLOSURE_STATUS_LABELS = {
@@ -51,14 +53,16 @@ export const CLOSURE_STATUS_LABELS = {
 export const INVOICE_STATUS_OPTIONS = Object.entries(INVOICE_STATUS_LABELS)
   .filter(([value]) => value !== 'invoice_pending')
   .map(([value, label]) => ({ value, label }));
-export const PAYMENT_RECEIVED_STATUS_OPTIONS = Object.entries(PAYMENT_RECEIVED_STATUS_LABELS).map(([value, label]) => ({ value, label }));
+export const PAYMENT_RECEIVED_STATUS_OPTIONS = Object.entries(PAYMENT_RECEIVED_STATUS_LABELS)
+  .filter(([value]) => value !== 'pending' && value !== 'not_received')
+  .map(([value, label]) => ({ value, label }));
 export const CREATOR_INVOICE_STATUS_OPTIONS = [
   { value: 'received', label: 'Yes' },
   { value: 'not_received', label: 'No' },
   { value: 'multiple_creators', label: 'Multiple Creators' },
 ];
 export const PAYMENT_MADE_STATUS_OPTIONS = Object.entries(PAYMENT_MADE_STATUS_LABELS)
-  .filter(([value]) => value !== 'full')
+  .filter(([value]) => value !== 'full' && value !== 'pending' && value !== 'not_paid')
   .map(([value, label]) => ({ value, label }));
 export const CLOSURE_STATUS_OPTIONS = Object.entries(CLOSURE_STATUS_LABELS).map(([value, label]) => ({ value, label }));
 

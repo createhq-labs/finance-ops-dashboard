@@ -1,3 +1,4 @@
+import { Eye, File, FileImage, FileText, Paperclip, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DeliverableAmountRow, MultiCreatorRow } from "./types";
 import { CURRENCY_OPTIONS, CURRENCY_SEARCH_TEXT_BY_OPTION } from "../../lib/shared/currency";
@@ -32,18 +33,50 @@ function formatSelectedFileSize(file: File | null) {
   return `${Math.max(1, Math.round(file.size / 1024))} KB`;
 }
 
+
+function getFileTypeIcon(file: File | null) {
+  if (!file) return <File size={20} aria-hidden="true" />;
+  const fileName = file.name.toLowerCase();
+  if (file.type === 'application/pdf' || fileName.endsWith('.pdf')) {
+    return <FileText size={20} aria-hidden="true" />;
+  }
+  if (file.type.startsWith('image/') || /\.(png|jpg|jpeg|webp)$/.test(fileName)) {
+    return <FileImage size={20} aria-hidden="true" />;
+  }
+  return <File size={20} aria-hidden="true" />;
+}
+
+function renderHelperText(helperText: string) {
+  const maxLabel = 'Max 10 MB.';
+  if (helperText.endsWith(maxLabel)) {
+    const prefix = helperText.slice(0, -maxLabel.length).trimEnd();
+    return (
+      <span className="block text-[12px] font-normal text-slate-600 dark:text-slate-300">
+        {prefix}{' '}
+        <span className="font-semibold text-slate-800 dark:text-slate-100">{maxLabel}</span>
+      </span>
+    );
+  }
+
+  return <span className="block text-[12px] font-normal text-slate-600 dark:text-slate-300">{helperText}</span>;
+}
+
 export function AttachmentUploadField({
   fieldKey,
   file,
   error,
   onChange,
   helperText = 'PDF, PNG, JPG, or WEBP. Max 10 MB.',
+  titleText = 'Attach reimbursement document',
+  formError = '',
 }: {
   fieldKey: string;
   file: File | null;
   error: string;
   onChange: (key: string, file: File | null) => void;
   helperText?: string;
+  titleText?: string;
+  formError?: string;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -56,6 +89,9 @@ export function AttachmentUploadField({
   }, [previewUrl]);
 
   const isImage = Boolean(file?.type?.startsWith('image/'));
+  const isPdf = Boolean(file && (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')));
+  const displayError = error || formError;
+  const fileTypeIcon = getFileTypeIcon(file);
 
   function clearSelectedFile() {
     if (inputRef.current) inputRef.current.value = '';
@@ -65,7 +101,7 @@ export function AttachmentUploadField({
 
   return (
     <>
-      <div className="grid gap-2" style={{ maxWidth: 440 }}>
+      <div className="grid gap-2" style={{ maxWidth: '100%', width: '100%' }} data-field={fieldKey} tabIndex={-1}>
         <input
           ref={inputRef}
           type="file"
@@ -73,45 +109,64 @@ export function AttachmentUploadField({
           onChange={(e) => onChange(fieldKey, e.target.files?.[0] ?? null)}
           style={{ display: 'none' }}
         />
-        <div className="flex flex-wrap items-center gap-2">
+
+        {!file ? (
           <button
             type="button"
-            className="btn"
             onClick={() => inputRef.current?.click()}
-            style={{ minWidth: 122 }}
+            className="flex w-full flex-wrap items-center gap-3 rounded-xl border border-dashed border-sky-300/60 bg-sky-50/60 px-3 py-3 text-left transition-none hover:border-sky-400/70 dark:border-sky-400/25 dark:bg-sky-500/10 sm:flex-nowrap"
           >
-            {file ? 'Replace File' : 'Choose File'}
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-400/16 dark:text-sky-200">
+              <Paperclip size={18} />
+            </span>
+            <span className="min-w-0 flex-1 break-words text-left">
+              <span className="block text-[13px] font-medium text-foreground">{titleText}</span>
+              {renderHelperText(helperText)}
+            </span>
+            <span className="inline-flex h-8 shrink-0 items-center rounded-lg border border-sky-300/60 bg-sky-100/90 px-3 text-[12px] font-medium text-sky-900 dark:border-sky-300/25 dark:bg-sky-400/16 dark:text-sky-50 sm:ml-auto">
+              Browse
+            </span>
           </button>
-          <span className="text-muted intake-section-copy" style={{ margin: 0 }}>
-            {helperText}
-          </span>
-        </div>
-        {error ? <p className="text-danger intake-inline-error">{error}</p> : null}
-        {file ? (
-          <div
-            className="flex flex-wrap items-center gap-2 rounded-lg border border-sky-200/70 bg-sky-50/80 px-3 py-2 dark:border-sky-400/20 dark:bg-sky-500/10"
-            title={file.name}
-          >
-            <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{file.name}</span>
-            <span className="text-xs text-muted-foreground">{formatSelectedFileSize(file)}</span>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => setPreviewOpen(true)}
-              style={{ paddingInline: 10, minHeight: 30 }}
-            >
-              View
-            </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={clearSelectedFile}
-              style={{ paddingInline: 10, minHeight: 30 }}
-            >
-              Delete
-            </button>
+        ) : (
+          <div className="flex w-full flex-wrap items-center gap-3 rounded-xl border border-sky-200/70 bg-card px-3 py-3 dark:border-sky-400/20 sm:flex-nowrap">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-sky-200/80 bg-sky-50 text-sky-900 dark:border-sky-300/20 dark:bg-sky-400/12 dark:text-sky-100">
+              {fileTypeIcon}
+            </span>
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <div className="truncate text-[13px] font-medium text-foreground" style={{ maxWidth: "100%" }} title={file.name}>{file.name.length > 18 ? `${file.name.slice(0, 6)}....${file.name.includes(".") ? "." + (file.name.split(".").pop() || "") : ""}` : file.name}</div>
+              <div className="text-[11px] text-muted-foreground">{formatSelectedFileSize(file)}</div>
+            </div>
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                className="inline-flex h-7 items-center rounded-md border border-sky-300/60 bg-sky-100/90 px-2.5 text-[11px] font-medium text-sky-900 transition-none hover:bg-sky-200 dark:border-sky-300/25 dark:bg-sky-400/16 dark:text-sky-50 dark:hover:bg-sky-400/24"
+              >
+                Replace
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(true)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-sky-200/70 bg-sky-50 text-sky-700 transition-none hover:bg-sky-100 hover:text-sky-900 dark:border-sky-400/20 dark:bg-sky-400/12 dark:text-sky-100 dark:hover:bg-sky-400/20"
+                aria-label="View file"
+                title="View"
+              >
+                <Eye size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={clearSelectedFile}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-rose-200/80 bg-rose-50 text-rose-600 transition-none hover:bg-rose-100 hover:text-rose-700 dark:border-rose-400/25 dark:bg-rose-500/12 dark:text-rose-200 dark:hover:bg-rose-500/20"
+                aria-label="Delete file"
+                title="Delete"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
           </div>
-        ) : null}
+        )}
+
+        {displayError ? <p className="text-danger intake-inline-error">{displayError}</p> : null}
       </div>
 
       {previewOpen && file ? (
@@ -125,15 +180,32 @@ export function AttachmentUploadField({
             style={{ display: 'grid', gap: 12 }}
           >
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-foreground">{file.name}</div>
-                <div className="text-xs text-muted-foreground">{formatSelectedFileSize(file)}</div>
+              <div className="min-w-0 flex-1 pr-2">
+                <div className="truncate text-sm font-semibold text-foreground" style={{ maxWidth: "100%" }} title={file.name}>{file.name.length > 28 ? `${file.name.slice(0, 10)}....${file.name.includes(".") ? "." + (file.name.split(".").pop() || "") : ""}` : file.name}</div>
+                <div className="text-[11px] text-muted-foreground">{formatSelectedFileSize(file)}</div>
               </div>
-              <button type="button" className="btn" onClick={() => setPreviewOpen(false)}>Close</button>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 bg-card text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground"
+                onClick={() => setPreviewOpen(false)}
+                aria-label="Close preview"
+              >
+                <X size={14} />
+              </button>
             </div>
             <div className="overflow-hidden rounded-xl border border-border/60 bg-card/80" style={{ height: 420 }}>
               {isImage ? (
                 <img src={previewUrl} alt={file.name} className="h-full w-full object-contain bg-black/5 dark:bg-white/5" />
+              ) : isPdf ? (
+                <object data={previewUrl} type="application/pdf" className="h-full w-full">
+                  <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+                    <Upload size={20} className="text-muted-foreground" />
+                    <p className="text-sm font-medium text-foreground">PDF preview not available</p>
+                    <a href={previewUrl} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary underline underline-offset-4">
+                      Open in new tab
+                    </a>
+                  </div>
+                </object>
               ) : (
                 <iframe src={previewUrl} title={file.name} className="h-full w-full border-0" />
               )}
@@ -150,11 +222,15 @@ export function ProductReimbursementField({
   file,
   error,
   onChange,
+  helperText,
+  formError,
 }: {
   fieldKey: string;
   file: File | null;
   error: string;
   onChange: (key: string, file: File | null) => void;
+  helperText?: string;
+  formError?: string;
 }) {
   return (
     <AttachmentUploadField
@@ -162,7 +238,8 @@ export function ProductReimbursementField({
       file={file}
       error={error}
       onChange={onChange}
-      helperText="PDF, PNG, JPG, or WEBP. Max 10 MB."
+      helperText={helperText ?? "PDF, PNG, JPG, or WEBP. Max 10 MB."}
+      formError={formError}
     />
   );
 }
@@ -296,12 +373,15 @@ export function SingleCreatorRows({
               </div>
 
               {row.deliverable === "Product Reimbursement" ? (
-                <ProductReimbursementField
-                  fieldKey={`sc-${idx}`}
-                  file={getProductReimbursementFile(`sc-${idx}`)}
-                  error={getProductReimbursementError(`sc-${idx}`)}
-                  onChange={onProductReimbursementFileChange}
-                />
+                <div style={{ maxWidth: 420, marginLeft: "auto", width: "100%" }}>
+                  <ProductReimbursementField
+                    fieldKey={`sc-${idx}`}
+                    file={getProductReimbursementFile(`sc-${idx}`)}
+                    error={getProductReimbursementError(`sc-${idx}`)}
+                    formError={errors[`sc-${idx}`]}
+                    onChange={onProductReimbursementFileChange}
+                  />
+                </div>
               ) : null}
             </div>
           ))}
@@ -444,12 +524,15 @@ export function MultiCreatorRows({
               </div>
 
               {row.deliverable === "Product Reimbursement" ? (
-                <ProductReimbursementField
-                  fieldKey={`mc-${idx}`}
-                  file={getProductReimbursementFile(`mc-${idx}`)}
-                  error={getProductReimbursementError(`mc-${idx}`)}
-                  onChange={onProductReimbursementFileChange}
-                />
+                <div style={{ maxWidth: 420, marginLeft: "auto", width: "100%" }}>
+                  <ProductReimbursementField
+                    fieldKey={`mc-${idx}`}
+                    file={getProductReimbursementFile(`mc-${idx}`)}
+                    error={getProductReimbursementError(`mc-${idx}`)}
+                    formError={errors[`mc-${idx}`]}
+                    onChange={onProductReimbursementFileChange}
+                  />
+                </div>
               ) : null}
             </div>
           ))}

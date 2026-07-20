@@ -83,6 +83,12 @@ export default function FollowUpsPage() {
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState('');
 
+  function resetAllFilters() {
+    setQuery('');
+    setStatus('all');
+    setType('all');
+  }
+
   const loadFollowUps = useCallback(async () => {
     if (!user) return;
 
@@ -205,7 +211,7 @@ export default function FollowUpsPage() {
               if (key === 'type') setType((value || 'all') as 'all' | 'payment_received_pending' | 'gst_pending');
             }}
             onAdvancedChange={() => undefined}
-            onReset={() => undefined}
+            onReset={resetAllFilters}
           />
 
           {fetching ? (
