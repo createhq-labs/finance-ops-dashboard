@@ -615,6 +615,10 @@ function getProductReimbursementValue(row: SubmissionRow) {
   return money(row.reimbursement_amount, row.currency);
 }
 
+function getGrossAmount(row: SubmissionRow) {
+  return row.amount + (row.reimbursement_amount || 0) + (row.additional_agency_commission || 0);
+}
+
 function formatSubmittedAt(value: string | null | undefined) {
   if (!value) return '-';
   const date = new Date(value);
@@ -2591,7 +2595,7 @@ export function SubmissionTable({
       case 'additional_agency_commission':
         return row.additional_agency_commission ? copyMoney(money(row.additional_agency_commission, row.currency)) : '';
       case 'gross_amount':
-        return copyMoney(money(row.amount + (row.additional_agency_commission || 0), row.currency));
+        return copyMoney(money(getGrossAmount(row), row.currency));
       case 'additional_information':
         return fieldValue(row.additional_information);
       case 'product_reimbursement_file':
@@ -3465,9 +3469,9 @@ export function SubmissionTable({
         );
       case 'gross_amount':
         return commonText(
-          money(row.amount + (row.additional_agency_commission || 0), row.currency),
-          getCurrencyTitle(row.currency, row.amount + (row.additional_agency_commission || 0)),
-          copyMoney(money(row.amount + (row.additional_agency_commission || 0), row.currency))
+          money(getGrossAmount(row), row.currency),
+          getCurrencyTitle(row.currency, getGrossAmount(row)),
+          copyMoney(money(getGrossAmount(row), row.currency))
         );
       case 'additional_information':
         return commonText(fieldValue(row.additional_information));

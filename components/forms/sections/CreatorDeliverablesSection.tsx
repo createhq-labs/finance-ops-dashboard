@@ -39,8 +39,8 @@ function CurrencyField({
   onCurrencyChange: (next: string) => void;
 }) {
   return (
-    <label className="intake-field" style={{ width: 160, maxWidth: '100%' }}>
-      <span className="intake-label">Currency *</span>
+    <label className="intake-field invoice-row-currency-cell" style={{ width: 86, maxWidth: '100%' }}>
+      <span className="intake-label">Curr. *</span>
       <SearchableSelect
         value={currency}
         options={CURRENCY_OPTIONS}
@@ -76,6 +76,7 @@ function ImDeliverablesField({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const skipNextOptionClickRef = useRef(false);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -108,9 +109,11 @@ function ImDeliverablesField({
   function toggleOption(option: string) {
     if (selected.includes(option)) {
       onChange(selected.filter((entry) => entry !== option));
-      return;
+    } else {
+      onChange([...selected, option]);
     }
-    onChange([...selected, option]);
+    setOpen(true);
+    requestAnimationFrame(() => searchInputRef.current?.focus());
   }
 
   return (
@@ -118,12 +121,6 @@ function ImDeliverablesField({
       ref={rootRef}
       className="intake-searchable-root"
       style={{ position: "relative", zIndex: open ? 90 : undefined }}
-      onBlurCapture={() => {
-        requestAnimationFrame(() => {
-          if (rootRef.current?.contains(document.activeElement)) return;
-          setOpen(false);
-        });
-      }}
     >
       <button
         ref={triggerRef}
@@ -154,12 +151,13 @@ function ImDeliverablesField({
               return (
                 <span
                   key={deliverable}
+                  title={deliverable}
                   className={[
                     "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium",
                     "border border-sky-300/70 bg-sky-100/95 text-sky-950 dark:border-sky-300/30 dark:bg-sky-400/16 dark:text-sky-50",
                   ].join(" ")}
                 >
-                  <span className="truncate" style={{ display: "block", maxWidth: "calc(100% - 20px)" }}>{deliverable}</span>
+                  <span className="truncate" title={deliverable} style={{ display: "block", maxWidth: "calc(100% - 20px)" }}>{deliverable}</span>
                   <span
                     role="button"
                     tabIndex={0}
@@ -224,9 +222,31 @@ function ImDeliverablesField({
                     type="button"
                     role="option"
                     aria-selected={isSelected}
+                    title={option}
                     className={["intake-searchable-option", isSelected ? "intake-searchable-option-selected" : ""].filter(Boolean).join(" ")}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => toggleOption(option)}
+                    onPointerDownCapture={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      skipNextOptionClickRef.current = true;
+                      toggleOption(option);
+                    }}
+                    onMouseDownCapture={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (skipNextOptionClickRef.current) return;
+                      skipNextOptionClickRef.current = true;
+                      toggleOption(option);
+                    }}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                    }}
+                    onClick={() => {
+                      if (skipNextOptionClickRef.current) {
+                        skipNextOptionClickRef.current = false;
+                        return;
+                      }
+                      toggleOption(option);
+                    }}
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       <span
@@ -237,7 +257,7 @@ function ImDeliverablesField({
                       >
                         {isSelected ? <Check size={12} /> : null}
                       </span>
-                      <span className={`truncate ${isSelected ? "font-medium" : ""}`} style={isSelected ? { color: "var(--text-accent)" } : undefined}>{option}</span>
+                      <span className={`truncate ${isSelected ? "font-medium" : ""}`} title={option} style={isSelected ? { color: "var(--text-accent)" } : undefined}>{option}</span>
                     </span>
                     <span className="intake-searchable-option-check" aria-hidden="true" />
                   </button>
@@ -386,7 +406,7 @@ export function CreatorDeliverablesSection({
               grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr);
             }
             .campaign-grid-foreign {
-              grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr) minmax(0, 1fr) 140px minmax(0, 1.55fr);
+              grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr) minmax(0, 1fr) 86px minmax(0, 1.68fr);
             }
           }
         `}</style>
@@ -409,7 +429,7 @@ export function CreatorDeliverablesSection({
 
           <label className="intake-field">
             <span className="intake-label">Campaign Brand *</span>
-            <SearchableSelect value={values.campaignBrand} options={brandOptions} allowCustom panelMaxHeight={160} onChange={(next) => onChange("campaignBrand", next)} placeholder="Select brand" data-field="campaignBrand" />
+            <SearchableSelect value={values.campaignBrand} options={brandOptions} allowCustom panelMaxHeight={160} onChange={(next) => onChange("campaignBrand", next)} deselectOnSelectedClick clearable placeholder="Select brand" data-field="campaignBrand" />
             <div style={{ minHeight: 16 }}>
               {errors.campaignBrand ? <p className="text-danger intake-inline-error">{errors.campaignBrand}</p> : null}
             </div>

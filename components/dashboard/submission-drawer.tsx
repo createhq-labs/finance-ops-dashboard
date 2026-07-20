@@ -283,7 +283,7 @@ export function SubmissionDrawer({
             ) : null}
             <DetailItem
               label="Total/Gross Amount"
-              value={money(row.amount + (row.additional_agency_commission || 0), row.currency)}
+              value={money(row.amount + (row.reimbursement_amount || 0) + (row.additional_agency_commission || 0), row.currency)}
             />
           </DetailSection>
 
