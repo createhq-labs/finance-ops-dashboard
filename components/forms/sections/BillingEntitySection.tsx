@@ -188,6 +188,7 @@ export function BillingEntitySection({
               panelMaxHeight={160}
               onChange={onEntityNameSelect}
               deselectOnSelectedClick
+              clearable
               placeholder={`Select ${values.entityType.toLowerCase()} name`}
               data-field="agencyBrandName"
               required
@@ -206,6 +207,7 @@ export function BillingEntitySection({
               panelMaxHeight={160}
               onChange={onTradeNameSelect}
               deselectOnSelectedClick
+              clearable
               placeholder={`Select ${values.entityType.toLowerCase()} trade name`}
               data-field="agencyBrandTradeName"
               required
@@ -225,6 +227,7 @@ export function BillingEntitySection({
                 panelMaxHeight={160}
                 onChange={(next) => onChange("billingBrandName", next)}
                 deselectOnSelectedClick
+                clearable
                 placeholder="Select brand name"
                 data-field="billingBrandName"
                 required

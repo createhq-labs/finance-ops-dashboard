@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type SearchableSelectOption =
@@ -25,6 +25,7 @@ type SearchableSelectProps = {
   onChange?: (next: string) => void;
   allowCustom?: boolean;
   deselectOnSelectedClick?: boolean;
+  clearable?: boolean;
   placeholder?: string;
   disabled?: boolean;
   dataField?: string;
@@ -73,6 +74,7 @@ export function SearchableSelect({
   onChange,
   allowCustom = false,
   deselectOnSelectedClick = false,
+  clearable = false,
   placeholder = "Select option",
   disabled = false,
   dataField,
@@ -86,6 +88,8 @@ export function SearchableSelect({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const skipNextTriggerClickRef = useRef(false);
+  const skipNextOptionClickRef = useRef(false);
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -178,9 +182,22 @@ export function SearchableSelect({
     setOpen(true);
   }
 
+  function toggleMenuFromPointer() {
+    if (disabled) return;
+    if (open) closeMenu();
+    else openMenu();
+  }
+
   function selectOption(next: string) {
     if (typeof onChange === "function") {
       onChange(deselectOnSelectedClick && next === value ? "" : next);
+    }
+    closeMenu({ restoreFocus: true });
+  }
+
+  function clearSelection() {
+    if (typeof onChange === "function") {
+      onChange("");
     }
     closeMenu({ restoreFocus: true });
   }
@@ -220,6 +237,19 @@ export function SearchableSelect({
     commitCustomValue();
   }
 
+  function selectOptionFromMouse(next: string) {
+    skipNextOptionClickRef.current = true;
+    selectOption(next);
+  }
+
+  function handleOptionClick(next: string) {
+    if (skipNextOptionClickRef.current) {
+      skipNextOptionClickRef.current = false;
+      return;
+    }
+    selectOption(next);
+  }
+
   const triggerLabel = selectedOption?.label ?? value;
   const showPlaceholder = !triggerLabel;
 
@@ -228,18 +258,23 @@ export function SearchableSelect({
       ref={rootRef}
       className={`intake-searchable-root${className ? ` ${className}` : ""}`}
       style={{ position: "relative", zIndex: open ? 90 : undefined }}
-      onBlurCapture={() => {
-        requestAnimationFrame(() => {
-          if (rootRef.current?.contains(document.activeElement)) return;
-          setOpen(false);
-        });
-      }}
     >
       <button
         ref={triggerRef}
         type="button"
         className={`intake-select-trigger${open ? " intake-select-trigger-open" : ""}${showPlaceholder ? " intake-select-trigger-placeholder" : ""}`}
+        title={showPlaceholder ? placeholder : triggerLabel}
+        onMouseDown={(event) => {
+          if (event.button !== 0 || disabled) return;
+          event.preventDefault();
+          skipNextTriggerClickRef.current = true;
+          toggleMenuFromPointer();
+        }}
         onClick={() => {
+          if (skipNextTriggerClickRef.current) {
+            skipNextTriggerClickRef.current = false;
+            return;
+          }
           if (open) closeMenu();
           else openMenu();
         }}
@@ -286,6 +321,28 @@ export function SearchableSelect({
         <span className="intake-select-trigger-label" title={showPlaceholder ? placeholder : triggerLabel}>
           {showPlaceholder ? placeholder : triggerLabel}
         </span>
+        {clearable && value && !disabled ? (
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label="Clear selection"
+            className="intake-select-clear"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              clearSelection();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                event.stopPropagation();
+                clearSelection();
+              }
+            }}
+          >
+            <X size={13} />
+          </span>
+        ) : null}
         <ChevronDown className={`intake-select-chevron${open ? " intake-select-chevron-open" : ""}`} size={16} />
       </button>
       <input
@@ -347,13 +404,26 @@ export function SearchableSelect({
                 <button
                   type="button"
                   className="intake-searchable-option intake-searchable-option-highlighted"
-                  onMouseDown={(event) => {
+                  title={`Use "${query.trim()}"`}
+                  data-custom-option="true"
+                  onMouseDownCapture={(event) => {
                     event.preventDefault();
+                    event.stopPropagation();
+                    skipNextOptionClickRef.current = true;
                     commitCustomValue();
                   }}
-                  onClick={(event) => event.preventDefault()}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                  }}
+                  onClick={() => {
+                    if (skipNextOptionClickRef.current) {
+                      skipNextOptionClickRef.current = false;
+                      return;
+                    }
+                    commitCustomValue();
+                  }}
                 >
-                  <span className="intake-searchable-option-label">Use &quot;{query.trim()}&quot;</span>
+                  <span className="intake-searchable-option-label" title={`Use "${query.trim()}"`}>Use &quot;{query.trim()}&quot;</span>
                   <span className="intake-searchable-option-check" />
                 </button>
               ) : (
@@ -374,6 +444,7 @@ export function SearchableSelect({
                     role="option"
                     aria-selected={isSelected}
                     disabled={option.disabled}
+                    data-option-value={option.value}
                     className={[
                       "intake-searchable-option",
                       isHighlighted ? "intake-searchable-option-highlighted" : "",
@@ -382,12 +453,17 @@ export function SearchableSelect({
                     ]
                       .filter(Boolean)
                       .join(" ")}
+                    title={option.label}
+                    onMouseDownCapture={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (!option.disabled) selectOptionFromMouse(option.value);
+                    }}
                     onMouseDown={(event) => {
                       event.preventDefault();
-                      if (!option.disabled) selectOption(option.value);
                     }}
                     onClick={() => {
-                      return;
+                      if (!option.disabled) handleOptionClick(option.value);
                     }}
                     onMouseEnter={() => {
                       if (!option.disabled) setHighlightedIndex(index);

@@ -591,6 +591,28 @@ export function InvoiceIntakeForm({
       setAutoFilledLocation((prev) => ({ ...prev, [key]: false }));
     }
 
+    if (key === "entityType") {
+      setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+      setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+      setValues((prev) => ({
+        ...prev,
+        entityType: nextValue as InvoiceIntakeFormValues["entityType"],
+        agencyBrandName: "",
+        agencyBrandTradeName: "",
+        billingBrandName: "",
+        gstSelectionMode: "existing",
+        gstNumber: "",
+        addressLine: "",
+        city: "",
+        state: "",
+        country: prev.clientType === "Indian" ? "India" : "",
+        pincode: "",
+      }));
+      clearErrors(["entityType", "agencyBrandName", "agencyBrandTradeName", "billingBrandName", "gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+      setError("");
+      return;
+    }
+
     setValues((prev) => ({ ...prev, [key]: nextValue }));
     clearErrors([String(key), "creatorDeliverables"]);
     setError("");
@@ -598,32 +620,96 @@ export function InvoiceIntakeForm({
 
   function handleEntityNameSelect(next: string) {
     if (!next.trim()) {
-      update("agencyBrandName", "");
-      update("agencyBrandTradeName", "");
+      setHasInteracted(true);
+      setValues((prev) => ({
+        ...prev,
+        agencyBrandName: "",
+        agencyBrandTradeName: "",
+        gstSelectionMode: "existing",
+        gstNumber: "",
+        addressLine: "",
+        city: "",
+        state: "",
+        country: prev.clientType === "Indian" ? "India" : "",
+        pincode: "",
+      }));
+      setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+      setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+      clearErrors(["agencyBrandName", "agencyBrandTradeName", "gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+      setError("");
       return;
     }
 
-    update("agencyBrandName", next);
     const tradeNameMap = values.entityType === "Agency" ? agencyTradeNameMap : brandTradeNameMap;
     const mappedTradeName = tradeNameMap[next.trim().toLowerCase()];
-    if (mappedTradeName) {
-      update("agencyBrandTradeName", mappedTradeName);
-    }
+    setHasInteracted(true);
+    setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+    setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+    setValues((prev) => ({
+      ...prev,
+      agencyBrandName: next,
+      ...(mappedTradeName ? { agencyBrandTradeName: mappedTradeName } : {}),
+      ...(prev.clientType === "Indian"
+        ? {
+            gstSelectionMode: "existing" as const,
+            gstNumber: "",
+            addressLine: "",
+            city: "",
+            state: "",
+            country: "India",
+            pincode: "",
+          }
+        : {}),
+    }));
+    clearErrors(["agencyBrandName", "agencyBrandTradeName", "gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+    setError("");
   }
 
   function handleTradeNameSelect(next: string) {
     if (!next.trim()) {
-      update("agencyBrandTradeName", "");
-      update("agencyBrandName", "");
+      setHasInteracted(true);
+      setValues((prev) => ({
+        ...prev,
+        agencyBrandTradeName: "",
+        agencyBrandName: "",
+        gstSelectionMode: "existing",
+        gstNumber: "",
+        addressLine: "",
+        city: "",
+        state: "",
+        country: prev.clientType === "Indian" ? "India" : "",
+        pincode: "",
+      }));
+      setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+      setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+      clearErrors(["agencyBrandTradeName", "agencyBrandName", "gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+      setError("");
       return;
     }
 
-    update("agencyBrandTradeName", next);
     const entityNameMap = values.entityType === "Agency" ? agencyNameMap : brandNameMap;
     const mappedEntityName = entityNameMap[next.trim().toLowerCase()];
-    if (mappedEntityName) {
-      update("agencyBrandName", mappedEntityName);
-    }
+    setHasInteracted(true);
+    setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+    setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+    setValues((prev) => ({
+      ...prev,
+      agencyBrandTradeName: next,
+      ...(mappedEntityName ? { agencyBrandName: mappedEntityName } : {}),
+      ...(prev.clientType === "Indian"
+        ? {
+            gstSelectionMode: "existing" as const,
+            gstNumber: "",
+            addressLine: "",
+            city: "",
+            state: "",
+            country: "India",
+            pincode: "",
+          }
+        : {}),
+    }));
+    clearErrors(["agencyBrandTradeName", "agencyBrandName", "gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+    setError("");
   }
 
   function handleGstSelect(next: string) {

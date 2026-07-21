@@ -13,7 +13,7 @@ function CurrencyField({
   onChange: (next: string) => void;
 }) {
   return (
-    <div className="grid gap-1 min-w-0">
+    <div className="grid gap-1 min-w-0 invoice-row-currency-cell">
       <SearchableSelect
         value={currency}
         options={CURRENCY_OPTIONS}
@@ -391,7 +391,7 @@ export function SingleCreatorRows({
   onRetainExistingProductReimbursementAttachment,
 }: SingleCreatorProps) {
   const gridColumns = showCurrency
-    ? "grid gap-x-1 gap-y-2 intake-row-grid-multi-currency md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_76px_minmax(180px,1.25fr)_minmax(112px,0.8fr)_96px]"
+    ? "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_68px_minmax(0,1.3fr)_minmax(132px,0.85fr)_96px]"
     : "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_96px]";
   return (
     <section className="intake-section">
@@ -406,7 +406,7 @@ export function SingleCreatorRows({
         <div className="intake-row-stack">
           {rows.map((row, idx) => (
             <div key={`sc-${idx}`} className="grid gap-2">
-              <div className={`${gridColumns} intake-row-grid-multi`}>
+              <div className={`${gridColumns} intake-row-grid-multi${showCurrency ? " intake-row-grid-foreign" : ""}`}>
                 <div className="grid min-w-0 gap-1">
                   <SearchableSelect
                     value={scCreator}
@@ -414,6 +414,8 @@ export function SingleCreatorRows({
                     allowCustom
                     panelMaxHeight={160}
                     onChange={onCreatorChange}
+                    deselectOnSelectedClick
+                    clearable
                     placeholder="Select creator"
                     disabled={idx > 0}
                     data-field="scCreator"
@@ -429,6 +431,8 @@ export function SingleCreatorRows({
                     allowCustom
                     panelMaxHeight={160}
                     onChange={onBrandChange}
+                    deselectOnSelectedClick
+                    clearable
                     placeholder="Select brand"
                     disabled={idx > 0}
                     data-field="scBrand"
@@ -447,6 +451,8 @@ export function SingleCreatorRows({
                   <SearchableSelect
                     value={row.deliverable}
                     options={deliverableOptions}
+                    deselectOnSelectedClick
+                    clearable
                     onChange={(next) => onRowChange(idx, { deliverable: next })}
                     data-field={`scDeliverables.${idx}.deliverable`}
                     placeholder="Select deliverable"
@@ -554,7 +560,7 @@ export function MultiCreatorRows({
   onRetainExistingProductReimbursementAttachment,
 }: MultiCreatorProps) {
   const gridColumns = showCurrency
-    ? "grid gap-x-1 gap-y-2 intake-row-grid-multi-currency md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_76px_minmax(180px,1.25fr)_minmax(112px,0.8fr)_96px]"
+    ? "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_68px_minmax(0,1.3fr)_minmax(132px,0.85fr)_96px]"
     : "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_96px]";
   return (
     <section className="intake-section">
@@ -569,7 +575,7 @@ export function MultiCreatorRows({
         <div className="intake-row-stack">
           {rows.map((row, idx) => (
             <div key={`mc-${idx}`} className="grid gap-2">
-              <div className={`${gridColumns} intake-row-grid-multi`}>
+              <div className={`${gridColumns} intake-row-grid-multi${showCurrency ? " intake-row-grid-foreign" : ""}`}>
                 <div className="grid min-w-0 gap-1">
                   <SearchableSelect
                     value={row.creator}
@@ -577,6 +583,8 @@ export function MultiCreatorRows({
                     allowCustom
                     panelMaxHeight={160}
                     onChange={(next) => onCreatorChange(idx, next)}
+                    deselectOnSelectedClick
+                    clearable
                     placeholder="Select creator"
                     data-field={`mcRows.${idx}.creator`}
                   />
@@ -592,6 +600,8 @@ export function MultiCreatorRows({
                     allowCustom
                     panelMaxHeight={160}
                     onChange={(next) => onRowChange(idx, { brand: next })}
+                    deselectOnSelectedClick
+                    clearable
                     placeholder="Select brand"
                     disabled={idx > 0}
                     data-field={`mcRows.${idx}.brand`}
@@ -611,6 +621,8 @@ export function MultiCreatorRows({
                   <SearchableSelect
                     value={row.deliverable}
                     options={deliverableOptions}
+                    deselectOnSelectedClick
+                    clearable
                     onChange={(next) => onRowChange(idx, { deliverable: next })}
                     data-field={`mcRows.${idx}.deliverable`}
                     placeholder="Select deliverable"
