@@ -15,9 +15,9 @@ import { CommercialsSection } from "./sections/CommercialsSection";
 import { CreatorDeliverablesSection } from "./sections/CreatorDeliverablesSection";
 import { FormActions } from "./sections/FormActions";
 import { InvoiceDetailsSection } from "./sections/InvoiceDetailsSection";
-import type { BusinessLine, EntryType, GstMappingOption, InvoiceIntakeFormSubmitInput, InvoiceIntakeFormValues, InvoiceIntakeSubmissionPayload, MultiCreatorRow } from "./types";
+import type { BusinessLine, EntryType, ExistingInvoiceAttachment, GstMappingOption, InvoiceIntakeFormSubmitInput, InvoiceIntakeFormValues, InvoiceIntakeSubmissionPayload, MultiCreatorRow } from "./types";
 import { PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES, PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES, REFERENCE_PO_ALLOWED_MIME_TYPES, REFERENCE_PO_MAX_FILE_SIZE_BYTES } from "../../lib/shared/submission-attachments";
-import { hasKnownPincodeLocationMismatch, inferAddressData, normalizeState } from "../../lib/shared/address-utils";
+import { hasKnownPincodeLocationMismatch, inferAddressData, normalizeState, serializeBillingAddress } from "../../lib/shared/address-utils";
 
 type Props = {
   submitterName?: string;
@@ -26,6 +26,9 @@ type Props = {
   currentUserBusinessLine?: BusinessLine | null;
   initialValues?: Partial<InvoiceIntakeFormValues> | null;
   previousSubmissionId?: string | null;
+  existingProductReimbursementAttachment?: boolean;
+  existingProductReimbursementAttachmentMeta?: ExistingInvoiceAttachment | null;
+  existingReferencePoAttachment?: ExistingInvoiceAttachment | null;
   onSubmit?: (submission: InvoiceIntakeFormSubmitInput) => Promise<void> | void;
   submitEnabled?: boolean;
 };
@@ -106,8 +109,7 @@ function sanitizeDecimalInput(value: string) {
   const integerPart = cleaned.slice(0, firstDotIndex);
   const decimalPart = cleaned
     .slice(firstDotIndex + 1)
-    .replace(/\./g, "")
-    .slice(0, 2);
+    .replace(/\./g, "");
 
   const normalizedInteger = integerPart || "0";
   return `${normalizedInteger}.${decimalPart}`;
@@ -118,12 +120,40 @@ function parseAmount(value: string) {
   return sanitized ? Number.parseFloat(sanitized) || 0 : 0;
 }
 
-function sumAmounts(values: string[]) {
-  return values.reduce((total, value) => total + parseAmount(value), 0);
+function addDecimalAmounts(values: string[]) {
+  const sanitizedValues = values.map(sanitizeDecimalInput).filter(Boolean);
+  if (sanitizedValues.length === 0) return "";
+
+  const scale = sanitizedValues.reduce((maxScale, value) => {
+    const decimalPart = value.split(".")[1] ?? "";
+    return Math.max(maxScale, decimalPart.length);
+  }, 0);
+  const factor = BigInt(10) ** BigInt(scale);
+  const total = sanitizedValues.reduce((sum, value) => {
+    const [integerPartRaw, decimalPartRaw = ""] = value.split(".");
+    const integerPart = integerPartRaw || "0";
+    const decimalPart = decimalPartRaw.padEnd(scale, "0");
+    return sum + BigInt(integerPart) * factor + BigInt(decimalPart || "0");
+  }, BigInt(0));
+
+  if (total <= BigInt(0)) return "";
+  if (scale === 0) return total.toString();
+
+  const integerPart = total / factor;
+  const decimalPart = (total % factor).toString().padStart(scale, "0").replace(/0+$/, "");
+  return decimalPart ? `${integerPart}.${decimalPart}` : integerPart.toString();
 }
 
-function isProductReimbursementDeliverable(value: string) {
-  return value.trim().toLowerCase() === "product reimbursement";
+function sumProductReimbursementRowAmounts(rows: Array<{ deliverable: string; amount: string }>) {
+  return addDecimalAmounts(rows.filter((row) => isProductReimbursementDeliverable(row.deliverable)).map((row) => row.amount));
+}
+
+function sumNonReimbursementRowAmounts(rows: Array<{ deliverable: string; amount: string }>) {
+  return addDecimalAmounts(rows.filter((row) => !isProductReimbursementDeliverable(row.deliverable)).map((row) => row.amount));
+}
+
+function isProductReimbursementDeliverable(value: string | null | undefined) {
+  return String(value || "").trim().toLowerCase() === "product reimbursement";
 }
 
 function sumProductReimbursementRows(rows: Array<{ deliverable: string; amount: string }>) {
@@ -164,11 +194,15 @@ export function InvoiceIntakeForm({
   currentUserBusinessLine = null,
   initialValues = null,
   previousSubmissionId = null,
+  existingProductReimbursementAttachment = false,
+  existingProductReimbursementAttachmentMeta = null,
+  existingReferencePoAttachment = null,
   onSubmit,
   submitEnabled = false,
 }: Props) {
   const formRef = useRef<HTMLFormElement | null>(null);
   const previousBillingBrandRef = useRef("");
+  const gstAddressSnapshotRef = useRef<Pick<InvoiceIntakeFormValues, "addressLine" | "city" | "state" | "country" | "pincode"> | null>(null);
   const [values, setValues] = useState<InvoiceIntakeFormValues>({
     ...INITIAL_VALUES,
     submitterName,
@@ -193,8 +227,10 @@ export function InvoiceIntakeForm({
   });
   const [productReimbursementFiles, setProductReimbursementFiles] = useState<Record<string, File | null>>({});
   const [productReimbursementErrors, setProductReimbursementErrors] = useState<Record<string, string>>({});
+  const [productReimbursementAttachmentRemoved, setProductReimbursementAttachmentRemoved] = useState(false);
   const [referencePoFile, setReferencePoFile] = useState<File | null>(null);
   const [referencePoError, setReferencePoError] = useState('');
+  const [referencePoAttachmentRemoved, setReferencePoAttachmentRemoved] = useState(false);
   const [masters, setMasters] = useState<FormDropdownMasterData>(getFallbackMasterData);
   const lockedBusinessLine = currentUserRole === 'employee' && currentUserBusinessLine ? currentUserBusinessLine : null;
 
@@ -222,8 +258,11 @@ export function InvoiceIntakeForm({
     }));
     setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
     setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+    gstAddressSnapshotRef.current = null;
     setFieldErrors({});
     setHasInteracted(false);
+    setProductReimbursementAttachmentRemoved(false);
+    setReferencePoAttachmentRemoved(false);
   }, [initialValues, submitterEmail, submitterName]);
 
   useEffect(() => {
@@ -394,20 +433,34 @@ export function InvoiceIntakeForm({
   }, [values.agencyBrandName, values.billingBrandName, values.entityType]);
 
   const totalAmount = useMemo(() => {
-    const commissionValue = parseAmount(values.commission);
-    const reimbursementValue = values.reimbursementIncluded === "yes" ? parseAmount(values.reimbursementAmount) : 0;
+    const legacyReimbursementValue =
+      values.reimbursementIncluded === "yes" ? parseAmount(values.reimbursementAmount) : 0;
 
     if (values.businessLine === "TM" && values.entryType === "SC") {
-      const total = sumAmounts(values.scDeliverables.map((row) => row.amount)) + commissionValue + reimbursementValue;
-      return total > 0 ? String(total) : "";
+      const reimbursementValue = sumProductReimbursementRowAmounts(values.scDeliverables) || String(legacyReimbursementValue || "");
+      return addDecimalAmounts([sumNonReimbursementRowAmounts(values.scDeliverables), reimbursementValue, values.commission]);
     }
     if (values.businessLine === "TM" && values.entryType === "MC") {
-      const total = sumAmounts(values.mcRows.map((row) => row.amount)) + commissionValue + reimbursementValue;
-      return total > 0 ? String(total) : "";
+      const reimbursementValue = sumProductReimbursementRowAmounts(values.mcRows) || String(legacyReimbursementValue || "");
+      return addDecimalAmounts([sumNonReimbursementRowAmounts(values.mcRows), reimbursementValue, values.commission]);
     }
-    const imTotal = parseAmount(values.imCommercials) + commissionValue + reimbursementValue;
-    return imTotal > 0 ? String(imTotal) : "";
-  }, [values.businessLine, values.entryType, values.imCommercials, values.mcRows, values.scDeliverables, values.commission, values.reimbursementAmount, values.reimbursementIncluded]);
+    const imDeliverables = [values.campaignDeliverable, ...values.campaignExtraDeliverables];
+    const reimbursementValue = imDeliverables.some(isProductReimbursementDeliverable)
+      ? values.reimbursementAmount
+      : String(legacyReimbursementValue || "");
+    return addDecimalAmounts([values.imCommercials, reimbursementValue, values.commission]);
+  }, [
+    values.businessLine,
+    values.campaignDeliverable,
+    values.campaignExtraDeliverables,
+    values.entryType,
+    values.imCommercials,
+    values.mcRows,
+    values.reimbursementAmount,
+    values.reimbursementIncluded,
+    values.scDeliverables,
+    values.commission,
+  ]);
 
   const agencyOptions = useMemo(() => masters.agencies.map((row) => row.name), [masters.agencies]);
   const agencyTradeNameOptions = useMemo(
@@ -565,23 +618,6 @@ export function InvoiceIntakeForm({
     setError("");
   }
 
-  function clearMappedGstAndAddress() {
-    setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
-    setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
-    setValues((prev) => ({
-      ...prev,
-      gstSelectionMode: "existing",
-      gstNumber: "",
-      addressLine: "",
-      city: "",
-      state: "",
-      country: prev.clientType === "Indian" ? "India" : "",
-      pincode: "",
-    }));
-    clearErrors(["gstNumber", "addressLine", "city", "state", "country", "pincode"]);
-    setError("");
-  }
-
   function handleEntityNameSelect(next: string) {
     if (!next.trim()) {
       setHasInteracted(true);
@@ -681,6 +717,7 @@ export function InvoiceIntakeForm({
     const mapped = gstMappingByNumber[next.trim().toUpperCase()];
 
     if (!mapped) {
+      gstAddressSnapshotRef.current = null;
       setValues((prev) => ({
         ...prev,
         gstSelectionMode: "new",
@@ -694,15 +731,20 @@ export function InvoiceIntakeForm({
     setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
     setAutoFilledLocation({ city: true, state: true, country: true, pincode: true });
     setHasInteracted(true);
+    const inferredMappedAddress = inferAddressData(mapped.address, values.clientType);
+    const nextAddress = {
+      addressLine: mapped.address,
+      city: mapped.city || inferredMappedAddress.city,
+      state: mapped.state || inferredMappedAddress.state,
+      country: mapped.country || inferredMappedAddress.country || 'India',
+      pincode: mapped.pincode || inferredMappedAddress.pincode,
+    };
+    gstAddressSnapshotRef.current = nextAddress;
     setValues((prev) => ({
       ...prev,
       gstSelectionMode: "existing",
       gstNumber: mapped.gstNumber,
-      addressLine: mapped.address,
-      city: mapped.city || prev.city,
-      state: mapped.state || prev.state,
-      country: mapped.country || prev.country || 'India',
-      pincode: mapped.pincode || prev.pincode,
+      ...nextAddress,
     }));
     clearErrors(["gstNumber", "addressLine", "city", "state", "country", "pincode"]);
     setError("");
@@ -710,11 +752,40 @@ export function InvoiceIntakeForm({
 
   function handleGstClear() {
     setHasInteracted(true);
-    clearMappedGstAndAddress();
+    setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+    setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+    setValues((prev) => {
+      const snapshot = gstAddressSnapshotRef.current;
+      const addressStillFromGst = snapshot !== null &&
+        prev.addressLine === snapshot.addressLine &&
+        prev.city === snapshot.city &&
+        prev.state === snapshot.state &&
+        prev.country === snapshot.country &&
+        prev.pincode === snapshot.pincode;
+
+      return {
+        ...prev,
+        gstSelectionMode: "existing",
+        gstNumber: "",
+        ...(addressStillFromGst
+          ? {
+              addressLine: "",
+              city: "",
+              state: "",
+              country: prev.clientType === "Indian" ? "India" : "",
+              pincode: "",
+            }
+          : {}),
+      };
+    });
+    gstAddressSnapshotRef.current = null;
+    clearErrors(["gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+    setError("");
   }
 
   function handleAddNewGstSelect() {
     setHasInteracted(true);
+    gstAddressSnapshotRef.current = null;
     setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
     setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
     setValues((prev) => ({
@@ -804,7 +875,14 @@ export function InvoiceIntakeForm({
   function removeScDeliverable(index: number) {
     setValues((prev) => ({
       ...prev,
-      scDeliverables: prev.scDeliverables.length === 1 ? prev.scDeliverables : prev.scDeliverables.filter((_, i) => i !== index),
+      ...(() => {
+        const nextRows = prev.scDeliverables.length === 1 ? prev.scDeliverables : prev.scDeliverables.filter((_, i) => i !== index);
+        const hasProductReimbursement = nextRows.some((row) => isProductReimbursementDeliverable(row.deliverable));
+        return {
+          scDeliverables: nextRows,
+          ...(hasProductReimbursement ? {} : { reimbursementIncluded: "no" as const, reimbursementAmount: "0", reimbursementProof: "" }),
+        };
+      })(),
     }));
     clearErrors([`scDeliverables.${index}.deliverable`, `scDeliverables.${index}.amount`, "creatorDeliverables"]);
   }
@@ -812,15 +890,22 @@ export function InvoiceIntakeForm({
   function patchScDeliverable(index: number, patch: { deliverable?: string; amount?: string }) {
     setValues((prev) => ({
       ...prev,
-      scDeliverables: prev.scDeliverables.map((item, i) =>
-        i === index
-          ? {
-              ...item,
-              ...patch,
-              ...(patch.amount !== undefined ? { amount: sanitizeDecimalInput(patch.amount) } : {}),
-            }
-          : item
-      ),
+      ...(() => {
+        const nextRows = prev.scDeliverables.map((item, i) =>
+          i === index
+            ? {
+                ...item,
+                ...patch,
+                ...(patch.amount !== undefined ? { amount: sanitizeDecimalInput(patch.amount) } : {}),
+              }
+            : item
+        );
+        const hasProductReimbursement = nextRows.some((row) => isProductReimbursementDeliverable(row.deliverable));
+        return {
+          scDeliverables: nextRows,
+          ...(hasProductReimbursement ? {} : { reimbursementIncluded: "no" as const, reimbursementAmount: "0", reimbursementProof: "" }),
+        };
+      })(),
     }));
     clearErrors([`scDeliverables.${index}.deliverable`, `scDeliverables.${index}.amount`, "creatorDeliverables"]);
   }
@@ -835,15 +920,21 @@ export function InvoiceIntakeForm({
   function removeMcRow(index: number) {
     setValues((prev) => ({
       ...prev,
-      mcRows: prev.mcRows.length === 1 ? prev.mcRows : prev.mcRows.filter((_, i) => i !== index),
+      ...(() => {
+        const nextRows = prev.mcRows.length === 1 ? prev.mcRows : prev.mcRows.filter((_, i) => i !== index);
+        const hasProductReimbursement = nextRows.some((row) => isProductReimbursementDeliverable(row.deliverable));
+        return {
+          mcRows: nextRows,
+          ...(hasProductReimbursement ? {} : { reimbursementIncluded: "no" as const, reimbursementAmount: "0", reimbursementProof: "" }),
+        };
+      })(),
     }));
     clearErrors([`mcRows.${index}.creator`, `mcRows.${index}.brand`, `mcRows.${index}.deliverable`, `mcRows.${index}.amount`, "creatorDeliverables"]);
   }
 
   function patchMcRow(index: number, patch: { creator?: string; brand?: string; deliverable?: string; amount?: string }) {
-    setValues((prev) => ({
-      ...prev,
-      mcRows: prev.mcRows.map((item, i) => {
+    setValues((prev) => {
+      const nextRows = prev.mcRows.map((item, i) => {
         const nextPatch =
           patch.brand !== undefined
             ? { ...patch, brand: patch.brand }
@@ -858,8 +949,14 @@ export function InvoiceIntakeForm({
               ...(nextPatch.amount !== undefined ? { amount: sanitizeDecimalInput(nextPatch.amount) } : {}),
             }
           : item;
-      }),
-    }));
+      });
+      const hasProductReimbursement = nextRows.some((row) => isProductReimbursementDeliverable(row.deliverable));
+      return {
+        ...prev,
+        mcRows: nextRows,
+        ...(hasProductReimbursement ? {} : { reimbursementIncluded: "no" as const, reimbursementAmount: "0", reimbursementProof: "" }),
+      };
+    });
     clearErrors([`mcRows.${index}.creator`, `mcRows.${index}.brand`, `mcRows.${index}.deliverable`, `mcRows.${index}.amount`, "creatorDeliverables"]);
   }
 
@@ -926,10 +1023,9 @@ export function InvoiceIntakeForm({
       return keys;
     }
 
-    if (nextValues.campaignDeliverable === "Product Reimbursement") keys.push("campaign-0");
-    nextValues.campaignExtraDeliverables.forEach((deliverable, index) => {
-      if (deliverable === "Product Reimbursement") keys.push(`campaign-${index + 1}`);
-    });
+    if ([nextValues.campaignDeliverable, ...nextValues.campaignExtraDeliverables].some(isProductReimbursementDeliverable)) {
+      keys.push("campaign-0");
+    }
     return keys;
   }
 
@@ -966,6 +1062,7 @@ export function InvoiceIntakeForm({
       return next;
     });
     setProductReimbursementFiles(() => (file ? { [key]: file } : { [key]: null }));
+    if (file) setProductReimbursementAttachmentRemoved(false);
   }
 
   function onReferencePoFileChange(_key: string, file: File | null) {
@@ -978,6 +1075,21 @@ export function InvoiceIntakeForm({
 
     setReferencePoError('');
     setReferencePoFile(file);
+    if (file) setReferencePoAttachmentRemoved(false);
+  }
+
+  async function openExistingAttachment(attachment: ExistingInvoiceAttachment) {
+    try {
+      const res = await fetch(`/api/submissions/attachments/${attachment.id}/signed-url`, {
+        method: 'GET',
+        cache: 'no-store',
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.url) throw new Error(body?.error || 'Unable to open attachment.');
+      window.open(body.url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to open attachment.');
+    }
   }
 
   function validateForm(nextValues: InvoiceIntakeFormValues) {
@@ -1089,8 +1201,13 @@ export function InvoiceIntakeForm({
 
     if (hasProductReimbursement) {
       const visibleKeys = getVisibleProductReimbursementKeys(nextValues);
-      const hasFile = visibleKeys.some((key) => Boolean(productReimbursementFiles[key]));
+      const hasFile =
+        visibleKeys.some((key) => Boolean(productReimbursementFiles[key])) ||
+        (existingProductReimbursementAttachment && !productReimbursementAttachmentRemoved);
       const hasFileError = visibleKeys.some((key) => Boolean(productReimbursementErrors[key]));
+      if (nextValues.businessLine === "IM" && !(parseAmount(nextValues.reimbursementAmount) > 0)) {
+        errors.reimbursementAmount = "Product Reimbursement amount is required.";
+      }
       if (!hasFile) {
         errors.creatorDeliverables = errors.creatorDeliverables || "Upload a Product Reimbursement document before submitting.";
         visibleKeys.forEach((key) => {
@@ -1161,6 +1278,16 @@ export function InvoiceIntakeForm({
 
   function buildPayload(): InvoiceIntakeSubmissionPayload {
     const imDeliverables = [values.campaignDeliverable, ...values.campaignExtraDeliverables].filter(Boolean);
+    const legacyReimbursementValue =
+      values.reimbursementIncluded === "yes" ? parseAmount(values.reimbursementAmount) : 0;
+    const productReimbursementAmount =
+      values.businessLine === "TM" && values.entryType === "SC"
+        ? sumProductReimbursementRows(values.scDeliverables) || legacyReimbursementValue
+        : values.businessLine === "TM" && values.entryType === "MC"
+          ? sumProductReimbursementRows(values.mcRows) || legacyReimbursementValue
+          : imDeliverables.some(isProductReimbursementDeliverable)
+            ? parseAmount(values.reimbursementAmount)
+            : legacyReimbursementValue;
     const deliverables =
       values.businessLine === "TM" && values.entryType === "SC"
         ? values.scDeliverables.map((row) => row.deliverable).filter(Boolean).join(", ")
@@ -1216,18 +1343,10 @@ export function InvoiceIntakeForm({
               creator_name: null,
               brand_name: values.campaignBrand || brandName || null,
               deliverable_name: deliverable || null,
-              amount: 0,
+              amount: isProductReimbursementDeliverable(deliverable) ? productReimbursementAmount : 0,
               line_order: idx,
             }));
 
-    const rowProductReimbursement =
-      values.businessLine === "TM" && values.entryType === "SC"
-        ? sumProductReimbursementRows(values.scDeliverables)
-        : values.businessLine === "TM" && values.entryType === "MC"
-          ? sumProductReimbursementRows(values.mcRows)
-          : 0;
-    const explicitProductReimbursement = values.reimbursementIncluded === "yes" ? parseAmount(values.reimbursementAmount) : 0;
-    const reimbursementAmount = rowProductReimbursement + explicitProductReimbursement;
     const commercials =
       values.businessLine === "IM"
         ? parseAmount(values.imCommercials)
@@ -1245,7 +1364,13 @@ export function InvoiceIntakeForm({
       agency_brand_trade_name: values.agencyBrandTradeName,
       email_address: values.submitterEmail,
       gst_number: values.clientType === "Indian" ? normalizeGstNumber(values.gstNumber) : "",
-      address: values.addressLine.trim(),
+      address: serializeBillingAddress({
+        addressLine: values.addressLine,
+        city: values.city,
+        state: values.state,
+        country: values.country,
+        pincode: values.pincode,
+      }),
       city: values.city,
       state: values.state,
       country: values.country,
@@ -1260,7 +1385,7 @@ export function InvoiceIntakeForm({
       commercials,
       additional_information: values.additionalInformation,
       additional_agency_commission: parseAmount(values.commission),
-      reimbursement_amount: reimbursementAmount,
+      reimbursement_amount: productReimbursementAmount,
       reimbursement_receipts: values.reimbursementIncluded === "yes" ? values.reimbursementProof : "",
       line_items: lineItems,
       campaign_code: values.businessLine === "IM" ? values.campaignCode : "",
@@ -1296,6 +1421,11 @@ export function InvoiceIntakeForm({
       await onSubmit({
         payload,
         files: { productReimbursementFile, referencePoFile },
+        existingProductReimbursementAttachment,
+        retainProductReimbursementAttachment: Boolean(existingProductReimbursementAttachmentMeta && !productReimbursementFile && !productReimbursementAttachmentRemoved),
+        removeProductReimbursementAttachment: productReimbursementAttachmentRemoved,
+        retainReferencePoAttachment: Boolean(existingReferencePoAttachment && !referencePoFile && !referencePoAttachmentRemoved),
+        removeReferencePoAttachment: referencePoAttachmentRemoved,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submit failed.");
@@ -1314,9 +1444,12 @@ export function InvoiceIntakeForm({
     setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
     setProductReimbursementFiles({});
     setProductReimbursementErrors({});
+    setProductReimbursementAttachmentRemoved(false);
     setReferencePoFile(null);
     setReferencePoError('');
+    setReferencePoAttachmentRemoved(false);
     previousBillingBrandRef.current = "";
+    gstAddressSnapshotRef.current = null;
     setFieldErrors({});
     setActiveField("submitterName");
     setHasInteracted(false);
@@ -1461,6 +1594,14 @@ export function InvoiceIntakeForm({
         getProductReimbursementFile={getProductReimbursementFile}
         getProductReimbursementError={getProductReimbursementError}
         onProductReimbursementFileChange={onProductReimbursementFileChange}
+        existingProductReimbursementAttachment={existingProductReimbursementAttachmentMeta}
+        productReimbursementAttachmentRemoved={productReimbursementAttachmentRemoved}
+        onViewExistingProductReimbursementAttachment={openExistingAttachment}
+        onRemoveExistingProductReimbursementAttachment={() => {
+          setProductReimbursementAttachmentRemoved(true);
+          setProductReimbursementFiles({});
+        }}
+        onRetainExistingProductReimbursementAttachment={() => setProductReimbursementAttachmentRemoved(false)}
         onPatchScCreator={patchScCreator}
         onPatchMcCreator={patchMcCreator}
       />
@@ -1469,7 +1610,16 @@ export function InvoiceIntakeForm({
         values={values}
         referencePoFile={referencePoFile}
         referencePoError={referencePoError}
+        existingReferencePoAttachment={existingReferencePoAttachment}
+        referencePoAttachmentRemoved={referencePoAttachmentRemoved}
         onReferencePoFileChange={onReferencePoFileChange}
+        onViewExistingReferencePoAttachment={openExistingAttachment}
+        onRemoveExistingReferencePoAttachment={() => {
+          setReferencePoAttachmentRemoved(true);
+          setReferencePoFile(null);
+          setReferencePoError('');
+        }}
+        onRetainExistingReferencePoAttachment={() => setReferencePoAttachmentRemoved(false)}
         onChange={update}
         errors={visibleFieldErrors}
       />

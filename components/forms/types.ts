@@ -140,6 +140,13 @@ export type InvoiceIntakeSubmissionPayload = {
   }>;
 };
 
+export type ExistingInvoiceAttachment = {
+  id: string;
+  documentType: string;
+  fileName: string;
+  fileSizeBytes: number;
+  mimeType: string;
+};
 
 export type InvoiceIntakeFormSubmitInput = {
   payload: InvoiceIntakeSubmissionPayload;
@@ -147,4 +154,9 @@ export type InvoiceIntakeFormSubmitInput = {
     productReimbursementFile?: File | null;
     referencePoFile?: File | null;
   };
+  existingProductReimbursementAttachment?: boolean;
+  retainProductReimbursementAttachment?: boolean;
+  removeProductReimbursementAttachment?: boolean;
+  retainReferencePoAttachment?: boolean;
+  removeReferencePoAttachment?: boolean;
 };

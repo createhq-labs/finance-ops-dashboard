@@ -318,7 +318,9 @@ export function SearchableSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span className="intake-select-trigger-label" title={showPlaceholder ? placeholder : triggerLabel}>{showPlaceholder ? placeholder : triggerLabel}</span>
+        <span className="intake-select-trigger-label" title={showPlaceholder ? placeholder : triggerLabel}>
+          {showPlaceholder ? placeholder : triggerLabel}
+        </span>
         {clearable && value && !disabled ? (
           <span
             role="button"

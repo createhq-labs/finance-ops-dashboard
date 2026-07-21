@@ -91,6 +91,122 @@ function extractLastPincode(text: string) {
   return matches.length > 0 ? matches[matches.length - 1][1] : "";
 }
 
+function cleanAddressComponent(value: string | null | undefined) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").replace(/^"+|"+$/g, "");
+}
+
+function normalizeAddressPart(value: string) {
+  return cleanAddressComponent(value).toLowerCase();
+}
+
+function looksLikePostalCode(value: string, clientType: "Indian" | "Foreign") {
+  const text = cleanAddressComponent(value);
+  if (!text) return false;
+  if (clientType === "Indian") return /^\d{6}$/.test(text);
+  return /\d/.test(text) && /^[a-zA-Z0-9][a-zA-Z0-9\s-]{1,14}$/.test(text);
+}
+
+function readTrailingLocationGroup(commaParts: string[], clientType: "Indian" | "Foreign") {
+  if (commaParts.length < 4) return null;
+
+  const lastPart = commaParts[commaParts.length - 1] ?? "";
+  const hasPostalCode = looksLikePostalCode(lastPart, clientType);
+  const groupSize = hasPostalCode ? 4 : 3;
+  if (commaParts.length <= groupSize) return null;
+
+  const start = commaParts.length - groupSize;
+  const groupParts = commaParts.slice(start);
+  if (groupParts.some((part) => !part)) return null;
+
+  return {
+    start,
+    groupSize,
+    city: groupParts[0] ?? "",
+    state: groupParts[1] ?? "",
+    country: groupParts[2] ?? "",
+    pincode: hasPostalCode ? groupParts[3] ?? "" : "",
+    groupParts,
+  };
+}
+
+function findFirstRepeatedTrailingGroupStart(commaParts: string[], groupStart: number, groupParts: string[]) {
+  const normalizedGroup = groupParts.map(normalizeAddressPart);
+  let firstStart = groupStart;
+  let candidateStart = groupStart - groupParts.length;
+
+  while (candidateStart >= 0) {
+    const candidate = commaParts.slice(candidateStart, candidateStart + groupParts.length).map(normalizeAddressPart);
+    const isSameGroup = normalizedGroup.every((part, index) => part === candidate[index]);
+    if (!isSameGroup) break;
+    firstStart = candidateStart;
+    candidateStart -= groupParts.length;
+  }
+
+  return firstStart;
+}
+
+export type BillingAddressParts = {
+  addressLine: string;
+  city: string;
+  state: string;
+  country: string;
+  pincode: string;
+};
+
+export function serializeBillingAddress(parts: BillingAddressParts) {
+  return String(parts.addressLine ?? "");
+}
+
+export function parseBillingAddress(address: string | null | undefined, clientType: "Indian" | "Foreign"): BillingAddressParts {
+  const originalAddress = String(address ?? "");
+  const normalizedAddress = cleanAddressComponent(originalAddress);
+  if (!normalizedAddress) {
+    return { addressLine: "", city: "", state: "", country: "", pincode: "" };
+  }
+
+  const commaParts = normalizedAddress
+    .split(",")
+    .map(cleanAddressComponent)
+    .filter(Boolean);
+
+  const trailingLocation = readTrailingLocationGroup(commaParts, clientType);
+  if (trailingLocation) {
+    const addressEnd = findFirstRepeatedTrailingGroupStart(
+      commaParts,
+      trailingLocation.start,
+      trailingLocation.groupParts
+    );
+    const addressLine = commaParts.slice(0, addressEnd).join(", ");
+    if (addressLine) {
+      return {
+        addressLine: originalAddress,
+        city: trailingLocation.city,
+        state: trailingLocation.state,
+        country: trailingLocation.country,
+        pincode: trailingLocation.pincode,
+      };
+    }
+  }
+
+  if (clientType === "Foreign" && commaParts.length === 4 && !commaParts[3]?.match(/\d/)) {
+    return {
+      addressLine: originalAddress,
+      city: commaParts[1] ?? "",
+      state: commaParts[2] ?? "",
+      country: commaParts[3] ?? "",
+      pincode: "",
+    };
+  }
+
+  return {
+    addressLine: originalAddress,
+    city: "",
+    state: "",
+    country: "",
+    pincode: "",
+  };
+}
+
 export function inferAddressData(address: string, clientType: "Indian" | "Foreign") {
   const text = address.trim();
   if (!text) return { city: "", state: "", country: clientType === "Indian" ? "India" : "", pincode: "" };
