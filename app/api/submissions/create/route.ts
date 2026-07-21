@@ -5,7 +5,7 @@ import { logActivityEvent, logSubmissionCreated } from '../../../../lib/server/s
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
 import { createPendingMasterDataReviews } from '../../../../lib/server/services/masterDataReviews';
 import { createFinanceAndAdminSubmissionNotifications, createPendingMasterReviewNotifications } from '../../../../lib/server/services/notifications';
-import { allocateGapFreePiForSubmission, createSubmissionWithLineItems } from '../../../../lib/server/services/submissions';
+import { createSubmissionWithLineItems, shouldSkipPiGeneration } from '../../../../lib/server/services/submissions';
 import {
   uploadProductReimbursementAttachment,
   uploadReferencePoAttachment,
@@ -262,27 +262,8 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    let assignedPiNumber = result.submission.proforma_invoice;
-
-    if (result.pi_allocation_pending) {
-      try {
-        assignedPiNumber = await allocateGapFreePiForSubmission(adminClient, result.submission.id);
-      } catch (piError) {
-        await cleanupFailedSubmission(adminClient, result.submission.id, submissionPayload.previous_submission_id);
-        const message = piError instanceof Error ? piError.message : 'Failed to allocate PI number.';
-        return NextResponse.json(
-          {
-            success: false,
-            stage: 'assign_pi',
-            error: message,
-            sync_status: { supabase: 'failed', sheets: 'pending_sheet_sync' },
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    const resolvedPiNumber = assignedPiNumber ?? 'No PI Required';
+    const assignedPiNumber = result.submission.proforma_invoice;
+    const resolvedPiNumber = assignedPiNumber ?? (shouldSkipPiGeneration(submissionPayload, lineItemsPayload) ? 'No PI Required' : 'PI pending approval');
 
     await runNonCriticalSideEffect('createFinanceAndAdminSubmissionNotifications failed', async () => {
       await createFinanceAndAdminSubmissionNotifications({

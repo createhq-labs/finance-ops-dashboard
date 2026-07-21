@@ -308,7 +308,7 @@ export function BillingEntitySection({
 
             <label className="intake-field">
               <span className="intake-label">Pincode *</span>
-              <input className="intake-input" value={values.pincode} onChange={(event) => onChange("pincode", event.target.value)} onBlur={() => setPincodeTouched(true)} data-field="pincode" required />
+              <input className="intake-input" value={values.pincode} onChange={(event) => onChange("pincode", event.target.value)} onBlur={() => setPincodeTouched(true)} data-field="pincode" required={isIndianClient} />
               <div style={{ minHeight: 16 }}>
                 {errors.pincode ? <p className="text-danger intake-inline-error">{errors.pincode}</p> : null}
                 {!errors.pincode && pincodeTouched && !pincodeValid ? <p className="text-danger intake-inline-error">Enter a valid 6 digit pincode.</p> : null}

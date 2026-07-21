@@ -67,9 +67,9 @@ export function getPiDisplayMeta(input: PiDisplayInput) {
   }
 
   return {
-    label: '—',
-    title: '—',
-    description: '',
+    label: 'PI pending approval',
+    title: 'PI pending approval',
+    description: 'PI will be allocated after finance acceptance',
     isPiNotRequired: false,
   };
 }

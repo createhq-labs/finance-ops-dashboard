@@ -5,6 +5,7 @@ import { getAccessTokenFromCookieHeader } from '../../../../../lib/server/servic
 import { syncFollowUps } from '../../../../../lib/server/services/followUps';
 import { deriveInvoiceStatusDbValue, normalizeInvoiceStatusMachine, toDbInvoiceStatus } from '../../../../../lib/shared/invoice-status';
 import { createEmployeeNotification, createSubmissionReopenedNotifications } from '../../../../../lib/server/services/notifications';
+import { allocateGapFreePiForSubmission, shouldSkipPiGeneration } from '../../../../../lib/server/services/submissions';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../../lib/server/supabase';
 
 type FinanceActionRequest = {
@@ -79,9 +80,26 @@ function normalizeClosureStatus(value: string | null | undefined) {
   return normalized;
 }
 
-function submissionPiLabel(piNumber: string | null | undefined) {
+function submissionPiLabel(piNumber: string | null | undefined, piNotRequired = false) {
   const value = String(piNumber || '').trim();
-  return value || 'No PI Required';
+  if (value) return value;
+  return piNotRequired ? 'No PI Required' : 'PI pending approval';
+}
+
+async function shouldSkipPiForSubmission(adminClient: ReturnType<typeof createServiceClient>, submission: { id: string; invoice_type?: string | null }) {
+  const { data: lineItems, error } = await adminClient
+    .from('intake_line_items')
+    .select('deliverable_name')
+    .eq('submission_id', submission.id);
+
+  if (error) {
+    throw new Error('Failed to inspect PI requirement: ' + error.message);
+  }
+
+  return shouldSkipPiGeneration(
+    { invoice_type: submission.invoice_type ?? '' },
+    (lineItems ?? []).map((item) => ({ deliverable_name: item.deliverable_name ?? null }))
+  );
 }
 
 function invoiceStatusLabel(status: FinanceActionRequest['invoice_status'] | string | null | undefined) {
@@ -128,7 +146,7 @@ export async function POST(req: NextRequest) {
 
     const { data: submission, error: submissionError } = await userClient
       .from('intake_submissions')
-      .select('id, submitted_by, proforma_invoice, agency_brand_name, business_line, financial_year, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closed, closure_status, rejection_note, reviewed_at')
+      .select('id, submitted_by, reviewed_by, proforma_invoice, agency_brand_name, business_line, financial_year, invoice_type, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closed, closure_status, rejection_note, reviewed_at')
       .eq('id', body.submission_id)
       .single();
 
@@ -136,7 +154,8 @@ export async function POST(req: NextRequest) {
       throw new Error(submissionError?.message ?? 'Submission not found');
     }
     const currentSubmission = submission;
-    const submissionLabel = submissionPiLabel(currentSubmission.proforma_invoice);
+    let effectivePiNumber = currentSubmission.proforma_invoice ?? null;
+    let submissionLabel = submissionPiLabel(effectivePiNumber);
     const actorDisplayName = String(((appUser as { full_name?: string | null }).full_name ?? '').trim() || appUser.email);
 
     const patch: Record<string, unknown> = {};
@@ -149,6 +168,7 @@ export async function POST(req: NextRequest) {
     let notificationMessage = '';
     let notificationType: 'submission_rejected' | 'resubmission_requested' | 'submission_reopened' | 'invoice_updated' | null = null;
     let changed = false;
+    let shouldAllocatePiOnAcceptance = false;
 
     function noChange(message: string) {
       return NextResponse.json({
@@ -167,6 +187,7 @@ export async function POST(req: NextRequest) {
           payment_made_status: currentSubmission.payment_made_status,
           closure_status: currentSubmission.closure_status ?? currentSubmission.closed,
           rejection_note: currentSubmission.rejection_note,
+          proforma_invoice: currentSubmission.proforma_invoice,
         },
       });
     }
@@ -192,6 +213,7 @@ export async function POST(req: NextRequest) {
       notificationTitle = 'Submission approved';
       notificationMessage = `${submissionLabel} has been approved by finance.`;
       changed = true;
+      shouldAllocatePiOnAcceptance = true;
     }
 
     if (body.action === 'reject') {
@@ -406,11 +428,48 @@ export async function POST(req: NextRequest) {
       .from('intake_submissions')
       .update(patch)
       .eq('id', body.submission_id)
-      .select('id, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, rejection_note, reviewed_at')
+      .select('id, proforma_invoice, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, rejection_note, reviewed_at')
       .single();
 
     if (updateError || !updated) {
       throw new Error(updateError?.message ?? 'Failed to update submission');
+    }
+
+    if (shouldAllocatePiOnAcceptance) {
+      let piNotRequired = false;
+      try {
+        piNotRequired = await shouldSkipPiForSubmission(adminClient, currentSubmission);
+        if (!effectivePiNumber && !piNotRequired) {
+          effectivePiNumber = await allocateGapFreePiForSubmission(adminClient, currentSubmission.id);
+        }
+      } catch (piError) {
+        const revertPatch = {
+          intake_status: currentSubmission.intake_status,
+          invoice_status: currentSubmission.invoice_status,
+          reviewed_by: currentSubmission.reviewed_by,
+          reviewed_at: currentSubmission.reviewed_at,
+          rejection_note: currentSubmission.rejection_note,
+          finance_comment: currentSubmission.finance_comment,
+        };
+        const { error: rollbackError } = await adminClient
+          .from('intake_submissions')
+          .update(revertPatch)
+          .eq('id', currentSubmission.id)
+          .is('proforma_invoice', null);
+
+        if (rollbackError) {
+          console.error('Failed to roll back accepted status after PI allocation failure', {
+            submissionId: currentSubmission.id,
+            error: rollbackError.message,
+          });
+        }
+
+        const message = piError instanceof Error ? piError.message : 'Failed to allocate PI number.';
+        throw new Error(message);
+      }
+
+      submissionLabel = submissionPiLabel(effectivePiNumber, piNotRequired);
+      notificationMessage = `${submissionLabel} has been approved by finance.`;
     }
 
     const activityEntries: Array<{
@@ -431,7 +490,7 @@ export async function POST(req: NextRequest) {
         action: 'finance_review_started',
         details: {
           message: `Finance review started for ${submissionLabel}.`,
-          pi_number: currentSubmission.proforma_invoice,
+          pi_number: effectivePiNumber,
           business_line: currentSubmission.business_line ?? null,
         },
         structured: {
@@ -441,7 +500,7 @@ export async function POST(req: NextRequest) {
           entity_type: 'submission',
           entity_id: body.submission_id,
           metadata: {
-            pi_number: currentSubmission.proforma_invoice,
+            pi_number: effectivePiNumber,
             business_line: currentSubmission.business_line ?? null,
             actor_role: appUser.role,
             actor_name: actorDisplayName,
@@ -497,7 +556,7 @@ export async function POST(req: NextRequest) {
             entity_type: 'submission',
             entity_id: body.submission_id,
             metadata: {
-              pi_number: currentSubmission.proforma_invoice,
+              pi_number: effectivePiNumber,
               business_line: currentSubmission.business_line ?? null,
               old_value: event.oldValue,
               new_value: event.newValue,
@@ -529,7 +588,7 @@ export async function POST(req: NextRequest) {
             entity_type: 'submission',
             entity_id: body.submission_id,
             metadata: {
-              pi_number: currentSubmission.proforma_invoice,
+              pi_number: effectivePiNumber,
               submission_id: body.submission_id,
               actor_role: appUser.role,
               previous_intake_status: submission.intake_status,
@@ -567,7 +626,7 @@ export async function POST(req: NextRequest) {
           entity_type: 'submission',
           entity_id: body.submission_id,
           metadata: {
-            pi_number: currentSubmission.proforma_invoice,
+            pi_number: effectivePiNumber,
             submission_id: body.submission_id,
             actor_role: appUser.role,
             actor_name: actorDisplayName,
@@ -624,6 +683,7 @@ export async function POST(req: NextRequest) {
       changed: true,
       submission: {
         ...updated,
+        proforma_invoice: effectivePiNumber,
         invoice_status: deriveNextInvoiceStatusDbValue(updated),
       },
     }, { status: 200 });
