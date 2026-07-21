@@ -957,6 +957,8 @@ h3 {
   min-width: 0;
   max-width: 100%;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   isolation: isolate;
 }
 
@@ -980,6 +982,8 @@ h3 {
   text-align: left;
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, border-radius 0.2s ease, background 0.2s ease;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .intake-select-trigger:hover:not(:disabled) {
@@ -1016,6 +1020,11 @@ h3 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.intake-currency-select .intake-select-trigger {
+  gap: 4px;
+  padding-inline: 8px;
 }
 
 .intake-select-validation-input {
@@ -1401,6 +1410,15 @@ h3 {
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.05fr) minmax(0, 1fr) minmax(120px, 0.7fr) auto;
 }
 
+.intake-row-grid-multi-currency {
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.05fr) 76px minmax(180px, 1.25fr) minmax(112px, 0.8fr) 96px;
+}
+
+.intake-row-grid-multi > *,
+.intake-row-grid-multi-currency > * {
+  min-width: 0;
+}
+
 .intake-row-grid-multi.intake-row-grid-foreign {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 58px minmax(0, 1.45fr) minmax(120px, 0.8fr) 96px !important;
@@ -1639,6 +1657,7 @@ h3 {
   .intake-form-grid,
   .intake-row-grid,
   .intake-row-grid-multi,
+  .intake-row-grid-multi-currency,
   .settings-layout {
     grid-template-columns: 1fr;
   }

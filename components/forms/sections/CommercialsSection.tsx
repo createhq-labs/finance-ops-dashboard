@@ -49,7 +49,7 @@ export function CommercialsSection({ values, totalAmount, onChange, errors = {} 
               className="intake-input"
               type={isInfluencerMarketing ? "number" : "text"}
               inputMode={isInfluencerMarketing ? "decimal" : undefined}
-              step={isInfluencerMarketing ? "0.01" : undefined}
+              step={isInfluencerMarketing ? "any" : undefined}
               min={isInfluencerMarketing ? "0" : undefined}
               value={isInfluencerMarketing ? values.imCommercials : totalAmount}
               readOnly={!isInfluencerMarketing}
@@ -69,7 +69,7 @@ export function CommercialsSection({ values, totalAmount, onChange, errors = {} 
               className="intake-input"
               type="number"
               inputMode="decimal"
-              step="0.01"
+              step="any"
               min="0"
               value={values.commission}
               onChange={(e) => onChange("commission", e.target.value)}

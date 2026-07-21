@@ -13,6 +13,11 @@ type CreateSubmissionResult =
       error: string;
     };
 
+export type ResolvedPreviousSubmissionForCreate = {
+  id: string;
+  proforma_invoice: string | null;
+};
+
 function getFinancialYearLabel(sourceDate: string | Date | null | undefined) {
   const fallbackDate = new Date();
   const parsedDate = sourceDate ? new Date(sourceDate) : fallbackDate;
@@ -50,8 +55,9 @@ export async function createSubmissionWithLineItems(params: {
   appUser: AppUser;
   submissionPayload: SanitizedSubmissionPayload;
   lineItemsPayload: SanitizedLineItemPayload[];
+  resolvedPreviousSubmission?: ResolvedPreviousSubmissionForCreate | null;
 }): Promise<CreateSubmissionResult> {
-  const { userClient, adminClient, appUser, submissionPayload, lineItemsPayload } = params;
+  const { userClient, adminClient, appUser, submissionPayload, lineItemsPayload, resolvedPreviousSubmission = null } = params;
   const dbSubmissionPayload = Object.fromEntries(
     Object.entries(submissionPayload).filter(
       ([key]) => key !== 'city' && key !== 'state' && key !== 'country' && key !== 'pincode'
@@ -63,52 +69,16 @@ export async function createSubmissionWithLineItems(params: {
   let previousSubmissionId: string | null = null;
 
   if (submissionPayload.previous_submission_id) {
-    previousSubmissionId = submissionPayload.previous_submission_id;
-    const { data: previousSubmission, error: previousError } = await adminClient
-      .from('intake_submissions')
-      .select('id, proforma_invoice, is_latest_version')
-      .eq('id', previousSubmissionId)
-      .maybeSingle();
-
-    if (previousError) {
+    if (!resolvedPreviousSubmission?.id || resolvedPreviousSubmission.id !== submissionPayload.previous_submission_id) {
       return {
         success: false,
         stage: 'fetch_previous_submission',
-        error: previousError.message,
+        error: 'Validated previous submission is required for resubmission',
       };
     }
 
-    if (!previousSubmission) {
-      return {
-        success: false,
-        stage: 'fetch_previous_submission',
-        error: 'Previous submission not found for resubmission',
-      };
-    }
-
-    carryForwardPi = previousSubmission.proforma_invoice ?? null;
-
-    if (!previousSubmission.is_latest_version && carryForwardPi) {
-      const { data: latestSubmission, error: latestError } = await adminClient
-        .from('intake_submissions')
-        .select('id, proforma_invoice')
-        .eq('proforma_invoice', carryForwardPi)
-        .eq('is_latest_version', true)
-        .maybeSingle();
-
-      if (latestError) {
-        return {
-          success: false,
-          stage: 'fetch_previous_submission',
-          error: latestError.message,
-        };
-      }
-
-      if (latestSubmission?.id) {
-        previousSubmissionId = String(latestSubmission.id);
-        carryForwardPi = latestSubmission.proforma_invoice ?? carryForwardPi;
-      }
-    }
+    previousSubmissionId = resolvedPreviousSubmission.id;
+    carryForwardPi = resolvedPreviousSubmission.proforma_invoice ?? null;
 
     const { error: supersedeError } = await adminClient
       .from('intake_submissions')

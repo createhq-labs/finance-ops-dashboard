@@ -1,12 +1,17 @@
 import { useEffect, useRef } from "react";
 import { AttachmentUploadField } from "../invoice-line-items";
-import type { InvoiceIntakeFormValues } from "../types";
+import type { ExistingInvoiceAttachment, InvoiceIntakeFormValues } from "../types";
 
 type Props = {
   values: InvoiceIntakeFormValues;
   referencePoFile: File | null;
   referencePoError?: string;
+  existingReferencePoAttachment?: ExistingInvoiceAttachment | null;
+  referencePoAttachmentRemoved?: boolean;
   onReferencePoFileChange: (key: string, file: File | null) => void;
+  onViewExistingReferencePoAttachment?: (attachment: ExistingInvoiceAttachment) => void;
+  onRemoveExistingReferencePoAttachment?: () => void;
+  onRetainExistingReferencePoAttachment?: () => void;
   onChange: <K extends keyof InvoiceIntakeFormValues>(key: K, value: InvoiceIntakeFormValues[K]) => void;
   errors?: Record<string, string>;
 };
@@ -15,7 +20,12 @@ export function AdditionalInfoSection({
   values,
   referencePoFile,
   referencePoError = "",
+  existingReferencePoAttachment = null,
+  referencePoAttachmentRemoved = false,
   onReferencePoFileChange,
+  onViewExistingReferencePoAttachment,
+  onRemoveExistingReferencePoAttachment,
+  onRetainExistingReferencePoAttachment,
   onChange,
   errors = {},
 }: Props) {
@@ -97,6 +107,11 @@ export function AdditionalInfoSection({
                 onChange={onReferencePoFileChange}
                 titleText="Attach reference PO file"
                 helperText="PDF, PNG, JPG, or WEBP. Max 10 MB."
+                existingAttachment={existingReferencePoAttachment}
+                existingAttachmentRemoved={referencePoAttachmentRemoved}
+                onViewExistingAttachment={onViewExistingReferencePoAttachment}
+                onRemoveExistingAttachment={onRemoveExistingReferencePoAttachment}
+                onRetainExistingAttachment={onRetainExistingReferencePoAttachment}
               />
             </div>
           </div>
