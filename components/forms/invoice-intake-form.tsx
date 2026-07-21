@@ -209,7 +209,7 @@ export function InvoiceIntakeForm({
     submitterEmail,
   });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [activeField, setActiveField] = useState<string>("submitterName");
+  const [, setActiveField] = useState<string>("submitterName");
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
@@ -1222,27 +1222,16 @@ export function InvoiceIntakeForm({
   }
 
 
-  function isDeliverableFieldKey(key: string | null) {
-    if (!key) return false;
-    return key === "campaignDeliverable" || key.startsWith("campaignExtraDeliverables.") || key.includes(".deliverable") || key.startsWith("sc-") || key.startsWith("mc-") || key.startsWith("campaign-");
-  }
-
   const visibleFieldErrors = useMemo(() => {
     const next: Record<string, string> = {};
 
     Object.entries(fieldErrors).forEach(([key, message]) => {
       if (!message) return;
-      if (key === activeField) {
-        next[key] = message;
-        return;
-      }
-      if (key === "creatorDeliverables" && isDeliverableFieldKey(activeField)) {
-        next[key] = message;
-      }
+      next[key] = message;
     });
 
     return next;
-  }, [activeField, fieldErrors]);
+  }, [fieldErrors]);
 
   function focusFirstInvalid(nextErrors: Record<string, string>) {
     const form = formRef.current;
@@ -1462,6 +1451,7 @@ export function InvoiceIntakeForm({
       onSubmit={handleSubmit}
       className="intake-form"
       autoComplete="off"
+      noValidate
       onFocusCapture={(event) => {
         const target = event.target as HTMLElement | null;
         const field = target?.closest?.("[data-field]") as HTMLElement | null;

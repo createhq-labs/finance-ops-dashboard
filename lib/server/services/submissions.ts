@@ -34,7 +34,10 @@ function normalizeComparison(value: string | null | undefined) {
     .replace(/\s+/g, ' ');
 }
 
-function shouldSkipPiGeneration(submissionPayload: SanitizedSubmissionPayload, lineItemsPayload: SanitizedLineItemPayload[]) {
+export function shouldSkipPiGeneration(
+  submissionPayload: Pick<SanitizedSubmissionPayload, 'invoice_type'>,
+  lineItemsPayload: Array<Pick<SanitizedLineItemPayload, 'deliverable_name'>>
+) {
   // Audited against the current schema/payload: invoice_type is a structured submission field,
   // and Product Reimbursement arrives through intake_line_items.deliverable_name.
   if (normalizeComparison(submissionPayload.invoice_type) !== normalizeComparison('Reimbursement Invoice (Without GST)')) {
@@ -104,7 +107,7 @@ export async function createSubmissionWithLineItems(params: {
     ...(submissionPayload.previous_submission_id
       ? { proforma_invoice: carryForwardPi ?? null }
       : {
-          // New submissions stay PI-null until the final gap-free transactional allocation step.
+          // New submissions stay PI-null until finance acceptance allocates a gap-free PI.
           proforma_invoice: null,
         }),
   };
