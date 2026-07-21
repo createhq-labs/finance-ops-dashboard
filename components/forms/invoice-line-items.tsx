@@ -1,7 +1,8 @@
 import { Eye, File, FileImage, FileText, Paperclip, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DeliverableAmountRow, MultiCreatorRow } from "./types";
+import type { DeliverableAmountRow, ExistingInvoiceAttachment, MultiCreatorRow } from "./types";
 import { CURRENCY_OPTIONS, CURRENCY_SEARCH_TEXT_BY_OPTION } from "../../lib/shared/currency";
+import { formatAttachmentSize } from "../../lib/shared/submission-attachments";
 import { SearchableSelect } from "./searchable-select";
 
 function CurrencyField({
@@ -19,6 +20,7 @@ function CurrencyField({
         onChange={onChange}
         placeholder="INR"
         dataField="currency"
+        className="intake-currency-select"
         searchTextByOption={CURRENCY_SEARCH_TEXT_BY_OPTION}
       />
       <div style={{ minHeight: 16 }} />
@@ -69,6 +71,12 @@ export function AttachmentUploadField({
   helperText = 'PDF, PNG, JPG, or WEBP. Max 10 MB.',
   titleText = 'Attach reimbursement document',
   formError = '',
+  existingAttachment = null,
+  existingAttachmentRemoved = false,
+  existingAttachmentRequired = false,
+  onViewExistingAttachment,
+  onRemoveExistingAttachment,
+  onRetainExistingAttachment,
 }: {
   fieldKey: string;
   file: File | null;
@@ -77,6 +85,12 @@ export function AttachmentUploadField({
   helperText?: string;
   titleText?: string;
   formError?: string;
+  existingAttachment?: ExistingInvoiceAttachment | null;
+  existingAttachmentRemoved?: boolean;
+  existingAttachmentRequired?: boolean;
+  onViewExistingAttachment?: (attachment: ExistingInvoiceAttachment) => void;
+  onRemoveExistingAttachment?: () => void;
+  onRetainExistingAttachment?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -101,7 +115,7 @@ export function AttachmentUploadField({
 
   return (
     <>
-      <div className="grid gap-2" style={{ maxWidth: '100%', width: '100%' }} data-field={fieldKey} tabIndex={-1}>
+      <div className="grid w-full max-w-full min-w-0 gap-2 overflow-hidden" data-field={fieldKey} tabIndex={-1}>
         <input
           ref={inputRef}
           type="file"
@@ -110,11 +124,76 @@ export function AttachmentUploadField({
           style={{ display: 'none' }}
         />
 
-        {!file ? (
+        {!file && existingAttachment && !existingAttachmentRemoved ? (
+          <div className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 overflow-hidden rounded-xl border border-sky-200/70 bg-card px-3 py-3 dark:border-sky-400/20 sm:flex-nowrap">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-sky-200/80 bg-sky-50 text-sky-900 dark:border-sky-300/20 dark:bg-sky-400/12 dark:text-sky-100">
+              <FileText size={20} aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <div className="truncate text-[13px] font-medium text-foreground" title={existingAttachment.fileName}>
+                {existingAttachment.fileName}
+              </div>
+              <div className="truncate text-[11px] text-muted-foreground" title={`${existingAttachment.documentType.replace(/_/g, " ")} - ${formatAttachmentSize(existingAttachment.fileSizeBytes)} - retained if unchanged`}>
+                {existingAttachment.documentType.replace(/_/g, " ")} - {formatAttachmentSize(existingAttachment.fileSizeBytes)} - retained if unchanged
+              </div>
+            </div>
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                className="inline-flex h-7 items-center rounded-md border border-sky-300/60 bg-sky-100/90 px-2.5 text-[11px] font-medium text-sky-900 transition-none hover:bg-sky-200 dark:border-sky-300/25 dark:bg-sky-400/16 dark:text-sky-50 dark:hover:bg-sky-400/24"
+              >
+                Replace
+              </button>
+              {onViewExistingAttachment ? (
+                <button
+                  type="button"
+                  onClick={() => onViewExistingAttachment(existingAttachment)}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-sky-200/70 bg-sky-50 text-sky-700 transition-none hover:bg-sky-100 hover:text-sky-900 dark:border-sky-400/20 dark:bg-sky-400/12 dark:text-sky-100 dark:hover:bg-sky-400/20"
+                  aria-label="View existing file"
+                  title="View"
+                >
+                  <Eye size={14} />
+                </button>
+              ) : null}
+              {!existingAttachmentRequired && onRemoveExistingAttachment ? (
+                <button
+                  type="button"
+                  onClick={onRemoveExistingAttachment}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-rose-200/80 bg-rose-50 text-rose-600 transition-none hover:bg-rose-100 hover:text-rose-700 dark:border-rose-400/25 dark:bg-rose-500/12 dark:text-rose-200 dark:hover:bg-rose-500/20"
+                  aria-label="Remove existing file"
+                  title="Remove"
+                >
+                  <Trash2 size={14} />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : !file && existingAttachment && existingAttachmentRemoved ? (
+          <div className="grid w-full max-w-full min-w-0 gap-2 overflow-hidden rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-3 text-[12px] text-amber-900 dark:border-amber-300/25 dark:bg-amber-400/10 dark:text-amber-100">
+            <div className="min-w-0 truncate font-medium" title={`Existing ${existingAttachment.documentType.replace(/_/g, " ")} will not be retained.`}>Existing {existingAttachment.documentType.replace(/_/g, " ")} will not be retained.</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={onRetainExistingAttachment}
+                className="inline-flex h-7 items-center rounded-md border border-amber-300/70 bg-white/80 px-2.5 text-[11px] font-medium text-amber-950 transition-none hover:bg-white dark:border-amber-300/30 dark:bg-amber-400/15 dark:text-amber-50"
+              >
+                Keep existing
+              </button>
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                className="inline-flex h-7 items-center rounded-md border border-amber-300/70 bg-white/80 px-2.5 text-[11px] font-medium text-amber-950 transition-none hover:bg-white dark:border-amber-300/30 dark:bg-amber-400/15 dark:text-amber-50"
+              >
+                Upload new
+              </button>
+            </div>
+          </div>
+        ) : !file ? (
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="flex w-full flex-wrap items-center gap-3 rounded-xl border border-dashed border-sky-300/60 bg-sky-50/60 px-3 py-3 text-left transition-none hover:border-sky-400/70 dark:border-sky-400/25 dark:bg-sky-500/10 sm:flex-nowrap"
+            className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 overflow-hidden rounded-xl border border-dashed border-sky-300/60 bg-sky-50/60 px-3 py-3 text-left transition-none hover:border-sky-400/70 dark:border-sky-400/25 dark:bg-sky-500/10 sm:flex-nowrap"
           >
             <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-400/16 dark:text-sky-200">
               <Paperclip size={18} />
@@ -128,7 +207,7 @@ export function AttachmentUploadField({
             </span>
           </button>
         ) : (
-          <div className="flex w-full flex-wrap items-center gap-3 rounded-xl border border-sky-200/70 bg-card px-3 py-3 dark:border-sky-400/20 sm:flex-nowrap">
+          <div className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 overflow-hidden rounded-xl border border-sky-200/70 bg-card px-3 py-3 dark:border-sky-400/20 sm:flex-nowrap">
             <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-sky-200/80 bg-sky-50 text-sky-900 dark:border-sky-300/20 dark:bg-sky-400/12 dark:text-sky-100">
               {fileTypeIcon}
             </span>
@@ -224,6 +303,11 @@ export function ProductReimbursementField({
   onChange,
   helperText,
   formError,
+  existingAttachment,
+  existingAttachmentRemoved,
+  onViewExistingAttachment,
+  onRemoveExistingAttachment,
+  onRetainExistingAttachment,
 }: {
   fieldKey: string;
   file: File | null;
@@ -231,6 +315,11 @@ export function ProductReimbursementField({
   onChange: (key: string, file: File | null) => void;
   helperText?: string;
   formError?: string;
+  existingAttachment?: ExistingInvoiceAttachment | null;
+  existingAttachmentRemoved?: boolean;
+  onViewExistingAttachment?: (attachment: ExistingInvoiceAttachment) => void;
+  onRemoveExistingAttachment?: () => void;
+  onRetainExistingAttachment?: () => void;
 }) {
   return (
     <AttachmentUploadField
@@ -240,6 +329,12 @@ export function ProductReimbursementField({
       onChange={onChange}
       helperText={helperText ?? "PDF, PNG, JPG, or WEBP. Max 10 MB."}
       formError={formError}
+      existingAttachment={existingAttachment}
+      existingAttachmentRemoved={existingAttachmentRemoved}
+      existingAttachmentRequired
+      onViewExistingAttachment={onViewExistingAttachment}
+      onRemoveExistingAttachment={onRemoveExistingAttachment}
+      onRetainExistingAttachment={onRetainExistingAttachment}
     />
   );
 }
@@ -263,6 +358,11 @@ type SingleCreatorProps = {
   onRowChange: (index: number, patch: Partial<DeliverableAmountRow>) => void;
   onProductReimbursementFileChange: (key: string, file: File | null) => void;
   showCurrency?: boolean;
+  existingProductReimbursementAttachment?: ExistingInvoiceAttachment | null;
+  productReimbursementAttachmentRemoved?: boolean;
+  onViewExistingProductReimbursementAttachment?: (attachment: ExistingInvoiceAttachment) => void;
+  onRemoveExistingProductReimbursementAttachment?: () => void;
+  onRetainExistingProductReimbursementAttachment?: () => void;
 };
 
 export function SingleCreatorRows({
@@ -284,9 +384,14 @@ export function SingleCreatorRows({
   onRowChange,
   onProductReimbursementFileChange,
   showCurrency = false,
+  existingProductReimbursementAttachment = null,
+  productReimbursementAttachmentRemoved = false,
+  onViewExistingProductReimbursementAttachment,
+  onRemoveExistingProductReimbursementAttachment,
+  onRetainExistingProductReimbursementAttachment,
 }: SingleCreatorProps) {
   const gridColumns = showCurrency
-    ? "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_92px_minmax(0,1fr)_minmax(0,0.85fr)_96px]"
+    ? "grid gap-x-1 gap-y-2 intake-row-grid-multi-currency md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_76px_minmax(180px,1.25fr)_minmax(112px,0.8fr)_96px]"
     : "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_96px]";
   return (
     <section className="intake-section">
@@ -301,8 +406,8 @@ export function SingleCreatorRows({
         <div className="intake-row-stack">
           {rows.map((row, idx) => (
             <div key={`sc-${idx}`} className="grid gap-2">
-              <div className={`${gridColumns} intake-row-grid-multi`} style={showCurrency ? { gridTemplateColumns: "minmax(0,1.1fr) minmax(0,1.1fr) 92px minmax(0,1fr) minmax(0,0.85fr) 96px" } : { gridTemplateColumns: "minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,0.85fr) 96px" }}>
-                <div className="grid gap-1">
+              <div className={`${gridColumns} intake-row-grid-multi`}>
+                <div className="grid min-w-0 gap-1">
                   <SearchableSelect
                     value={scCreator}
                     options={creatorOptions}
@@ -317,7 +422,7 @@ export function SingleCreatorRows({
                     {idx === 0 && errors.scCreator ? <p className="text-danger intake-inline-error">{errors.scCreator}</p> : null}
                   </div>
                 </div>
-                <div className="grid gap-1">
+                <div className="grid min-w-0 gap-1">
                   <SearchableSelect
                     value={scBrand}
                     options={brandOptions}
@@ -338,7 +443,7 @@ export function SingleCreatorRows({
     onChange={onCurrencyChange}
   />
 ) : null}
-                <div className="grid gap-1">
+                <div className="grid min-w-0 gap-1">
                   <SearchableSelect
                     value={row.deliverable}
                     options={deliverableOptions}
@@ -350,12 +455,12 @@ export function SingleCreatorRows({
                     {errors[`scDeliverables.${idx}.deliverable`] ? <p className="text-danger intake-inline-error">{errors[`scDeliverables.${idx}.deliverable`]}</p> : null}
                   </div>
                 </div>
-                <div className="grid gap-1">
+                <div className="grid min-w-0 gap-1">
                   <input
-                    className="intake-input"
+                    className="intake-input min-w-0"
                     type="number"
                     inputMode="decimal"
-                    step="0.01"
+                    step="any"
                     min="0"
                     placeholder={`Amount ${currency}`}
                     value={row.amount}
@@ -367,7 +472,7 @@ export function SingleCreatorRows({
                     {errors[`scDeliverables.${idx}.amount`] ? <p className="text-danger intake-inline-error">{errors[`scDeliverables.${idx}.amount`]}</p> : null}
                   </div>
                 </div>
-                <button className="btn intake-row-action" type="button" onClick={() => onRemoveRow(idx)} disabled={rows.length === 1}>
+                <button className="btn intake-row-action min-w-0" type="button" onClick={() => onRemoveRow(idx)} disabled={rows.length === 1}>
                   Remove
                 </button>
               </div>
@@ -380,6 +485,11 @@ export function SingleCreatorRows({
                     error={getProductReimbursementError(`sc-${idx}`)}
                     formError={errors[`sc-${idx}`]}
                     onChange={onProductReimbursementFileChange}
+                    existingAttachment={existingProductReimbursementAttachment}
+                    existingAttachmentRemoved={productReimbursementAttachmentRemoved}
+                    onViewExistingAttachment={onViewExistingProductReimbursementAttachment}
+                    onRemoveExistingAttachment={onRemoveExistingProductReimbursementAttachment}
+                    onRetainExistingAttachment={onRetainExistingProductReimbursementAttachment}
                   />
                 </div>
               ) : null}
@@ -414,6 +524,11 @@ type MultiCreatorProps = {
   onCreatorChange: (index: number, creator: string) => void;
   onProductReimbursementFileChange: (key: string, file: File | null) => void;
   showCurrency?: boolean;
+  existingProductReimbursementAttachment?: ExistingInvoiceAttachment | null;
+  productReimbursementAttachmentRemoved?: boolean;
+  onViewExistingProductReimbursementAttachment?: (attachment: ExistingInvoiceAttachment) => void;
+  onRemoveExistingProductReimbursementAttachment?: () => void;
+  onRetainExistingProductReimbursementAttachment?: () => void;
 };
 
 export function MultiCreatorRows({
@@ -432,9 +547,14 @@ export function MultiCreatorRows({
   onCreatorChange,
   onProductReimbursementFileChange,
   showCurrency = false,
+  existingProductReimbursementAttachment = null,
+  productReimbursementAttachmentRemoved = false,
+  onViewExistingProductReimbursementAttachment,
+  onRemoveExistingProductReimbursementAttachment,
+  onRetainExistingProductReimbursementAttachment,
 }: MultiCreatorProps) {
   const gridColumns = showCurrency
-    ? "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_92px_minmax(0,1fr)_minmax(0,0.85fr)_96px]"
+    ? "grid gap-x-1 gap-y-2 intake-row-grid-multi-currency md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_76px_minmax(180px,1.25fr)_minmax(112px,0.8fr)_96px]"
     : "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_96px]";
   return (
     <section className="intake-section">
@@ -449,8 +569,8 @@ export function MultiCreatorRows({
         <div className="intake-row-stack">
           {rows.map((row, idx) => (
             <div key={`mc-${idx}`} className="grid gap-2">
-              <div className={`${gridColumns} intake-row-grid-multi`} style={showCurrency ? { gridTemplateColumns: "minmax(0,1.1fr) minmax(0,1.1fr) 92px minmax(0,1fr) minmax(0,0.85fr) 96px" } : { gridTemplateColumns: "minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,0.85fr) 96px" }}>
-                <div className="grid gap-1">
+              <div className={`${gridColumns} intake-row-grid-multi`}>
+                <div className="grid min-w-0 gap-1">
                   <SearchableSelect
                     value={row.creator}
                     options={creatorOptions}
@@ -465,7 +585,7 @@ export function MultiCreatorRows({
                   </div>
                 </div>
 
-                <div className="grid gap-1">
+                <div className="grid min-w-0 gap-1">
                   <SearchableSelect
                     value={row.brand}
                     options={brandOptions}
@@ -487,7 +607,7 @@ export function MultiCreatorRows({
   />
 ) : null}
 
-                <div className="grid gap-1">
+                <div className="grid min-w-0 gap-1">
                   <SearchableSelect
                     value={row.deliverable}
                     options={deliverableOptions}
@@ -500,12 +620,12 @@ export function MultiCreatorRows({
                   </div>
                 </div>
 
-                <div className="grid gap-1">
+                <div className="grid min-w-0 gap-1">
                   <input
-                    className="intake-input"
+                    className="intake-input min-w-0"
                     type="number"
                     inputMode="decimal"
-                    step="0.01"
+                    step="any"
                     min="0"
                     placeholder={`Amount ${currency}`}
                     value={row.amount}
@@ -518,7 +638,7 @@ export function MultiCreatorRows({
                   </div>
                 </div>
 
-                <button className="btn intake-row-action" type="button" onClick={() => onRemoveRow(idx)} disabled={rows.length === 1}>
+                <button className="btn intake-row-action min-w-0" type="button" onClick={() => onRemoveRow(idx)} disabled={rows.length === 1}>
                   Remove
                 </button>
               </div>
@@ -531,6 +651,11 @@ export function MultiCreatorRows({
                     error={getProductReimbursementError(`mc-${idx}`)}
                     formError={errors[`mc-${idx}`]}
                     onChange={onProductReimbursementFileChange}
+                    existingAttachment={existingProductReimbursementAttachment}
+                    existingAttachmentRemoved={productReimbursementAttachmentRemoved}
+                    onViewExistingAttachment={onViewExistingProductReimbursementAttachment}
+                    onRemoveExistingAttachment={onRemoveExistingProductReimbursementAttachment}
+                    onRetainExistingAttachment={onRetainExistingProductReimbursementAttachment}
                   />
                 </div>
               ) : null}

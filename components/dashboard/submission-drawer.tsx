@@ -8,6 +8,7 @@ import {
 } from '../../lib/client/finance-status';
 import { getPiDisplayMeta } from '../../lib/client/pi-display';
 import { formatSubmissionAmount, getCurrencyTitle } from '../../lib/shared/currency';
+import { parseBillingAddress } from '../../lib/shared/address-utils';
 import { canResubmitSubmission, canViewFinanceFields, canViewInvoiceStatus, canViewSystemFields } from '../../lib/client/dashboard-access';
 
 function money(value: number | null | undefined, currency?: string | null) {
@@ -29,28 +30,9 @@ function cleanFullAddress(address: string | null | undefined) {
   return parts.join(', ') || normalizedAddress;
 }
 
-function getAddressSegments(address: string | null | undefined) {
-  return String(address || '')
-    .split(/[\n,]+/)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-}
-
-function getAddressPart(address: string | null | undefined, part: 'city' | 'state' | 'country' | 'pincode') {
-  const segments = getAddressSegments(address);
-  if (!segments.length) return '';
-
-  const pincodeMatch = String(address || '').match(/\b\d{4,8}\b/);
-  const pincode = pincodeMatch?.[0] || '';
-  const withoutPincode = segments
-    .map((segment) => segment.replace(/\b\d{4,8}\b/g, '').trim())
-    .filter(Boolean);
-
-  if (part === 'pincode') return pincode;
-  if (part === 'country') return withoutPincode[withoutPincode.length - 1] || '';
-  if (part === 'state') return withoutPincode[withoutPincode.length - 2] || '';
-  if (part === 'city') return withoutPincode[withoutPincode.length - 3] || '';
-  return '';
+function getAddressPart(row: SubmissionRow, part: 'city' | 'state' | 'country' | 'pincode') {
+  const parsed = parseBillingAddress(row.address, row.client_type === 'Foreign' ? 'Foreign' : 'Indian');
+  return parsed[part] || '';
 }
 
 function uniqueCommaSeparated(values: Array<string | null | undefined>) {
@@ -214,10 +196,10 @@ export function SubmissionDrawer({
             {entityType === 'Brand' ? <DetailItem label="Brand Trade / Legal Name" value={billingBrandTradeName} /> : null}
             {isIndianClient ? <DetailItem label="GST Number" value={row.gst_number} /> : null}
             <DetailItem label="Full Address" value={cleanAddress} />
-            <DetailItem label="City" value={getAddressPart(row.address, 'city')} />
-            <DetailItem label="State" value={getAddressPart(row.address, 'state')} />
-            <DetailItem label="Country" value={getAddressPart(row.address, 'country')} />
-            <DetailItem label="Pincode" value={getAddressPart(row.address, 'pincode')} />
+            <DetailItem label="City" value={getAddressPart(row, 'city')} />
+            <DetailItem label="State" value={getAddressPart(row, 'state')} />
+            <DetailItem label="Country" value={getAddressPart(row, 'country')} />
+            <DetailItem label="Pincode" value={getAddressPart(row, 'pincode')} />
           </DetailSection>
 
           <DetailSection title="Invoice">
@@ -283,7 +265,7 @@ export function SubmissionDrawer({
             ) : null}
             <DetailItem
               label="Total/Gross Amount"
-              value={money(row.amount + (row.additional_agency_commission || 0), row.currency)}
+              value={money(row.amount + (row.reimbursement_amount || 0) + (row.additional_agency_commission || 0), row.currency)}
             />
           </DetailSection>
 

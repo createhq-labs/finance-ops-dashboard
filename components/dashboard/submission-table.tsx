@@ -19,6 +19,7 @@ import { Check, CheckCircle2, ChevronLeft, ChevronRight, CircleX, Clock3, Downlo
 import { getPiDisplayMeta } from '../../lib/client/pi-display';
 import { formatSubmissionAmount, getCurrencyTitle } from '../../lib/shared/currency';
 import { formatAttachmentSize, type SubmissionAttachmentSummary } from '../../lib/shared/submission-attachments';
+import { parseBillingAddress } from '../../lib/shared/address-utils';
 import {
   CLOSURE_STATUS_OPTIONS,
   CREATOR_INVOICE_STATUS_OPTIONS,
@@ -574,28 +575,9 @@ function getCreatorData(row: SubmissionRow) {
   return { creatorNames, creatorBrands, deliverables, amounts };
 }
 
-function getAddressSegments(row: SubmissionRow) {
-  return (row.address || '')
-    .split(/[\n,]+/)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-}
-
 function getAddressPart(row: SubmissionRow, part: 'city' | 'state' | 'country' | 'pincode') {
-  const segments = getAddressSegments(row);
-  if (!segments.length) return '-';
-
-  const pincodeMatch = (row.address || '').match(/\b\d{4,8}\b/);
-  const pincode = pincodeMatch?.[0] || '-';
-  const withoutPincode = segments
-    .map((segment) => segment.replace(/\b\d{4,8}\b/g, '').trim())
-    .filter(Boolean);
-
-  if (part === 'pincode') return pincode;
-  if (part === 'country') return withoutPincode[withoutPincode.length - 1] ? toTitleCase(withoutPincode[withoutPincode.length - 1]) : '-';
-  if (part === 'state') return withoutPincode[withoutPincode.length - 2] ? toTitleCase(withoutPincode[withoutPincode.length - 2]) : '-';
-  if (part === 'city') return withoutPincode[withoutPincode.length - 3] ? toTitleCase(withoutPincode[withoutPincode.length - 3]) : '-';
-  return '-';
+  const parsed = parseBillingAddress(row.address, row.client_type === 'Foreign' ? 'Foreign' : 'Indian');
+  return parsed[part] || '-';
 }
 
 function getProductReimbursementValue(row: SubmissionRow) {
@@ -605,7 +587,7 @@ function getProductReimbursementValue(row: SubmissionRow) {
 
   if (reimbursementLineItems.length > 0) {
     const values = reimbursementLineItems
-      .map((item) => (typeof item.amount === 'number' ? money(item.amount, row.currency) : null))
+      .map((item) => (typeof item.amount === 'number' && item.amount > 0 ? money(item.amount, row.currency) : null))
       .filter(Boolean);
 
     if (values.length) return values.join('\n');
@@ -2591,7 +2573,7 @@ export function SubmissionTable({
       case 'additional_agency_commission':
         return row.additional_agency_commission ? copyMoney(money(row.additional_agency_commission, row.currency)) : '';
       case 'gross_amount':
-        return copyMoney(money(row.amount + (row.additional_agency_commission || 0), row.currency));
+        return copyMoney(money(row.amount + (row.reimbursement_amount || 0) + (row.additional_agency_commission || 0), row.currency));
       case 'additional_information':
         return fieldValue(row.additional_information);
       case 'product_reimbursement_file':
@@ -3465,9 +3447,9 @@ export function SubmissionTable({
         );
       case 'gross_amount':
         return commonText(
-          money(row.amount + (row.additional_agency_commission || 0), row.currency),
-          getCurrencyTitle(row.currency, row.amount + (row.additional_agency_commission || 0)),
-          copyMoney(money(row.amount + (row.additional_agency_commission || 0), row.currency))
+          money(row.amount + (row.reimbursement_amount || 0) + (row.additional_agency_commission || 0), row.currency),
+          getCurrencyTitle(row.currency, row.amount + (row.reimbursement_amount || 0) + (row.additional_agency_commission || 0)),
+          copyMoney(money(row.amount + (row.reimbursement_amount || 0) + (row.additional_agency_commission || 0), row.currency))
         );
       case 'additional_information':
         return commonText(fieldValue(row.additional_information));

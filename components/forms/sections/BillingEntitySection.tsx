@@ -10,6 +10,7 @@ type Props = {
   onEntityNameSelect: (value: string) => void;
   onTradeNameSelect: (value: string) => void;
   onGstSelect: (value: string) => void;
+  onGstClear: () => void;
   onAddNewGstSelect: () => void;
   errors?: Record<string, string>;
   agencyOptions: string[];
@@ -26,6 +27,7 @@ export function BillingEntitySection({
   onEntityNameSelect,
   onTradeNameSelect,
   onGstSelect,
+  onGstClear,
   onAddNewGstSelect,
   errors = {},
   agencyOptions,
@@ -247,8 +249,7 @@ export function BillingEntitySection({
                   onAddNewGstSelect();
                 }}
                 onClear={() => {
-                  onChange("gstSelectionMode", "existing");
-                  onChange("gstNumber", "");
+                  onGstClear();
                 }}
               />
               <div style={{ minHeight: 0 }} />

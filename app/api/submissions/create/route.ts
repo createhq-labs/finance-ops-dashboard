@@ -5,14 +5,18 @@ import { logActivityEvent, logSubmissionCreated } from '../../../../lib/server/s
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
 import { createPendingMasterDataReviews } from '../../../../lib/server/services/masterDataReviews';
 import { createFinanceAndAdminSubmissionNotifications, createPendingMasterReviewNotifications } from '../../../../lib/server/services/notifications';
-import { allocateGapFreePiForSubmission, createSubmissionWithLineItems } from '../../../../lib/server/services/submissions';
+import { allocateGapFreePiForSubmission, createSubmissionWithLineItems, type ResolvedPreviousSubmissionForCreate } from '../../../../lib/server/services/submissions';
 import {
+  carryForwardReferencePoAttachment,
+  carryForwardProductReimbursementAttachment,
+  getProductReimbursementAttachmentForSubmission,
+  getReferencePoAttachmentForSubmission,
   uploadProductReimbursementAttachment,
   uploadReferencePoAttachment,
   validateProductReimbursementFile,
   validateReferencePoFile,
 } from '../../../../lib/server/services/submissionAttachments';
-import type { CreateSubmissionInput } from '../../../../lib/server/types/submissions';
+import type { AppUser, CreateSubmissionInput, SanitizedSubmissionPayload } from '../../../../lib/server/types/submissions';
 import { sanitizeLineItems, sanitizeSubmissionInput } from '../../../../lib/server/validators/submissions';
 
 type FormUploadFile = File & {
@@ -41,17 +45,98 @@ function requiresProductReimbursementDocument(lineItems: Array<{ deliverable_nam
   return lineItems.some((item) => normalizeDeliverableName(item.deliverable_name) === 'product reimbursement');
 }
 
-async function cleanupFailedSubmission(adminClient: ReturnType<typeof createServiceClient>, submissionId: string, previousSubmissionId?: string | null) {
-  await adminClient.from('intake_submissions').delete().eq('id', submissionId);
-  if (previousSubmissionId) {
-    await adminClient
-      .from('intake_submissions')
-      .update({
-        is_latest_version: true,
-        superseded_at: null,
-      })
-      .eq('id', previousSubmissionId);
+type ResolvedPreviousSubmission = ResolvedPreviousSubmissionForCreate & {
+  submitted_by: string | null;
+  business_line: string | null;
+  is_latest_version: boolean | null;
+};
+
+function sumProductReimbursementLineAmount(lineItems: Array<{ deliverable_name?: string | null; amount?: number | null }>) {
+  return lineItems.reduce((total, item) => {
+    if (normalizeDeliverableName(item.deliverable_name) !== 'product reimbursement') return total;
+    const amount = Number(item.amount ?? 0);
+    return total + (Number.isFinite(amount) ? amount : 0);
+  }, 0);
+}
+
+async function cleanupFailedSubmission(
+  adminClient: ReturnType<typeof createServiceClient>,
+  submissionId: string,
+  previousSubmissionId?: string | null,
+  uploadedStoragePaths: string[] = []
+) {
+  const uniqueUploadedStoragePaths = Array.from(new Set(uploadedStoragePaths.filter(Boolean)));
+  if (uniqueUploadedStoragePaths.length > 0) {
+    try {
+      const { error } = await adminClient.storage.from('finance-documents').remove(uniqueUploadedStoragePaths);
+      if (error) console.error('cleanup uploaded storage objects failed', error);
+    } catch (cleanupError) {
+      console.error('cleanup uploaded storage objects failed', cleanupError);
+    }
   }
+
+  try {
+    const { error } = await adminClient.from('submission_attachments').delete().eq('submission_id', submissionId);
+    if (error) console.error('cleanup attachment metadata failed', error);
+  } catch (cleanupError) {
+    console.error('cleanup attachment metadata failed', cleanupError);
+  }
+
+  try {
+    const { error } = await adminClient.from('intake_submissions').delete().eq('id', submissionId);
+    if (error) console.error('cleanup incomplete submission failed', error);
+  } catch (cleanupError) {
+    console.error('cleanup incomplete submission failed', cleanupError);
+  }
+
+  if (previousSubmissionId) {
+    try {
+      const { error } = await adminClient
+        .from('intake_submissions')
+        .update({
+          is_latest_version: true,
+          superseded_at: null,
+        })
+        .eq('id', previousSubmissionId);
+      if (error) console.error('cleanup restore previous submission failed', error);
+    } catch (cleanupError) {
+      console.error('cleanup restore previous submission failed', cleanupError);
+    }
+  }
+}
+
+async function resolvePreviousSubmissionForResubmission(params: {
+  adminClient: ReturnType<typeof createServiceClient>;
+  appUser: AppUser;
+  submissionPayload: SanitizedSubmissionPayload;
+}): Promise<ResolvedPreviousSubmission | null> {
+  const { adminClient, appUser, submissionPayload } = params;
+  if (!submissionPayload.previous_submission_id) return null;
+
+  const { data, error } = await adminClient
+    .from('intake_submissions')
+    .select('id, submitted_by, business_line, is_latest_version, proforma_invoice')
+    .eq('id', submissionPayload.previous_submission_id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error('Previous submission not found for resubmission.');
+
+  const previous = data as ResolvedPreviousSubmission;
+
+  if (String(previous.submitted_by ?? '') !== appUser.id) {
+    throw new Error('You can only resubmit your own submission.');
+  }
+
+  if (String(previous.business_line ?? '') !== String(submissionPayload.business_line ?? '')) {
+    throw new Error('Resubmission business line must match the previous submission.');
+  }
+
+  if (previous.is_latest_version !== true) {
+    throw new Error('Please resubmit the latest version of this submission.');
+  }
+
+  return previous;
 }
 
 async function runNonCriticalSideEffect(label: string, effect: () => Promise<void>) {
@@ -81,6 +166,8 @@ export async function POST(req: NextRequest) {
     let body: CreateSubmissionInput;
     let productReimbursementFile: File | null = null;
     let referencePoFile: File | null = null;
+    let removeProductReimbursementAttachment = false;
+    let removeReferencePoAttachment = false;
     const contentType = req.headers.get('content-type') || '';
 
     if (contentType.includes('multipart/form-data')) {
@@ -101,6 +188,9 @@ export async function POST(req: NextRequest) {
       if (hasReferencePoField && referencePoEntry && !referencePoFile) {
         throw new Error('Uploaded reference PO file could not be read on the server.');
       }
+
+      removeProductReimbursementAttachment = formData.get('remove_product_reimbursement_attachment') === '1';
+      removeReferencePoAttachment = formData.get('remove_reference_po_attachment') === '1';
     } else {
       body = (await req.json()) as CreateSubmissionInput;
     }
@@ -117,20 +207,56 @@ export async function POST(req: NextRequest) {
 
     const lineItemsPayload = sanitizeLineItems(body.line_items);
     const needsProductReimbursementDocument = requiresProductReimbursementDocument(lineItemsPayload);
+    const productReimbursementLineAmount = sumProductReimbursementLineAmount(lineItemsPayload);
+    const effectiveReimbursementAmount = productReimbursementLineAmount > 0
+      ? productReimbursementLineAmount
+      : submissionPayload.reimbursement_amount;
+    const persistedSubmissionPayload = needsProductReimbursementDocument
+      ? { ...submissionPayload, reimbursement_amount: effectiveReimbursementAmount }
+      : submissionPayload;
+    const resolvedPreviousSubmission = await resolvePreviousSubmissionForResubmission({
+      adminClient,
+      appUser,
+      submissionPayload: persistedSubmissionPayload,
+    });
+    let carriedProductReimbursementSource: Awaited<ReturnType<typeof getProductReimbursementAttachmentForSubmission>> = null;
+    let carriedReferencePoSource: Awaited<ReturnType<typeof getReferencePoAttachmentForSubmission>> = null;
+
+    if (needsProductReimbursementDocument && !(effectiveReimbursementAmount > 0)) {
+      throw new Error('Product reimbursement amount is required.');
+    }
 
     if (productReimbursementFile) {
       validateProductReimbursementFile(productReimbursementFile);
     }
+    if (needsProductReimbursementDocument && removeProductReimbursementAttachment && !productReimbursementFile) {
+      throw new Error('Product reimbursement document is required and cannot be removed.');
+    }
+    if (needsProductReimbursementDocument && !productReimbursementFile) {
+      carriedProductReimbursementSource = await getProductReimbursementAttachmentForSubmission({
+        adminClient,
+        submissionId: resolvedPreviousSubmission?.id,
+      });
+      if (!carriedProductReimbursementSource) {
+        throw new Error('Product reimbursement document is required.');
+      }
+    }
     if (referencePoFile) {
       validateReferencePoFile(referencePoFile);
+    } else if (resolvedPreviousSubmission?.id && !removeReferencePoAttachment) {
+      carriedReferencePoSource = await getReferencePoAttachmentForSubmission({
+        adminClient,
+        submissionId: resolvedPreviousSubmission.id,
+      });
     }
 
     const result = await createSubmissionWithLineItems({
       userClient,
       adminClient,
       appUser,
-      submissionPayload,
+      submissionPayload: persistedSubmissionPayload,
       lineItemsPayload,
+      resolvedPreviousSubmission,
     });
 
     if (!result.success) {
@@ -147,6 +273,8 @@ export async function POST(req: NextRequest) {
 
     let productReimbursementAttachment = null;
     let referencePoAttachment = null;
+    let referencePoAttachmentWasUploaded = false;
+    const uploadedStoragePaths: string[] = [];
 
     if (needsProductReimbursementDocument && productReimbursementFile) {
       try {
@@ -156,13 +284,36 @@ export async function POST(req: NextRequest) {
           uploadedBy: appUser.id,
           file: productReimbursementFile,
         });
+        uploadedStoragePaths.push(productReimbursementAttachment.file_path);
       } catch (attachmentError) {
-        await cleanupFailedSubmission(adminClient, result.submission.id, submissionPayload.previous_submission_id);
+        await cleanupFailedSubmission(adminClient, result.submission.id, resolvedPreviousSubmission?.id, uploadedStoragePaths);
         const message = attachmentError instanceof Error ? attachmentError.message : 'Failed to upload reimbursement attachment.';
         return NextResponse.json(
           {
             success: false,
             stage: 'upload_attachment',
+            error: message,
+            sync_status: { supabase: 'failed', sheets: 'pending_sheet_sync' },
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (needsProductReimbursementDocument && !productReimbursementFile && carriedProductReimbursementSource) {
+      try {
+        await carryForwardProductReimbursementAttachment({
+          adminClient,
+          previousSubmissionId: resolvedPreviousSubmission?.id,
+          newSubmissionId: result.submission.id,
+        });
+      } catch (attachmentError) {
+        await cleanupFailedSubmission(adminClient, result.submission.id, resolvedPreviousSubmission?.id, uploadedStoragePaths);
+        const message = attachmentError instanceof Error ? attachmentError.message : 'Failed to carry forward reimbursement attachment.';
+        return NextResponse.json(
+          {
+            success: false,
+            stage: 'carry_forward_attachment',
             error: message,
             sync_status: { supabase: 'failed', sheets: 'pending_sheet_sync' },
           },
@@ -179,13 +330,35 @@ export async function POST(req: NextRequest) {
           uploadedBy: appUser.id,
           file: referencePoFile,
         });
+        uploadedStoragePaths.push(referencePoAttachment.file_path);
+        referencePoAttachmentWasUploaded = true;
       } catch (attachmentError) {
-        await cleanupFailedSubmission(adminClient, result.submission.id, submissionPayload.previous_submission_id);
+        await cleanupFailedSubmission(adminClient, result.submission.id, resolvedPreviousSubmission?.id, uploadedStoragePaths);
         const message = attachmentError instanceof Error ? attachmentError.message : 'Failed to upload reference PO attachment.';
         return NextResponse.json(
           {
             success: false,
             stage: 'upload_attachment',
+            error: message,
+            sync_status: { supabase: 'failed', sheets: 'pending_sheet_sync' },
+          },
+          { status: 400 }
+        );
+      }
+    } else if (carriedReferencePoSource) {
+      try {
+        referencePoAttachment = await carryForwardReferencePoAttachment({
+          adminClient,
+          previousSubmissionId: resolvedPreviousSubmission?.id,
+          newSubmissionId: result.submission.id,
+        });
+      } catch (attachmentError) {
+        await cleanupFailedSubmission(adminClient, result.submission.id, resolvedPreviousSubmission?.id, uploadedStoragePaths);
+        const message = attachmentError instanceof Error ? attachmentError.message : 'Failed to carry forward reference PO attachment.';
+        return NextResponse.json(
+          {
+            success: false,
+            stage: 'carry_forward_attachment',
             error: message,
             sync_status: { supabase: 'failed', sheets: 'pending_sheet_sync' },
           },
@@ -219,7 +392,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (referencePoAttachment) {
+    if (referencePoAttachment && referencePoAttachmentWasUploaded) {
       await runNonCriticalSideEffect('log reference po attachment upload failed', async () => {
         await logActivityEvent(adminClient, {
           actorUserId: appUser.id,
@@ -248,7 +421,7 @@ export async function POST(req: NextRequest) {
       userClient,
       appUser,
       submissionId: result.submission.id,
-      submissionPayload,
+      submissionPayload: persistedSubmissionPayload,
       lineItemsPayload,
     });
 
@@ -268,7 +441,7 @@ export async function POST(req: NextRequest) {
       try {
         assignedPiNumber = await allocateGapFreePiForSubmission(adminClient, result.submission.id);
       } catch (piError) {
-        await cleanupFailedSubmission(adminClient, result.submission.id, submissionPayload.previous_submission_id);
+        await cleanupFailedSubmission(adminClient, result.submission.id, resolvedPreviousSubmission?.id, uploadedStoragePaths);
         const message = piError instanceof Error ? piError.message : 'Failed to allocate PI number.';
         return NextResponse.json(
           {
@@ -290,8 +463,8 @@ export async function POST(req: NextRequest) {
         appUser,
         submissionId: result.submission.id,
         piNumber: resolvedPiNumber,
-        entityName: submissionPayload.agency_brand_name,
-        isResubmission: Boolean(submissionPayload.previous_submission_id),
+        entityName: persistedSubmissionPayload.agency_brand_name,
+        isResubmission: Boolean(persistedSubmissionPayload.previous_submission_id),
       });
     });
 
@@ -317,7 +490,7 @@ export async function POST(req: NextRequest) {
       });
     });
 
-    if (submissionPayload.previous_submission_id) {
+    if (resolvedPreviousSubmission?.id) {
       await runNonCriticalSideEffect('submission_resubmitted activity log failed', async () => {
         await logActivityEvent(userClient, {
           actorUserId: appUser.id,
@@ -325,7 +498,7 @@ export async function POST(req: NextRequest) {
           action: 'submission_resubmitted',
           details: {
             message: 'Submission ' + result.submission.id + ' was resubmitted.',
-            previous_submission_id: submissionPayload.previous_submission_id,
+            previous_submission_id: resolvedPreviousSubmission.id,
             pi_number: assignedPiNumber,
             business_line: submissionPayload.business_line,
             financial_year: result.submission.financial_year ?? null,
@@ -336,7 +509,7 @@ export async function POST(req: NextRequest) {
             entity_type: 'submission',
             entity_id: result.submission.id,
             metadata: {
-              previous_submission_id: submissionPayload.previous_submission_id,
+              previous_submission_id: resolvedPreviousSubmission.id,
               pi_number: assignedPiNumber,
               business_line: submissionPayload.business_line,
               financial_year: result.submission.financial_year ?? null,
@@ -349,10 +522,10 @@ export async function POST(req: NextRequest) {
       await runNonCriticalSideEffect('submission_superseded activity log failed', async () => {
         await logActivityEvent(userClient, {
           actorUserId: appUser.id,
-          submissionId: submissionPayload.previous_submission_id,
+          submissionId: resolvedPreviousSubmission.id,
           action: 'submission_superseded',
           details: {
-            message: 'Submission ' + submissionPayload.previous_submission_id + ' was superseded.',
+            message: 'Submission ' + resolvedPreviousSubmission.id + ' was superseded.',
             new_submission_id: result.submission.id,
             pi_number: assignedPiNumber,
             business_line: submissionPayload.business_line,
@@ -362,7 +535,7 @@ export async function POST(req: NextRequest) {
           structured: {
             action_type: 'submission_superseded',
             entity_type: 'submission',
-            entity_id: submissionPayload.previous_submission_id,
+            entity_id: resolvedPreviousSubmission.id,
             metadata: {
               new_submission_id: result.submission.id,
               pi_number: assignedPiNumber,
@@ -405,7 +578,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (referencePoAttachment) {
+    if (referencePoAttachment && referencePoAttachmentWasUploaded) {
       await runNonCriticalSideEffect('reference_po_uploaded activity log failed', async () => {
         await logActivityEvent(userClient, {
           actorUserId: appUser.id,

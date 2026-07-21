@@ -7,40 +7,12 @@ import { StatePanel } from '../../../../../components/dashboard/state-panel';
 import { InvoiceIntakeForm } from '../../../../../components/forms/invoice-intake-form';
 import { useDashboardSession } from '../../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../../components/layout/workspace-loader';
-import type { InvoiceIntakeFormSubmitInput, InvoiceIntakeFormValues } from '../../../../../components/forms/types';
+import type { ExistingInvoiceAttachment, InvoiceIntakeFormSubmitInput, InvoiceIntakeFormValues } from '../../../../../components/forms/types';
 import { getPiDisplayMeta } from '../../../../../lib/client/pi-display';
 import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../../lib/shared/submission-attachments';
 import { handleAuthTokenRecoveryMessage } from '../../../../../lib/client/auth-recovery';
 import { canSubmitInvoice, getDefaultDashboardPath } from '../../../../../lib/client/dashboard-access';
-
-function cleanPrefillAddress(address: string, parts: Array<string | null | undefined>) {
-  const normalizedAddress = String(address || '').trim().replace(/^"+|"+$/g, '');
-  if (!normalizedAddress) return '';
-
-  const trailingTokens = parts
-    .filter(Boolean)
-    .map((value) => String(value).trim().replace(/^"+|"+$/g, '').toLowerCase());
-
-  const addressParts = normalizedAddress
-    .split(',')
-    .map((part) => part.trim().replace(/^"+|"+$/g, ''))
-    .filter(Boolean);
-
-  let addressIndex = addressParts.length - 1;
-  let tokenIndex = trailingTokens.length - 1;
-
-  while (
-    addressIndex >= 0 &&
-    tokenIndex >= 0 &&
-    addressParts[addressIndex].toLowerCase() === trailingTokens[tokenIndex]
-  ) {
-    addressIndex -= 1;
-    tokenIndex -= 1;
-  }
-
-  const cleaned = addressParts.slice(0, addressIndex + 1).join(', ');
-  return cleaned || normalizedAddress;
-}
+import { parseBillingAddress } from '../../../../../lib/shared/address-utils';
 
 export default function NewSubmissionPage() {
   const router = useRouter();
@@ -55,8 +27,25 @@ export default function NewSubmissionPage() {
   const [prefillError, setPrefillError] = useState('');
   const [resubmissionNote, setResubmissionNote] = useState('');
   const [showResubmissionNote, setShowResubmissionNote] = useState(false);
-  const [existingReimbursementAttachmentName, setExistingReimbursementAttachmentName] = useState('');
-  const [existingReferencePoAttachmentName, setExistingReferencePoAttachmentName] = useState('');
+  const [existingReimbursementAttachment, setExistingReimbursementAttachment] = useState<ExistingInvoiceAttachment | null>(null);
+  const [existingReferencePoAttachment, setExistingReferencePoAttachment] = useState<ExistingInvoiceAttachment | null>(null);
+
+  function toExistingInvoiceAttachment(attachment: {
+    id: string;
+    document_type: string;
+    file_name: string;
+    file_size_bytes: number;
+    mime_type: string;
+  } | null): ExistingInvoiceAttachment | null {
+    if (!attachment) return null;
+    return {
+      id: attachment.id,
+      documentType: attachment.document_type,
+      fileName: attachment.file_name,
+      fileSizeBytes: attachment.file_size_bytes,
+      mimeType: attachment.mime_type,
+    };
+  }
 
   useEffect(() => {
     if (loading || !user) return;
@@ -69,9 +58,8 @@ export default function NewSubmissionPage() {
     setPrefillLoading(true);
     setPrefillError('');
     setResubmissionNote('');
-    setExistingReimbursementAttachmentName('');
-    setExistingReferencePoAttachmentName('');
-    setExistingReferencePoAttachmentName('');
+    setExistingReimbursementAttachment(null);
+    setExistingReferencePoAttachment(null);
     try {
       const res = await fetch('/api/submissions/my', { method: 'GET', cache: 'no-store' });
       const body = await res.json().catch(() => ({}));
@@ -123,24 +111,11 @@ export default function NewSubmissionPage() {
         | undefined;
       if (!found) throw new Error('Submission not found for resubmit.');
       setResubmissionNote(String(found.finance_comment ?? found.rejection_note ?? '').trim());
-      setExistingReimbursementAttachmentName(pickProductReimbursementAttachment(found.submission_attachments)?.file_name ?? '');
-      setExistingReferencePoAttachmentName(pickReferencePoAttachment(found.submission_attachments)?.file_name ?? '');
+      setExistingReimbursementAttachment(toExistingInvoiceAttachment(pickProductReimbursementAttachment(found.submission_attachments)));
+      setExistingReferencePoAttachment(toExistingInvoiceAttachment(pickReferencePoAttachment(found.submission_attachments)));
 
       const lineItems = Array.isArray(found.intake_line_items) ? found.intake_line_items : [];
-      const addressParts = String(found.address ?? '')
-        .split(',')
-        .map((part) => part.trim())
-        .filter(Boolean);
-      const inferredPincode = addressParts[addressParts.length - 1]?.match(/\b\d{4,8}\b/)?.[0] ?? '';
-      const inferredCountry = inferredPincode ? (addressParts[addressParts.length - 2] ?? '') : (addressParts[addressParts.length - 1] ?? '');
-      const inferredState = inferredPincode ? (addressParts[addressParts.length - 3] ?? '') : (addressParts[addressParts.length - 2] ?? '');
-      const inferredCity = inferredPincode ? (addressParts[addressParts.length - 4] ?? '') : (addressParts[addressParts.length - 3] ?? '');
-      const inferredAddressLine = cleanPrefillAddress(String(found.address ?? ''), [
-        inferredPincode,
-        inferredCountry,
-        inferredState,
-        inferredCity,
-      ]);
+      const parsedAddress = parseBillingAddress(String(found.address ?? ''), found.client_type === 'Foreign' ? 'Foreign' : 'Indian');
 
       const businessLine = (found.business_line === 'IM' ? 'IM' : 'TM') as InvoiceIntakeFormValues['businessLine'];
       const entryType = (
@@ -186,11 +161,11 @@ export default function NewSubmissionPage() {
         agencyBrandTradeName: found.agency_brand_trade_name ?? '',
         billingBrandName: found.brand_name || '',
         gstNumber: String(found.gst_number ?? ''),
-        addressLine: inferredAddressLine,
-        city: inferredCity,
-        state: inferredState,
-        country: inferredCountry,
-        pincode: inferredPincode,
+        addressLine: parsedAddress.addressLine,
+        city: parsedAddress.city,
+        state: parsedAddress.state,
+        country: parsedAddress.country,
+        pincode: parsedAddress.pincode,
         invoiceType: found.invoice_type ?? '',
         billDue: found.bill_due ?? '',
         commission: found.additional_agency_commission ? String(found.additional_agency_commission) : '',
@@ -240,6 +215,21 @@ export default function NewSubmissionPage() {
     }
     if (files?.referencePoFile) {
       formData.append('reference_po_file', files.referencePoFile);
+    }
+    if (submission.existingProductReimbursementAttachment) {
+      formData.append('existing_product_reimbursement_attachment', '1');
+    }
+    if (submission.retainProductReimbursementAttachment) {
+      formData.append('retain_product_reimbursement_attachment', '1');
+    }
+    if (submission.removeProductReimbursementAttachment) {
+      formData.append('remove_product_reimbursement_attachment', '1');
+    }
+    if (submission.retainReferencePoAttachment) {
+      formData.append('retain_reference_po_attachment', '1');
+    }
+    if (submission.removeReferencePoAttachment) {
+      formData.append('remove_reference_po_attachment', '1');
     }
 
     const res = await fetch('/api/submissions/create', {
@@ -299,14 +289,14 @@ export default function NewSubmissionPage() {
             <p style={{ margin: 0, fontWeight: 600 }}>
               You are editing a previous submission. Submitting will create a new version.
             </p>
-            {existingReimbursementAttachmentName ? (
+            {existingReimbursementAttachment ? (
               <p className="text-muted" style={{ margin: 0 }}>
-                Previous product reimbursement file: {existingReimbursementAttachmentName}. Upload a new one if this resubmission updates the document.
+                Previous product reimbursement file: {existingReimbursementAttachment.fileName}. It will be retained unless replaced.
               </p>
             ) : null}
-            {existingReferencePoAttachmentName ? (
+            {existingReferencePoAttachment ? (
               <p className="text-muted" style={{ margin: 0 }}>
-                Previous reference PO file: {existingReferencePoAttachmentName}. Upload a new one if this resubmission updates the document.
+                Previous reference PO file: {existingReferencePoAttachment.fileName}. It will be retained unless replaced or removed.
               </p>
             ) : null}
           </div>
@@ -344,6 +334,9 @@ export default function NewSubmissionPage() {
             submitterEmail={user.email || ''}
             initialValues={prefillValues}
             previousSubmissionId={resubmitId}
+            existingProductReimbursementAttachment={Boolean(existingReimbursementAttachment)}
+            existingProductReimbursementAttachmentMeta={existingReimbursementAttachment}
+            existingReferencePoAttachment={existingReferencePoAttachment}
             submitEnabled
             onSubmit={handleCreateSubmit}
           />
@@ -367,6 +360,9 @@ export default function NewSubmissionPage() {
           submitterEmail={user.email || ''}
           initialValues={prefillValues}
           previousSubmissionId={resubmitId}
+          existingProductReimbursementAttachment={Boolean(existingReimbursementAttachment)}
+          existingProductReimbursementAttachmentMeta={existingReimbursementAttachment}
+          existingReferencePoAttachment={existingReferencePoAttachment}
           submitEnabled
           onSubmit={handleCreateSubmit}
         />

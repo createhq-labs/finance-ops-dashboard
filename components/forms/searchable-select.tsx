@@ -283,7 +283,9 @@ export function SearchableSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span className="intake-select-trigger-label">{showPlaceholder ? placeholder : triggerLabel}</span>
+        <span className="intake-select-trigger-label" title={showPlaceholder ? placeholder : triggerLabel}>
+          {showPlaceholder ? placeholder : triggerLabel}
+        </span>
         <ChevronDown className={`intake-select-chevron${open ? " intake-select-chevron-open" : ""}`} size={16} />
       </button>
       <input
@@ -345,8 +347,11 @@ export function SearchableSelect({
                 <button
                   type="button"
                   className="intake-searchable-option intake-searchable-option-highlighted"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={commitCustomValue}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    commitCustomValue();
+                  }}
+                  onClick={(event) => event.preventDefault()}
                 >
                   <span className="intake-searchable-option-label">Use &quot;{query.trim()}&quot;</span>
                   <span className="intake-searchable-option-check" />
@@ -377,15 +382,18 @@ export function SearchableSelect({
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => {
+                    onMouseDown={(event) => {
+                      event.preventDefault();
                       if (!option.disabled) selectOption(option.value);
+                    }}
+                    onClick={() => {
+                      return;
                     }}
                     onMouseEnter={() => {
                       if (!option.disabled) setHighlightedIndex(index);
                     }}
                   >
-                    <span className="intake-searchable-option-label">{option.label}</span>
+                    <span className="intake-searchable-option-label" title={option.label}>{option.label}</span>
                     <span className="intake-searchable-option-check" aria-hidden="true">
                       <Check size={14} />
                     </span>

@@ -153,6 +153,130 @@ export async function uploadProductReimbursementAttachment(params: {
   });
 }
 
+export async function getProductReimbursementAttachmentForSubmission(params: {
+  adminClient: SupabaseClient;
+  submissionId: string | null | undefined;
+}): Promise<SubmissionAttachmentRecord | null> {
+  const { adminClient, submissionId } = params;
+  if (!submissionId) return null;
+
+  const { data, error } = await adminClient
+    .from('submission_attachments')
+    .select('id, submission_id, document_type, file_name, file_path, file_size_bytes, mime_type, uploaded_by, uploaded_at')
+    .eq('submission_id', submissionId)
+    .eq('document_type', PRODUCT_REIMBURSEMENT_DOCUMENT_TYPE)
+    .order('uploaded_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+
+  const attachment = data as SubmissionAttachmentRecord;
+  if (!attachment.file_path || !attachment.file_name || !attachment.mime_type) return null;
+  return attachment;
+}
+
+export async function getReferencePoAttachmentForSubmission(params: {
+  adminClient: SupabaseClient;
+  submissionId: string | null | undefined;
+}): Promise<SubmissionAttachmentRecord | null> {
+  const { adminClient, submissionId } = params;
+  if (!submissionId) return null;
+
+  const { data, error } = await adminClient
+    .from('submission_attachments')
+    .select('id, submission_id, document_type, file_name, file_path, file_size_bytes, mime_type, uploaded_by, uploaded_at')
+    .eq('submission_id', submissionId)
+    .eq('document_type', REFERENCE_PO_DOCUMENT_TYPE)
+    .order('uploaded_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+
+  const attachment = data as SubmissionAttachmentRecord;
+  if (!attachment.file_path || !attachment.file_name || !attachment.mime_type) return null;
+  return attachment;
+}
+
+export async function carryForwardProductReimbursementAttachment(params: {
+  adminClient: SupabaseClient;
+  previousSubmissionId: string | null | undefined;
+  newSubmissionId: string;
+}): Promise<SubmissionAttachmentRecord | null> {
+  const { adminClient, previousSubmissionId, newSubmissionId } = params;
+  const previousAttachment = await getProductReimbursementAttachmentForSubmission({
+    adminClient,
+    submissionId: previousSubmissionId,
+  });
+
+  if (!previousAttachment) return null;
+
+  const metadata: SubmissionAttachmentRecord = {
+    id: randomUUID(),
+    submission_id: newSubmissionId,
+    document_type: previousAttachment.document_type,
+    file_name: previousAttachment.file_name,
+    file_path: previousAttachment.file_path,
+    file_size_bytes: previousAttachment.file_size_bytes,
+    mime_type: previousAttachment.mime_type,
+    uploaded_by: previousAttachment.uploaded_by,
+    uploaded_at: previousAttachment.uploaded_at,
+  };
+
+  const { data, error } = await adminClient
+    .from('submission_attachments')
+    .insert(metadata)
+    .select('id, submission_id, document_type, file_name, file_path, file_size_bytes, mime_type, uploaded_by, uploaded_at')
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message || 'Failed to carry forward reimbursement attachment metadata.');
+  }
+
+  return data as SubmissionAttachmentRecord;
+}
+
+export async function carryForwardReferencePoAttachment(params: {
+  adminClient: SupabaseClient;
+  previousSubmissionId: string | null | undefined;
+  newSubmissionId: string;
+}): Promise<SubmissionAttachmentRecord | null> {
+  const { adminClient, previousSubmissionId, newSubmissionId } = params;
+  const previousAttachment = await getReferencePoAttachmentForSubmission({
+    adminClient,
+    submissionId: previousSubmissionId,
+  });
+
+  if (!previousAttachment) return null;
+
+  const metadata: SubmissionAttachmentRecord = {
+    id: randomUUID(),
+    submission_id: newSubmissionId,
+    document_type: previousAttachment.document_type,
+    file_name: previousAttachment.file_name,
+    file_path: previousAttachment.file_path,
+    file_size_bytes: previousAttachment.file_size_bytes,
+    mime_type: previousAttachment.mime_type,
+    uploaded_by: previousAttachment.uploaded_by,
+    uploaded_at: previousAttachment.uploaded_at,
+  };
+
+  const { data, error } = await adminClient
+    .from('submission_attachments')
+    .insert(metadata)
+    .select('id, submission_id, document_type, file_name, file_path, file_size_bytes, mime_type, uploaded_by, uploaded_at')
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message || 'Failed to carry forward reference PO attachment metadata.');
+  }
+
+  return data as SubmissionAttachmentRecord;
+}
+
 export async function uploadReferencePoAttachment(params: {
   adminClient: SupabaseClient;
   submissionId: string;

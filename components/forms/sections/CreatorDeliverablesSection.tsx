@@ -2,7 +2,7 @@ import { Check, ChevronDown, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MultiCreatorRows, ProductReimbursementField, SingleCreatorRows } from "../invoice-line-items";
 import { SearchableSelect } from "../searchable-select";
-import type { InvoiceIntakeFormValues } from "../types";
+import type { ExistingInvoiceAttachment, InvoiceIntakeFormValues } from "../types";
 import { CURRENCY_OPTIONS, CURRENCY_SEARCH_TEXT_BY_OPTION } from "../../../lib/shared/currency";
 
 type Props = {
@@ -29,6 +29,11 @@ type Props = {
   getProductReimbursementFile: (key: string) => File | null;
   getProductReimbursementError: (key: string) => string;
   onProductReimbursementFileChange: (key: string, file: File | null) => void;
+  existingProductReimbursementAttachment?: ExistingInvoiceAttachment | null;
+  productReimbursementAttachmentRemoved?: boolean;
+  onViewExistingProductReimbursementAttachment?: (attachment: ExistingInvoiceAttachment) => void;
+  onRemoveExistingProductReimbursementAttachment?: () => void;
+  onRetainExistingProductReimbursementAttachment?: () => void;
 };
 
 function CurrencyField({
@@ -39,7 +44,7 @@ function CurrencyField({
   onCurrencyChange: (next: string) => void;
 }) {
   return (
-    <label className="intake-field" style={{ width: 160, maxWidth: '100%' }}>
+    <label className="intake-field min-w-0" style={{ width: 96, maxWidth: '100%' }}>
       <span className="intake-label">Currency *</span>
       <SearchableSelect
         value={currency}
@@ -159,7 +164,7 @@ function ImDeliverablesField({
                     "border border-sky-300/70 bg-sky-100/95 text-sky-950 dark:border-sky-300/30 dark:bg-sky-400/16 dark:text-sky-50",
                   ].join(" ")}
                 >
-                  <span className="truncate" style={{ display: "block", maxWidth: "calc(100% - 20px)" }}>{deliverable}</span>
+                  <span className="truncate" style={{ display: "block", maxWidth: "calc(100% - 20px)" }} title={deliverable}>{deliverable}</span>
                   <span
                     role="button"
                     tabIndex={0}
@@ -225,8 +230,11 @@ function ImDeliverablesField({
                     role="option"
                     aria-selected={isSelected}
                     className={["intake-searchable-option", isSelected ? "intake-searchable-option-selected" : ""].filter(Boolean).join(" ")}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => toggleOption(option)}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      toggleOption(option);
+                    }}
+                    onClick={(event) => event.preventDefault()}
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       <span
@@ -237,7 +245,7 @@ function ImDeliverablesField({
                       >
                         {isSelected ? <Check size={12} /> : null}
                       </span>
-                      <span className={`truncate ${isSelected ? "font-medium" : ""}`} style={isSelected ? { color: "var(--text-accent)" } : undefined}>{option}</span>
+                      <span className={`truncate ${isSelected ? "font-medium" : ""}`} style={isSelected ? { color: "var(--text-accent)" } : undefined} title={option}>{option}</span>
                     </span>
                     <span className="intake-searchable-option-check" aria-hidden="true" />
                   </button>
@@ -273,6 +281,11 @@ export function CreatorDeliverablesSection({
   getProductReimbursementFile,
   getProductReimbursementError,
   onProductReimbursementFileChange,
+  existingProductReimbursementAttachment = null,
+  productReimbursementAttachmentRemoved = false,
+  onViewExistingProductReimbursementAttachment,
+  onRemoveExistingProductReimbursementAttachment,
+  onRetainExistingProductReimbursementAttachment,
 }: Props) {
   const showCurrency = values.clientType === "Foreign";
   const selectedImDeliverables = useMemo(
@@ -288,10 +301,13 @@ export function CreatorDeliverablesSection({
 
     if (hadProductReimbursement && !hasProductReimbursement) {
       onProductReimbursementFileChange("campaign-0", null);
+      onChange("reimbursementIncluded", "no");
+      onChange("reimbursementAmount", "0");
+      onChange("reimbursementProof", "");
     }
 
     previousImDeliverablesRef.current = selectedImDeliverables;
-  }, [onProductReimbursementFileChange, selectedImDeliverables]);
+  }, [onChange, onProductReimbursementFileChange, selectedImDeliverables]);
 
   function updateImDeliverables(nextDeliverables: string[]) {
     const normalized = normalizeSelectedDeliverables(nextDeliverables);
@@ -326,6 +342,11 @@ export function CreatorDeliverablesSection({
         onRemoveRow={removeScDeliverable}
         onRowChange={patchScDeliverable}
         onProductReimbursementFileChange={onProductReimbursementFileChange}
+        existingProductReimbursementAttachment={existingProductReimbursementAttachment}
+        productReimbursementAttachmentRemoved={productReimbursementAttachmentRemoved}
+        onViewExistingProductReimbursementAttachment={onViewExistingProductReimbursementAttachment}
+        onRemoveExistingProductReimbursementAttachment={onRemoveExistingProductReimbursementAttachment}
+        onRetainExistingProductReimbursementAttachment={onRetainExistingProductReimbursementAttachment}
       />
     );
   }
@@ -348,6 +369,11 @@ export function CreatorDeliverablesSection({
         onRowChange={patchMcRow}
         onCreatorChange={onPatchMcCreator}
         onProductReimbursementFileChange={onProductReimbursementFileChange}
+        existingProductReimbursementAttachment={existingProductReimbursementAttachment}
+        productReimbursementAttachmentRemoved={productReimbursementAttachmentRemoved}
+        onViewExistingProductReimbursementAttachment={onViewExistingProductReimbursementAttachment}
+        onRemoveExistingProductReimbursementAttachment={onRemoveExistingProductReimbursementAttachment}
+        onRetainExistingProductReimbursementAttachment={onRetainExistingProductReimbursementAttachment}
       />
     );
   }
@@ -373,6 +399,10 @@ export function CreatorDeliverablesSection({
             gap: 12px;
             grid-template-columns: repeat(1, minmax(0, 1fr));
           }
+          .campaign-grid > *,
+          .campaign-grid-foreign > * {
+            min-width: 0;
+          }
           @media (min-width: 640px) {
             .campaign-grid {
               grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -386,28 +416,28 @@ export function CreatorDeliverablesSection({
               grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr);
             }
             .campaign-grid-foreign {
-              grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr) minmax(0, 1fr) 140px minmax(0, 1.55fr);
+              grid-template-columns: minmax(0, 0.68fr) minmax(0, 0.95fr) minmax(0, 0.95fr) 96px minmax(220px, 1.35fr);
             }
           }
         `}</style>
         <div className={showCurrency ? "campaign-grid-foreign" : "campaign-grid"}>
-          <label className="intake-field">
+          <label className="intake-field min-w-0">
             <span className="intake-label">Campaign Code *</span>
-            <input className="intake-input" value={values.campaignCode} onChange={(e) => onChange("campaignCode", e.target.value)} data-field="campaignCode" autoComplete="off" />
+            <input className="intake-input min-w-0" value={values.campaignCode} onChange={(e) => onChange("campaignCode", e.target.value)} data-field="campaignCode" autoComplete="off" title={values.campaignCode} />
             <div style={{ minHeight: 16 }}>
               {errors.campaignCode ? <p className="text-danger intake-inline-error">{errors.campaignCode}</p> : null}
             </div>
           </label>
 
-          <label className="intake-field">
+          <label className="intake-field min-w-0">
             <span className="intake-label">Campaign Name *</span>
-            <input className="intake-input" value={values.campaignName} onChange={(e) => onChange("campaignName", e.target.value)} data-field="campaignName" autoComplete="off" />
+            <input className="intake-input min-w-0" value={values.campaignName} onChange={(e) => onChange("campaignName", e.target.value)} data-field="campaignName" autoComplete="off" title={values.campaignName} />
             <div style={{ minHeight: 16 }}>
               {errors.campaignName ? <p className="text-danger intake-inline-error">{errors.campaignName}</p> : null}
             </div>
           </label>
 
-          <label className="intake-field">
+          <label className="intake-field min-w-0">
             <span className="intake-label">Campaign Brand *</span>
             <SearchableSelect value={values.campaignBrand} options={brandOptions} allowCustom panelMaxHeight={160} onChange={(next) => onChange("campaignBrand", next)} placeholder="Select brand" data-field="campaignBrand" />
             <div style={{ minHeight: 16 }}>
@@ -419,7 +449,7 @@ export function CreatorDeliverablesSection({
             <CurrencyField currency={values.currency} onCurrencyChange={(next) => onChange("currency", next as InvoiceIntakeFormValues["currency"])} />
           ) : null}
 
-          <label className="intake-field">
+          <label className="intake-field min-w-0">
             <span className="intake-label">Deliverable *</span>
             <ImDeliverablesField
               options={deliverableOptions.IM}
@@ -428,7 +458,25 @@ export function CreatorDeliverablesSection({
               onChange={updateImDeliverables}
             />
             {selectedImDeliverables.includes("Product Reimbursement") ? (
-              <div style={{ marginTop: 6 }}>
+              <div style={{ display: "grid", gap: 8, marginTop: 6 }}>
+                <label className="intake-field">
+                  <span className="intake-label">Product Reimbursement Amount ({values.currency}) *</span>
+                  <input
+                    className="intake-input"
+                    type="number"
+                    inputMode="decimal"
+                    step="any"
+                    min="0"
+                    value={values.reimbursementAmount}
+                    onChange={(event) => onChange("reimbursementAmount", event.target.value)}
+                    data-field="reimbursementAmount"
+                    autoComplete="off"
+                    placeholder={`Amount ${values.currency}`}
+                  />
+                  <div style={{ minHeight: 16 }}>
+                    {errors.reimbursementAmount ? <p className="text-danger intake-inline-error">{errors.reimbursementAmount}</p> : null}
+                  </div>
+                </label>
                 <ProductReimbursementField
                   fieldKey="campaign-0"
                   file={getProductReimbursementFile("campaign-0")}
@@ -436,6 +484,11 @@ export function CreatorDeliverablesSection({
                   onChange={onProductReimbursementFileChange}
                   helperText="PDF, PNG, JPG, or WEBP. Max 10 MB."
                   formError={errors["campaign-0"]}
+                  existingAttachment={existingProductReimbursementAttachment}
+                  existingAttachmentRemoved={productReimbursementAttachmentRemoved}
+                  onViewExistingAttachment={onViewExistingProductReimbursementAttachment}
+                  onRemoveExistingAttachment={onRemoveExistingProductReimbursementAttachment}
+                  onRetainExistingAttachment={onRetainExistingProductReimbursementAttachment}
                 />
               </div>
             ) : null}
