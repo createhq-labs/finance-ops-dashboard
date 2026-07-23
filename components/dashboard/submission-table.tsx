@@ -343,15 +343,16 @@ type ResubmissionChangeField = {
   label: string;
   type: ResubmissionFieldType;
   column?: SheetColumnId;
+  canonicalKey?: string;
   getValue: (row: Partial<SubmissionRow>) => unknown;
   formatValue?: (value: unknown, row: Partial<SubmissionRow>) => string;
 };
 
 const RESUBMISSION_CHANGE_FIELDS: ResubmissionChangeField[] = [
-  { key: 'entity_name', label: 'Entity Name', type: 'complex', column: 'agency_name', getValue: (row) => row.entity },
-  { key: 'legal_name', label: 'Legal Name', type: 'complex', column: 'agency_trade_name', getValue: (row) => row.trade_name },
-  { key: 'gst_number', label: 'GST Number', type: 'scalar', column: 'gst_number', getValue: (row) => row.gst_number },
-  { key: 'address', label: 'Address', type: 'complex', column: 'address', getValue: (row) => row.address },
+  { key: 'entity_name', label: 'Agency / Brand Name', type: 'complex', column: 'agency_name', canonicalKey: 'agency_brand_name', getValue: (row) => row.entity },
+  { key: 'legal_name', label: 'Trade Name', type: 'complex', column: 'agency_trade_name', canonicalKey: 'trade_name', getValue: (row) => row.trade_name },
+  { key: 'gst_number', label: 'GST Number', type: 'scalar', column: 'gst_number', canonicalKey: 'gst_number', getValue: (row) => row.gst_number },
+  { key: 'address', label: 'GST Address', type: 'complex', column: 'address', canonicalKey: 'gst_address', getValue: (row) => row.address },
   { key: 'payment_terms', label: 'Payment Terms', type: 'scalar', column: 'bill_due', getValue: (row) => row.bill_due },
   { key: 'invoice_type', label: 'Invoice Type', type: 'scalar', column: 'invoice_type', getValue: (row) => row.invoice_type },
   { key: 'creator_creators_name', label: 'Creator / Creators', type: 'complex', column: 'creator_name', getValue: (row) => row.creator_creators_name },
@@ -362,16 +363,17 @@ const RESUBMISSION_CHANGE_FIELDS: ResubmissionChangeField[] = [
   { key: 'deliverables', label: 'Deliverables', type: 'complex', column: 'deliverables', getValue: (row) => row.deliverables },
   { key: 'deal_amount', label: 'Deal Amount', type: 'scalar', column: 'commercials', getValue: (row) => row.amount, formatValue: (value, row) => money(Number(value ?? 0), row.currency) },
   { key: 'product_reimbursement', label: 'Product Reimbursement', type: 'complex', column: 'product_reimbursement_upload', getValue: (row) => row.reimbursement_amount, formatValue: (value, row) => money(Number(value ?? 0), row.currency) },
-  { key: 'product_reimbursement_file', label: 'Product Reimbursement File', type: 'complex', column: 'product_reimbursement_file', getValue: (row) => row.reimbursement_receipts },
+  { key: 'product_reimbursement_file', label: 'Product Reimbursement File', type: 'complex', column: 'product_reimbursement_file', getValue: (row) => row.product_reimbursement_attachment?.file_name || row.reimbursement_receipts },
+  { key: 'reference_po_file', label: 'Reference PO File', type: 'complex', column: 'reference_po_file', getValue: (row) => row.reference_po_attachment?.file_name },
   { key: 'additional_agency_commission', label: 'Additional Agency Commission', type: 'complex', column: 'additional_agency_commission', getValue: (row) => row.additional_agency_commission, formatValue: (value, row) => money(Number(value ?? 0), row.currency) },
   { key: 'additional_information', label: 'Additional Information', type: 'complex', column: 'additional_information', getValue: (row) => row.additional_information },
   { key: 'business_line', label: 'Business Line', type: 'complex', column: 'business_line', getValue: (row) => row.business_line },
   { key: 'entry_type', label: 'Entry Type', type: 'complex', column: 'entry_type', getValue: (row) => row.entry_type },
   { key: 'entity_type', label: 'Entity Type', type: 'complex', column: 'entity_type', getValue: (row) => row.entity_type },
   { key: 'client_type', label: 'Client Type', type: 'complex', column: 'client_type', getValue: (row) => row.client_type },
-  { key: 'agency_name', label: 'Agency Name', type: 'complex', column: 'agency_name', getValue: (row) => row.agency_name },
-  { key: 'agency_trade_name', label: 'Agency Trade Name', type: 'complex', column: 'agency_trade_name', getValue: (row) => row.agency_trade_name },
-  { key: 'brand_trade_name', label: 'Brand Trade Name', type: 'complex', column: 'brand_trade_name', getValue: (row) => row.brand_trade_name },
+  { key: 'agency_name', label: 'Agency / Brand Name', type: 'complex', column: 'agency_name', canonicalKey: 'agency_brand_name', getValue: (row) => row.agency_name },
+  { key: 'agency_trade_name', label: 'Trade Name', type: 'complex', column: 'agency_trade_name', canonicalKey: 'trade_name', getValue: (row) => row.agency_trade_name },
+  { key: 'brand_trade_name', label: 'Trade Name', type: 'complex', column: 'brand_trade_name', canonicalKey: 'trade_name', getValue: (row) => row.brand_trade_name },
   { key: 'currency', label: 'Currency', type: 'scalar', column: 'commercials', getValue: (row) => row.currency },
 ];
 
@@ -440,10 +442,16 @@ function getResubmissionChangedFieldConfigs(row: SubmissionRow): ResubmissionCha
   if (!row.previous_submission_snapshot) return [];
   const previous = row.previous_submission_snapshot;
   const changed: ResubmissionChangeField[] = [];
+  const seenCanonicalKeys = new Set<string>();
   for (const field of RESUBMISSION_CHANGE_FIELDS) {
     const currentValue = normalizeComparableValue(field.getValue(row));
     const previousValue = normalizeComparableValue(field.getValue(previous));
-    if (currentValue !== previousValue) changed.push(field);
+    if (currentValue !== previousValue) {
+      const groupKey = field.canonicalKey ?? field.key;
+      if (seenCanonicalKeys.has(groupKey)) continue;
+      seenCanonicalKeys.add(groupKey);
+      changed.push(field);
+    }
   }
   return changed;
 }
@@ -459,6 +467,20 @@ function formatResubmissionFieldValue(field: ResubmissionChangeField, row: Parti
   return String(rawValue);
 }
 
+function getResubmissionFieldFrequencyKey(field: ResubmissionChangeField) {
+  return field.canonicalKey ?? field.key;
+}
+
+function getAttachmentChangeLabel(field: ResubmissionChangeField, currentRow: Partial<SubmissionRow> | null, previousRow: Partial<SubmissionRow> | null) {
+  if (field.key !== 'product_reimbursement_file' && field.key !== 'reference_po_file') return 'Modified';
+  const currentValue = normalizeComparableValue(currentRow ? field.getValue(currentRow) : null);
+  const previousValue = normalizeComparableValue(previousRow ? field.getValue(previousRow) : null);
+  if (currentValue && !previousValue) return 'File uploaded';
+  if (!currentValue && previousValue) return 'File removed';
+  if (currentValue && previousValue && currentValue !== previousValue) return 'File replaced';
+  return 'Previous file retained';
+}
+
 function fieldValue(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === '') return '-';
   return String(value);
@@ -466,6 +488,47 @@ function fieldValue(value: string | number | null | undefined) {
 
 function normalizeText(value: string | null | undefined) {
   return (value || '').trim().toLowerCase();
+}
+
+function normalizeMasterValue(value: string | number | null | undefined) {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function masterValueMatches(left: string | number | null | undefined, right: string | number | null | undefined) {
+  const normalizedLeft = normalizeMasterValue(left);
+  const normalizedRight = normalizeMasterValue(right);
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
+}
+
+function getMasterReviewKeysForRow(review: MasterDataReviewSummary, row: SubmissionRow): MasterDataCellKey[] {
+  const submittedValue = review.type === 'agency_gst_address' || review.type === 'brand_gst_address'
+    ? review.payload?.entity_name || review.submitted_value
+    : review.submitted_value;
+  const submittedTradeName = review.type === 'agency_gst_address' || review.type === 'brand_gst_address'
+    ? review.payload?.entity_trade_name || review.submitted_trade_name
+    : review.submitted_trade_name;
+
+  if (review.type === 'agency') {
+    const matchesName = masterValueMatches(row.agency_name || row.entity, submittedValue);
+    const matchesTrade = masterValueMatches(row.agency_trade_name || row.trade_name, submittedTradeName);
+    if (!matchesName && !matchesTrade) return [];
+    return ['agency_name', 'agency_trade_name'];
+  }
+
+  if (review.type === 'brand') {
+    const matchesName = masterValueMatches(row.brand_name || row.entity, submittedValue);
+    const matchesTrade = masterValueMatches(row.brand_trade_name || row.trade_name, submittedTradeName);
+    if (!matchesName && !matchesTrade) return [];
+    return ['brand_name', 'brand_trade_name'];
+  }
+
+  if (review.type === 'creator') {
+    return masterValueMatches(row.creator_creators_name, submittedValue) ? ['creator_name'] : [];
+  }
+
+  const gstNumber = review.payload?.gst_number || review.submitted_value;
+  if (!masterValueMatches(row.gst_number, gstNumber)) return [];
+  return ['gst_number'];
 }
 
 function toTitleCase(value: string) {
@@ -2379,6 +2442,61 @@ export function SubmissionTable({
 
   const expandedPiGroupSet = useMemo(() => new Set(expandedPiGroups), [expandedPiGroups]);
   const rowById = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows]);
+  const effectiveMasterDataReviewsBySubmission = useMemo(() => {
+    if (!masterDataReviewsBySubmission) return undefined;
+
+    const next: Record<string, Partial<Record<MasterDataCellKey, MasterDataReviewSummary>>> = {};
+
+    for (const [submissionId, bucket] of Object.entries(masterDataReviewsBySubmission)) {
+      next[submissionId] = { ...bucket };
+    }
+
+    for (const group of groupedPiData.groupedRows) {
+      const latestBucket = { ...(next[group.latest.id] ?? {}) };
+      const latestPendingReviewIds = new Set(
+        Object.values(latestBucket)
+          .filter((review): review is MasterDataReviewSummary => Boolean(review && review.status === 'pending'))
+          .map((review) => review.id)
+      );
+
+      for (const historyRow of group.history) {
+        const historyBucket = next[historyRow.id];
+        if (!historyBucket) continue;
+        const historyKeysToClear: MasterDataCellKey[] = [];
+        const uniquePendingReviews = new Map<string, MasterDataReviewSummary>();
+
+        for (const [key, review] of Object.entries(historyBucket) as Array<[MasterDataCellKey, MasterDataReviewSummary | undefined]>) {
+          if (!review || review.status !== 'pending') continue;
+          uniquePendingReviews.set(review.id, review);
+          historyKeysToClear.push(key);
+        }
+
+        for (const review of uniquePendingReviews.values()) {
+          const latestKeys = getMasterReviewKeysForRow(review, group.latest);
+          if (latestKeys.length === 0) continue;
+          latestPendingReviewIds.add(review.id);
+          latestKeys.forEach((key) => {
+            latestBucket[key] = review;
+          });
+        }
+
+        if (historyKeysToClear.length > 0) {
+          const nextHistoryBucket = { ...historyBucket };
+          for (const key of historyKeysToClear) {
+            const review = historyBucket[key];
+            if (review && latestPendingReviewIds.has(review.id)) {
+              delete nextHistoryBucket[key];
+            }
+          }
+          next[historyRow.id] = nextHistoryBucket;
+        }
+      }
+
+      next[group.latest.id] = latestBucket;
+    }
+
+    return next;
+  }, [groupedPiData.groupedRows, masterDataReviewsBySubmission]);
 
   const resubmissionChangeMap = useMemo(() => {
     const next = new Map<string, ResubmissionChangeField[]>();
@@ -2396,7 +2514,8 @@ export function SubmissionTable({
       for (const row of [group.latest, ...group.history]) {
         if (!row.previous_submission_id || !row.previous_submission_snapshot) continue;
         for (const field of getResubmissionChangedFieldConfigs(row)) {
-          counts.set(field.key, (counts.get(field.key) ?? 0) + 1);
+          const frequencyKey = getResubmissionFieldFrequencyKey(field);
+          counts.set(frequencyKey, (counts.get(frequencyKey) ?? 0) + 1);
         }
       }
       next.set(group.groupId, counts);
@@ -3325,7 +3444,7 @@ export function SubmissionTable({
         }
 
         return (
-          <div className="flex max-w-full items-center gap-1.5">
+          <div className="inline-flex max-w-full items-center gap-1.5 whitespace-nowrap align-middle">
             {statusCell}
             <button
               type="button"
@@ -3334,7 +3453,7 @@ export function SubmissionTable({
                 event.stopPropagation();
                 openChangeSummaryPopover(row, changeFields, event);
               }}
-              className="inline-flex h-5 min-w-[24px] items-center justify-center rounded-full border border-rose-300 bg-rose-50 px-1.5 text-[10px] font-semibold leading-none text-rose-700 transition-none hover:bg-rose-100 dark:border-rose-400/35 dark:bg-rose-500/12 dark:text-rose-200 dark:hover:bg-rose-500/20"
+              className="inline-flex h-5 min-w-[24px] shrink-0 items-center justify-center rounded-full border border-rose-300 bg-rose-50 px-1.5 text-[10px] font-semibold leading-none text-rose-700 transition-none hover:bg-rose-100 dark:border-rose-400/35 dark:bg-rose-500/12 dark:text-rose-200 dark:hover:bg-rose-500/20"
               title="View changes in latest resubmission"
               aria-label={'View ' + changeFields.length + ' changed fields in latest resubmission'}
             >
@@ -3355,7 +3474,7 @@ export function SubmissionTable({
         return commonText(fieldValue(row.client_type));
       case 'agency_name': {
         const value = fieldValue(row.agency_name);
-        const review = masterDataReviewsBySubmission?.[row.id]?.['agency_name'];
+        const review = effectiveMasterDataReviewsBySubmission?.[row.id]?.['agency_name'];
         return (
           <div className="flex items-center gap-1.5">
             <div className="min-w-0 flex-1">{commonText(value)}</div>
@@ -3365,7 +3484,7 @@ export function SubmissionTable({
       }
       case 'agency_trade_name': {
         const value = fieldValue(row.agency_trade_name);
-        const review = masterDataReviewsBySubmission?.[row.id]?.['agency_trade_name'];
+        const review = effectiveMasterDataReviewsBySubmission?.[row.id]?.['agency_trade_name'];
         return (
           <div className="flex items-center gap-1.5">
             <div className="min-w-0 flex-1">{commonText(value)}</div>
@@ -3375,7 +3494,7 @@ export function SubmissionTable({
       }
       case 'brand_name': {
         const value = fieldValue(row.brand_name);
-        const review = masterDataReviewsBySubmission?.[row.id]?.['brand_name'];
+        const review = effectiveMasterDataReviewsBySubmission?.[row.id]?.['brand_name'];
         return (
           <div className="flex items-center gap-1.5">
             <div className="min-w-0 flex-1">{commonText(value)}</div>
@@ -3385,7 +3504,7 @@ export function SubmissionTable({
       }
       case 'brand_trade_name': {
         const value = fieldValue(row.brand_trade_name);
-        const review = masterDataReviewsBySubmission?.[row.id]?.['brand_trade_name'];
+        const review = effectiveMasterDataReviewsBySubmission?.[row.id]?.['brand_trade_name'];
         return (
           <div className="flex items-center gap-1.5">
             <div className="min-w-0 flex-1">{commonText(value)}</div>
@@ -3395,7 +3514,7 @@ export function SubmissionTable({
       }
       case 'gst_number': {
         const value = fieldValue(row.gst_number);
-        const review = masterDataReviewsBySubmission?.[row.id]?.gst_number;
+        const review = effectiveMasterDataReviewsBySubmission?.[row.id]?.gst_number;
         return (
           <div className="flex items-start gap-1.5">
             <div className="min-w-0 flex-1">{commonText(value)}</div>
@@ -3419,7 +3538,7 @@ export function SubmissionTable({
         return commonText(fieldValue(row.bill_due));
       case 'creator_name': {
         const value = creatorData.creatorNames;
-        const review = masterDataReviewsBySubmission?.[row.id]?.creator_name;
+        const review = effectiveMasterDataReviewsBySubmission?.[row.id]?.creator_name;
         return (
           <div className="flex items-center gap-1.5">
             <div className="min-w-0 flex-1">{commonText(value)}</div>
@@ -3850,11 +3969,12 @@ export function SubmissionTable({
                 <div
                   ref={changeSummaryPopoverRef}
                   data-resubmission-change-dialog="true"
-                  className="fixed z-[10050] flex w-[252px] max-h-[320px] flex-col overflow-hidden rounded-xl border bg-popover dark:bg-muted"
+                  className="fixed z-[10050] flex w-[252px] max-h-[320px] flex-col overflow-hidden rounded-xl border bg-black dark:bg-black"
                   style={{
                     top: changeSummaryPosition?.top ?? -9999,
                     left: changeSummaryPosition?.left ?? -9999,
                     borderColor: 'var(--ring)',
+                    backgroundColor: '#000',
                   }}
                 >
                   <div className="flex items-start justify-between gap-2 border-b border-border/60 px-3 py-2">
@@ -3877,7 +3997,7 @@ export function SubmissionTable({
                         <div className="pb-1 text-[10px] font-medium uppercase tracking-[0.05em] text-sky-700 dark:text-sky-300">Value changes</div>
                         <div className="space-y-0.5">
                           {scalarFields.map((field) => {
-                            const frequency = frequencyMap.get(field.key) ?? 0;
+                            const frequency = frequencyMap.get(getResubmissionFieldFrequencyKey(field)) ?? 0;
                             const isExpanded = changeSummaryExpandedKey === field.key;
                             return (
                               <div key={field.key}>
@@ -3920,7 +4040,8 @@ export function SubmissionTable({
                         <div className="pb-1 text-[10px] font-medium uppercase tracking-[0.05em] text-amber-700 dark:text-amber-300">Needs comparison</div>
                         <div className="space-y-0.5">
                           {complexFields.map((field) => {
-                            const frequency = frequencyMap.get(field.key) ?? 0;
+                            const frequency = frequencyMap.get(getResubmissionFieldFrequencyKey(field)) ?? 0;
+                            const stateLabel = getAttachmentChangeLabel(field, currentRow, previousRow);
                             return (
                               <button
                                 key={field.key}
@@ -3933,7 +4054,7 @@ export function SubmissionTable({
                                   {frequency >= 3 ? <span className="ml-1 text-[10px] font-normal text-muted-foreground">&middot; {frequency}x</span> : null}
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1.5">
-                                  <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300">Modified</span>
+                                  <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300">{stateLabel}</span>
                                   <ChevronRight size={12} className="text-muted-foreground transition-none group-hover:text-sky-700 dark:group-hover:text-sky-300" />
                                 </div>
                               </button>

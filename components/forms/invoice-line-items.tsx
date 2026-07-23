@@ -416,6 +416,7 @@ export function SingleCreatorRows({
                     onChange={onCreatorChange}
                     deselectOnSelectedClick
                     clearable
+                    editCustomOnDoubleClick
                     placeholder="Select creator"
                     disabled={idx > 0}
                     data-field="scCreator"
@@ -433,6 +434,7 @@ export function SingleCreatorRows({
                     onChange={onBrandChange}
                     deselectOnSelectedClick
                     clearable
+                    editCustomOnDoubleClick
                     placeholder="Select brand"
                     disabled={idx > 0}
                     data-field="scBrand"
@@ -585,6 +587,7 @@ export function MultiCreatorRows({
                     onChange={(next) => onCreatorChange(idx, next)}
                     deselectOnSelectedClick
                     clearable
+                    editCustomOnDoubleClick
                     placeholder="Select creator"
                     data-field={`mcRows.${idx}.creator`}
                   />
@@ -602,6 +605,7 @@ export function MultiCreatorRows({
                     onChange={(next) => onRowChange(idx, { brand: next })}
                     deselectOnSelectedClick
                     clearable
+                    editCustomOnDoubleClick
                     placeholder="Select brand"
                     disabled={idx > 0}
                     data-field={`mcRows.${idx}.brand`}

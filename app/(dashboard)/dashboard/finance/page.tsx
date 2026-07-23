@@ -891,6 +891,8 @@ export default function FinanceReviewPage() {
       } else if (review.type === 'brand') {
         applyReview('brand_name');
         applyReview('brand_trade_name');
+      } else if (review.type === 'agency_gst_address' || review.type === 'brand_gst_address') {
+        applyReview('gst_number');
       } else {
         applyReview('creator_name');
       }

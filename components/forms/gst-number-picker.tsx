@@ -125,8 +125,10 @@ function StatusPill({ pending }: { pending: boolean }) {
 export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew, onClear }: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const editRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [editingPendingValue, setEditingPendingValue] = useState(false);
   const [showInvalidHint, setShowInvalidHint] = useState(false);
 
   const normalizedValue = normalizeGstInput(value);
@@ -153,6 +155,11 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
   const showAddState = normalizedQuery.length > 0 && filteredOptions.length === 0;
   const remainingCharacters = Math.max(15 - normalizedQuery.length, 0);
   const hasCompleteInvalidGst = normalizedQuery.length === 15 && !canAddNew;
+
+  useEffect(() => {
+    if (!editingPendingValue) return;
+    requestAnimationFrame(() => editRef.current?.focus());
+  }, [editingPendingValue]);
 
   useEffect(() => {
     if (!open) return;
@@ -190,10 +197,33 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
 
   return (
     <div ref={rootRef} className="relative">
+      {editingPendingValue ? (
+        <input
+          ref={editRef}
+          className="intake-input font-mono"
+          value={formatGstForDisplay(normalizedValue)}
+          onChange={(event) => onSelect(normalizeGstInput(event.target.value))}
+          onBlur={() => setEditingPendingValue(false)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === "Escape") {
+              event.preventDefault();
+              setEditingPendingValue(false);
+            }
+          }}
+          autoComplete="off"
+        />
+      ) : (
       <button
         type="button"
         className={`intake-select-trigger ${open ? "intake-select-trigger-open" : ""}`}
         onClick={() => setOpen((prev) => !prev)}
+        onDoubleClick={(event) => {
+          if (!pendingSelection) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(false);
+          setEditingPendingValue(true);
+        }}
       >
         <span className="intake-select-trigger-label" style={{ fontSize: 13 }}>
           {selectedEntry ? (
@@ -238,6 +268,7 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
           <ChevronDown className={`intake-select-chevron ${open ? "rotate-180" : ""}`} style={{ width: 16, height: 16 }} />
         </span>
       </button>
+      )}
 
       {open ? (
         <div

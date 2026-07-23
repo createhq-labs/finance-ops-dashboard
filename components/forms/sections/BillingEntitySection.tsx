@@ -191,6 +191,7 @@ export function BillingEntitySection({
               clearable
               placeholder={`Select ${values.entityType.toLowerCase()} name`}
               data-field="agencyBrandName"
+              editCustomOnDoubleClick
               required
             />
             <div style={{ minHeight: 16 }}>
@@ -210,6 +211,7 @@ export function BillingEntitySection({
               clearable
               placeholder={`Select ${values.entityType.toLowerCase()} trade name`}
               data-field="agencyBrandTradeName"
+              editCustomOnDoubleClick
               required
             />
             <div style={{ minHeight: 16 }}>
@@ -230,6 +232,7 @@ export function BillingEntitySection({
                 clearable
                 placeholder="Select brand name"
                 data-field="billingBrandName"
+                editCustomOnDoubleClick
                 required
               />
               <div style={{ minHeight: 16 }}>

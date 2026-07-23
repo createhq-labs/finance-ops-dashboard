@@ -1349,6 +1349,12 @@ h3 {
   opacity: 0;
 }
 
+.intake-history-highlight {
+  outline: 2px solid color-mix(in oklab, var(--ring) 70%, transparent);
+  outline-offset: 3px;
+  transition: outline-color 0.2s ease;
+}
+
 .intake-searchable-option-selected .intake-searchable-option-check {
   opacity: 1;
 }
