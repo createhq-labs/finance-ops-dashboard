@@ -34,6 +34,7 @@ type SearchableSelectProps = {
   panelMaxHeight?: number;
   searchTextByOption?: Record<string, string>;
   searchThreshold?: number;
+  editCustomOnDoubleClick?: boolean;
 };
 
 function normalizeOption(
@@ -83,6 +84,7 @@ export function SearchableSelect({
   panelMaxHeight = 220,
   searchTextByOption,
   searchThreshold = 8,
+  editCustomOnDoubleClick = false,
 }: SearchableSelectProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -93,6 +95,7 @@ export function SearchableSelect({
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [editingCustomValue, setEditingCustomValue] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
 
   const normalizedOptions = useMemo(() => {
@@ -252,6 +255,7 @@ export function SearchableSelect({
 
   const triggerLabel = selectedOption?.label ?? value;
   const showPlaceholder = !triggerLabel;
+  const canEditCustomValue = editCustomOnDoubleClick && allowCustom && Boolean(value.trim()) && !selectedOption && !disabled;
 
   return (
     <div
@@ -259,11 +263,44 @@ export function SearchableSelect({
       className={`intake-searchable-root${className ? ` ${className}` : ""}`}
       style={{ position: "relative", zIndex: open ? 90 : undefined }}
     >
+      {editingCustomValue ? (
+        <input
+          ref={searchInputRef}
+          className="intake-input"
+          value={value}
+          data-field={dataField}
+          autoComplete="off"
+          onChange={(event) => {
+            if (typeof onChange === "function") onChange(event.target.value);
+          }}
+          onBlur={() => setEditingCustomValue(false)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              setEditingCustomValue(false);
+              requestAnimationFrame(() => triggerRef.current?.focus());
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setEditingCustomValue(false);
+              requestAnimationFrame(() => triggerRef.current?.focus());
+            }
+          }}
+        />
+      ) : (
       <button
         ref={triggerRef}
         type="button"
         className={`intake-select-trigger${open ? " intake-select-trigger-open" : ""}${showPlaceholder ? " intake-select-trigger-placeholder" : ""}`}
         title={showPlaceholder ? placeholder : triggerLabel}
+        onDoubleClick={(event) => {
+          if (!canEditCustomValue) return;
+          event.preventDefault();
+          event.stopPropagation();
+          closeMenu();
+          setEditingCustomValue(true);
+          requestAnimationFrame(() => searchInputRef.current?.focus());
+        }}
         onMouseDown={(event) => {
           if (event.button !== 0 || disabled) return;
           event.preventDefault();
@@ -345,6 +382,7 @@ export function SearchableSelect({
         ) : null}
         <ChevronDown className={`intake-select-chevron${open ? " intake-select-chevron-open" : ""}`} size={16} />
       </button>
+      )}
       <input
         tabIndex={-1}
         aria-hidden="true"

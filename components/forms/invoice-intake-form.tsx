@@ -99,6 +99,10 @@ const INITIAL_VALUES: InvoiceIntakeFormValues = {
   currency: "INR",
 };
 
+const FORM_RECOVERY_VERSION = 1;
+const FORM_RECOVERY_KEY_PREFIX = "finance-ops:invoice-form";
+const MAX_HISTORY_ENTRIES = 5;
+
 function sanitizeDecimalInput(value: string) {
   const cleaned = value.replace(/[^0-9.]/g, "");
   if (!cleaned) return "";
@@ -203,6 +207,12 @@ export function InvoiceIntakeForm({
   const formRef = useRef<HTMLFormElement | null>(null);
   const previousBillingBrandRef = useRef("");
   const gstAddressSnapshotRef = useRef<Pick<InvoiceIntakeFormValues, "addressLine" | "city" | "state" | "country" | "pincode"> | null>(null);
+  const undoStackRef = useRef<InvoiceIntakeFormValues[]>([]);
+  const redoStackRef = useRef<InvoiceIntakeFormValues[]>([]);
+  const lastHistoryValuesRef = useRef<InvoiceIntakeFormValues | null>(null);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restoredStorageKeyRef = useRef("");
+  const suppressHistoryRef = useRef(false);
   const [values, setValues] = useState<InvoiceIntakeFormValues>({
     ...INITIAL_VALUES,
     submitterName,
@@ -233,6 +243,179 @@ export function InvoiceIntakeForm({
   const [referencePoAttachmentRemoved, setReferencePoAttachmentRemoved] = useState(false);
   const [masters, setMasters] = useState<FormDropdownMasterData>(getFallbackMasterData);
   const lockedBusinessLine = currentUserRole === 'employee' && currentUserBusinessLine ? currentUserBusinessLine : null;
+  const formRecoveryContext = useMemo(
+    () => ({
+      user: (submitterEmail || "anonymous").trim().toLowerCase(),
+      mode: previousSubmissionId ? "resubmission" : "new",
+      previousSubmissionId: previousSubmissionId || null,
+      role: currentUserRole || "unknown",
+      lockedBusinessLine: lockedBusinessLine || null,
+    }),
+    [currentUserRole, lockedBusinessLine, previousSubmissionId, submitterEmail]
+  );
+  const formRecoveryKey = useMemo(
+    () => [
+      FORM_RECOVERY_KEY_PREFIX,
+      `v${FORM_RECOVERY_VERSION}`,
+      formRecoveryContext.user,
+      formRecoveryContext.mode,
+      formRecoveryContext.previousSubmissionId || "new",
+      formRecoveryContext.role,
+      formRecoveryContext.lockedBusinessLine || "any",
+    ].join(":"),
+    [formRecoveryContext]
+  );
+
+  function getRecoveryValues(nextValues: InvoiceIntakeFormValues): InvoiceIntakeFormValues {
+    return {
+      ...nextValues,
+      totalAmount: "",
+    };
+  }
+
+  function getRecognizedRecoveryValues(savedValues: Partial<InvoiceIntakeFormValues>) {
+    const recognized: Partial<InvoiceIntakeFormValues> = {};
+    (Object.keys(INITIAL_VALUES) as Array<keyof InvoiceIntakeFormValues>).forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(savedValues, key)) {
+        (recognized as Record<string, unknown>)[key] = savedValues[key];
+      }
+    });
+    return recognized;
+  }
+
+  function valuesMatch(left: InvoiceIntakeFormValues, right: InvoiceIntakeFormValues) {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }
+
+  function cssAttributeValue(value: string) {
+    return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  }
+
+  function getFirstChangedFieldKey(previous: InvoiceIntakeFormValues, next: InvoiceIntakeFormValues) {
+    const scLength = Math.max(previous.scDeliverables.length, next.scDeliverables.length);
+    for (let index = 0; index < scLength; index += 1) {
+      const before = previous.scDeliverables[index];
+      const after = next.scDeliverables[index];
+      if (before?.deliverable !== after?.deliverable) return `scDeliverables.${index}.deliverable`;
+      if (before?.amount !== after?.amount) return `scDeliverables.${index}.amount`;
+    }
+
+    const mcLength = Math.max(previous.mcRows.length, next.mcRows.length);
+    for (let index = 0; index < mcLength; index += 1) {
+      const before = previous.mcRows[index];
+      const after = next.mcRows[index];
+      if (before?.creator !== after?.creator) return `mcRows.${index}.creator`;
+      if (before?.brand !== after?.brand) return `mcRows.${index}.brand`;
+      if (before?.deliverable !== after?.deliverable) return `mcRows.${index}.deliverable`;
+      if (before?.amount !== after?.amount) return `mcRows.${index}.amount`;
+    }
+
+    if (JSON.stringify(previous.campaignExtraDeliverables) !== JSON.stringify(next.campaignExtraDeliverables)) {
+      return "campaignDeliverable";
+    }
+
+    const directKeys: Array<keyof InvoiceIntakeFormValues> = [
+      "businessLine",
+      "entryType",
+      "entityType",
+      "clientType",
+      "agencyBrandName",
+      "agencyBrandTradeName",
+      "billingBrandName",
+      "gstNumber",
+      "addressLine",
+      "city",
+      "state",
+      "country",
+      "pincode",
+      "invoiceType",
+      "billDue",
+      "commission",
+      "reimbursementIncluded",
+      "reimbursementAmount",
+      "reimbursementProof",
+      "additionalInformation",
+      "scCreator",
+      "scBrand",
+      "campaignCode",
+      "campaignBrand",
+      "campaignDeliverable",
+      "campaignName",
+      "campaignNotes",
+      "imCommercials",
+      "currency",
+    ];
+
+    return directKeys.find((key) => previous[key] !== next[key]) ?? null;
+  }
+
+  function highlightHistoryField(fieldKey: string | null) {
+    if (!fieldKey) return;
+    const form = formRef.current;
+    if (!form) return;
+
+    const field = form.querySelector<HTMLElement>(`[data-field="${cssAttributeValue(fieldKey)}"]`);
+    if (!field) return;
+
+    setActiveField(fieldKey);
+    const rect = field.getBoundingClientRect();
+    const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
+    if (!isVisible) field.scrollIntoView({ behavior: "smooth", block: "center" });
+    field.classList.add("intake-history-highlight");
+    window.setTimeout(() => field.classList.remove("intake-history-highlight"), 1500);
+  }
+
+  function clearHistory(nextValues: InvoiceIntakeFormValues = values) {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    lastHistoryValuesRef.current = nextValues;
+  }
+
+  function clearSavedRecovery() {
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem(formRecoveryKey);
+  }
+
+  function applyHistoryValues(nextValues: InvoiceIntakeFormValues, changedField: string | null) {
+    suppressHistoryRef.current = true;
+    lastHistoryValuesRef.current = nextValues;
+    setValues(nextValues);
+    setHasInteracted(true);
+    setFieldErrors({});
+    setError("");
+    requestAnimationFrame(() => highlightHistoryField(changedField));
+  }
+
+  function undoLastChange() {
+    const previous = undoStackRef.current.pop();
+    if (!previous) return;
+    const changedField = getFirstChangedFieldKey(values, previous);
+    redoStackRef.current = [...redoStackRef.current.slice(-(MAX_HISTORY_ENTRIES - 1)), values];
+    applyHistoryValues(previous, changedField);
+  }
+
+  function redoLastChange() {
+    const next = redoStackRef.current.pop();
+    if (!next) return;
+    const changedField = getFirstChangedFieldKey(values, next);
+    undoStackRef.current = [...undoStackRef.current.slice(-(MAX_HISTORY_ENTRIES - 1)), values];
+    applyHistoryValues(next, changedField);
+  }
+
+  function handleUndoRedoShortcut(event: Pick<KeyboardEvent, "ctrlKey" | "metaKey" | "shiftKey" | "key" | "preventDefault" | "stopPropagation">) {
+    const key = event.key.toLowerCase();
+    const isUndo = (event.ctrlKey || event.metaKey) && !event.shiftKey && key === "z";
+    const isRedo =
+      ((event.ctrlKey || event.metaKey) && key === "y") ||
+      ((event.ctrlKey || event.metaKey) && event.shiftKey && key === "z");
+
+    if (!isUndo && !isRedo) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    if (isUndo) undoLastChange();
+    else redoLastChange();
+    return true;
+  }
 
   useEffect(() => {
     setValues((prev) => ({
@@ -264,6 +447,109 @@ export function InvoiceIntakeForm({
     setProductReimbursementAttachmentRemoved(false);
     setReferencePoAttachmentRemoved(false);
   }, [initialValues, submitterEmail, submitterName]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!formRecoveryKey) return;
+    if (previousSubmissionId && !initialValues) return;
+    if (restoredStorageKeyRef.current === formRecoveryKey) return;
+
+    let nextValues: InvoiceIntakeFormValues = {
+      ...INITIAL_VALUES,
+      ...(initialValues ?? {}),
+      submitterName: submitterName || initialValues?.submitterName || "",
+      submitterEmail: submitterEmail || initialValues?.submitterEmail || "",
+      campaignExtraDeliverables: initialValues?.campaignExtraDeliverables ?? INITIAL_VALUES.campaignExtraDeliverables,
+      scDeliverables: initialValues?.scDeliverables ?? INITIAL_VALUES.scDeliverables,
+      mcRows: initialValues?.mcRows ?? INITIAL_VALUES.mcRows,
+    };
+
+    try {
+      const raw = window.localStorage.getItem(formRecoveryKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          version?: number;
+          formContext?: typeof formRecoveryContext;
+          values?: Partial<InvoiceIntakeFormValues>;
+        };
+        const compatible =
+          parsed.version === FORM_RECOVERY_VERSION &&
+          parsed.formContext?.user === formRecoveryContext.user &&
+          parsed.formContext?.mode === formRecoveryContext.mode &&
+          parsed.formContext?.previousSubmissionId === formRecoveryContext.previousSubmissionId;
+
+        if (compatible && parsed.values && typeof parsed.values === "object") {
+          const recoveredValues = getRecognizedRecoveryValues(parsed.values);
+          nextValues = {
+            ...nextValues,
+            ...recoveredValues,
+            submitterName: submitterName || recoveredValues.submitterName || nextValues.submitterName,
+            submitterEmail: submitterEmail || recoveredValues.submitterEmail || nextValues.submitterEmail,
+            scDeliverables: recoveredValues.scDeliverables ?? nextValues.scDeliverables,
+            mcRows: recoveredValues.mcRows ?? nextValues.mcRows,
+            campaignExtraDeliverables: recoveredValues.campaignExtraDeliverables ?? nextValues.campaignExtraDeliverables,
+          };
+        }
+      }
+    } catch {
+      // Ignore incompatible or malformed local recovery data.
+    }
+
+    suppressHistoryRef.current = true;
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    lastHistoryValuesRef.current = nextValues;
+    restoredStorageKeyRef.current = formRecoveryKey;
+    setValues(nextValues);
+  }, [formRecoveryContext, formRecoveryKey, initialValues, previousSubmissionId, submitterEmail, submitterName]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!formRecoveryKey || restoredStorageKeyRef.current !== formRecoveryKey) return;
+
+    if (suppressHistoryRef.current) {
+      suppressHistoryRef.current = false;
+      lastHistoryValuesRef.current = values;
+    } else if (hasInteracted && lastHistoryValuesRef.current && !valuesMatch(lastHistoryValuesRef.current, values)) {
+      undoStackRef.current = [...undoStackRef.current.slice(-(MAX_HISTORY_ENTRIES - 1)), lastHistoryValuesRef.current];
+      redoStackRef.current = [];
+      lastHistoryValuesRef.current = values;
+    } else if (!lastHistoryValuesRef.current) {
+      lastHistoryValuesRef.current = values;
+    }
+
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      window.localStorage.setItem(
+        formRecoveryKey,
+        JSON.stringify({
+          version: FORM_RECOVERY_VERSION,
+          savedAt: new Date().toISOString(),
+          formContext: formRecoveryContext,
+          values: getRecoveryValues(values),
+        })
+      );
+    }, 250);
+
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, [formRecoveryContext, formRecoveryKey, hasInteracted, values]);
+
+  useEffect(() => {
+    function handleDocumentKeyDown(event: KeyboardEvent) {
+      const form = formRef.current;
+      if (!form) return;
+      const target = event.target as Node | null;
+      if (!target || !form.contains(target)) return;
+      handleUndoRedoShortcut(event);
+    }
+
+    document.addEventListener("keydown", handleDocumentKeyDown, true);
+    return () => document.removeEventListener("keydown", handleDocumentKeyDown, true);
+    // Rebind with current values so undo/redo closures use the latest form state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values]);
 
   useEffect(() => {
     let mounted = true;
@@ -643,25 +929,12 @@ export function InvoiceIntakeForm({
     const tradeNameMap = values.entityType === "Agency" ? agencyTradeNameMap : brandTradeNameMap;
     const mappedTradeName = tradeNameMap[next.trim().toLowerCase()];
     setHasInteracted(true);
-    setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
-    setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
     setValues((prev) => ({
       ...prev,
       agencyBrandName: next,
       ...(mappedTradeName ? { agencyBrandTradeName: mappedTradeName } : {}),
-      ...(prev.clientType === "Indian"
-        ? {
-            gstSelectionMode: "existing" as const,
-            gstNumber: "",
-            addressLine: "",
-            city: "",
-            state: "",
-            country: "India",
-            pincode: "",
-          }
-        : {}),
     }));
-    clearErrors(["agencyBrandName", "agencyBrandTradeName", "gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+    clearErrors(["agencyBrandName", "agencyBrandTradeName"]);
     setError("");
   }
 
@@ -690,31 +963,19 @@ export function InvoiceIntakeForm({
     const entityNameMap = values.entityType === "Agency" ? agencyNameMap : brandNameMap;
     const mappedEntityName = entityNameMap[next.trim().toLowerCase()];
     setHasInteracted(true);
-    setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
-    setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
     setValues((prev) => ({
       ...prev,
       agencyBrandTradeName: next,
       ...(mappedEntityName ? { agencyBrandName: mappedEntityName } : {}),
-      ...(prev.clientType === "Indian"
-        ? {
-            gstSelectionMode: "existing" as const,
-            gstNumber: "",
-            addressLine: "",
-            city: "",
-            state: "",
-            country: "India",
-            pincode: "",
-          }
-        : {}),
     }));
-    clearErrors(["agencyBrandTradeName", "agencyBrandName", "gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+    clearErrors(["agencyBrandTradeName", "agencyBrandName"]);
     setError("");
   }
 
   function handleGstSelect(next: string) {
     const normalizedGst = next.toUpperCase();
     const mapped = gstMappingByNumber[next.trim().toUpperCase()];
+    setHasInteracted(true);
 
     if (!mapped) {
       gstAddressSnapshotRef.current = null;
@@ -730,7 +991,6 @@ export function InvoiceIntakeForm({
 
     setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
     setAutoFilledLocation({ city: true, state: true, country: true, pincode: true });
-    setHasInteracted(true);
     const inferredMappedAddress = inferAddressData(mapped.address, values.clientType);
     const nextAddress = {
       addressLine: mapped.address,
@@ -754,30 +1014,16 @@ export function InvoiceIntakeForm({
     setHasInteracted(true);
     setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
     setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
-    setValues((prev) => {
-      const snapshot = gstAddressSnapshotRef.current;
-      const addressStillFromGst = snapshot !== null &&
-        prev.addressLine === snapshot.addressLine &&
-        prev.city === snapshot.city &&
-        prev.state === snapshot.state &&
-        prev.country === snapshot.country &&
-        prev.pincode === snapshot.pincode;
-
-      return {
-        ...prev,
-        gstSelectionMode: "existing",
-        gstNumber: "",
-        ...(addressStillFromGst
-          ? {
-              addressLine: "",
-              city: "",
-              state: "",
-              country: prev.clientType === "Indian" ? "India" : "",
-              pincode: "",
-            }
-          : {}),
-      };
-    });
+    setValues((prev) => ({
+      ...prev,
+      gstSelectionMode: "existing",
+      gstNumber: "",
+      addressLine: "",
+      city: "",
+      state: "",
+      country: prev.clientType === "Indian" ? "India" : "",
+      pincode: "",
+    }));
     gstAddressSnapshotRef.current = null;
     clearErrors(["gstNumber", "addressLine", "city", "state", "country", "pincode"]);
     setError("");
@@ -837,6 +1083,7 @@ export function InvoiceIntakeForm({
 
   function setBranch(branch: BusinessLine) {
     if (lockedBusinessLine && branch !== lockedBusinessLine) return;
+    setHasInteracted(true);
     setValues((prev) => ({
       ...prev,
       businessLine: branch,
@@ -860,6 +1107,7 @@ export function InvoiceIntakeForm({
   }
 
   function setEntryType(entry: EntryType) {
+    setHasInteracted(true);
     setValues((prev) => ({
       ...prev,
       ...resetTalentManagementState(entry),
@@ -869,10 +1117,12 @@ export function InvoiceIntakeForm({
   }
 
   function addScDeliverable() {
+    setHasInteracted(true);
     setValues((prev) => ({ ...prev, scDeliverables: [...prev.scDeliverables, { ...EMPTY_SC_ROW }] }));
   }
 
   function removeScDeliverable(index: number) {
+    setHasInteracted(true);
     setValues((prev) => ({
       ...prev,
       ...(() => {
@@ -888,6 +1138,7 @@ export function InvoiceIntakeForm({
   }
 
   function patchScDeliverable(index: number, patch: { deliverable?: string; amount?: string }) {
+    setHasInteracted(true);
     setValues((prev) => ({
       ...prev,
       ...(() => {
@@ -911,6 +1162,7 @@ export function InvoiceIntakeForm({
   }
 
   function addMcRow() {
+    setHasInteracted(true);
     setValues((prev) => ({
       ...prev,
       mcRows: [...prev.mcRows, { ...EMPTY_MC_ROW, brand: prev.mcRows[0]?.brand || "" }],
@@ -918,6 +1170,7 @@ export function InvoiceIntakeForm({
   }
 
   function removeMcRow(index: number) {
+    setHasInteracted(true);
     setValues((prev) => ({
       ...prev,
       ...(() => {
@@ -933,6 +1186,7 @@ export function InvoiceIntakeForm({
   }
 
   function patchMcRow(index: number, patch: { creator?: string; brand?: string; deliverable?: string; amount?: string }) {
+    setHasInteracted(true);
     setValues((prev) => {
       const nextRows = prev.mcRows.map((item, i) => {
         const nextPatch =
@@ -961,6 +1215,7 @@ export function InvoiceIntakeForm({
   }
 
   function addImDeliverable() {
+    setHasInteracted(true);
     setValues((prev) => ({
       ...prev,
       campaignExtraDeliverables: [...prev.campaignExtraDeliverables, ""],
@@ -968,6 +1223,7 @@ export function InvoiceIntakeForm({
   }
 
   function removeImDeliverable(index: number) {
+    setHasInteracted(true);
     setValues((prev) => ({
       ...prev,
       campaignExtraDeliverables: prev.campaignExtraDeliverables.filter((_, i) => i !== index),
@@ -976,6 +1232,7 @@ export function InvoiceIntakeForm({
   }
 
   function patchImDeliverable(index: number, value: string) {
+    setHasInteracted(true);
     setValues((prev) => ({
       ...prev,
       campaignExtraDeliverables: prev.campaignExtraDeliverables.map((item, i) => (i === index ? value : item)),
@@ -984,6 +1241,7 @@ export function InvoiceIntakeForm({
   }
 
   function patchScCreator(nextCreator: string) {
+    setHasInteracted(true);
     setValues((prev) => ({
       ...prev,
       scCreator: nextCreator,
@@ -992,6 +1250,7 @@ export function InvoiceIntakeForm({
   }
 
   function patchMcCreator(index: number, creator: string) {
+    setHasInteracted(true);
     setValues((prev) => ({
       ...prev,
       mcRows: prev.mcRows.map((row, i) => (i === index ? { ...row, creator } : row)),
@@ -1416,6 +1675,8 @@ export function InvoiceIntakeForm({
         retainReferencePoAttachment: Boolean(existingReferencePoAttachment && !referencePoFile && !referencePoAttachmentRemoved),
         removeReferencePoAttachment: referencePoAttachmentRemoved,
       });
+      clearSavedRecovery();
+      clearHistory(values);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submit failed.");
     } finally {
@@ -1443,6 +1704,12 @@ export function InvoiceIntakeForm({
     setActiveField("submitterName");
     setHasInteracted(false);
     setError("");
+    clearSavedRecovery();
+    clearHistory({
+      ...INITIAL_VALUES,
+      submitterName: values.submitterName,
+      submitterEmail: values.submitterEmail,
+    });
   }
 
   return (
