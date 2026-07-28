@@ -468,7 +468,7 @@ export default function FinanceReviewPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [businessLineFilter, setBusinessLineFilter] = useState<'all' | 'TM' | 'IM'>('all');
-  const [intakeStatusFilter, setIntakeStatusFilter] = useState<'all' | 'submitted' | 'accepted' | 'rejected'>('all');
+  const [intakeStatusFilter, setIntakeStatusFilter] = useState<'all' | 'submitted' | 'accepted' | 'rejected' | 'declined'>('all');
   const [employeeFilter, setEmployeeFilter] = useState('all');
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('all');
   const [creatorInvoiceReceivedFilter, setCreatorInvoiceReceivedFilter] = useState<'all' | string>('all');
@@ -920,6 +920,10 @@ export default function FinanceReviewPage() {
         }
         action = 'request_resubmission';
         payload = { rejection_note: note };
+      } else if (value === 'declined') {
+        const note = String(targetRow.finance_comment || targetRow.rejection_note || '').trim();
+        action = 'reject';
+        if (note) payload = { rejection_note: note };
       } else {
         return { success: false, message: 'Submitted state is controlled by submission workflow.' };
       }
@@ -1275,7 +1279,8 @@ export default function FinanceReviewPage() {
                 { value: 'all', label: 'All Statuses' },
                 { value: 'submitted', label: 'Submitted' },
                 { value: 'accepted', label: 'Accepted' },
-                { value: 'rejected', label: 'Rejected' },
+                { value: 'rejected', label: 'Resubmission Requested' },
+                { value: 'declined', label: 'Rejected' },
               ],
             },
             {
@@ -1349,7 +1354,7 @@ export default function FinanceReviewPage() {
           onSearch={setQuery}
           onPrimaryChange={(key, value) => {
             if (key === 'businessLine') setBusinessLineFilter((value || 'all') as 'all' | 'TM' | 'IM');
-            if (key === 'status') setIntakeStatusFilter((value || 'all') as 'all' | 'submitted' | 'accepted' | 'rejected');
+            if (key === 'status') setIntakeStatusFilter((value || 'all') as 'all' | 'submitted' | 'accepted' | 'rejected' | 'declined');
             if (key === 'employee') setEmployeeFilter(value || 'all');
           }}
           onAdvancedChange={(filters) => {
