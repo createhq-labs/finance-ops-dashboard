@@ -77,6 +77,16 @@ const getChartDotDelay = (index: number) =>
 const getChartBarDelay = (index: number) =>
   Math.max(CHART_LINE_START_DELAY_MS, getChartDotDelay(index) - CHART_BAR_GROW_DURATION_MS);
 
+// CHART_PULSE_START_DELAY_MS is the latest point at which bars, line, arrow head, and dots have all finished revealing.
+const CHART_SWEEP_DELAY_MS = CHART_PULSE_START_DELAY_MS;
+const CHART_SWEEP_DURATION_MS = 9900;
+const CHART_SWEEP_FLASH_DURATION_MS = 960;
+const CHART_SWEEP_FLASH_FRACTION = CHART_SWEEP_FLASH_DURATION_MS / CHART_SWEEP_DURATION_MS;
+// Negative phase offset per bar so a single infinite-looping keyframe reads as one flash
+// travelling left-to-right: leftmost bar peaks first, rightmost peaks at cycle end, then it wraps.
+const getBarSweepDelay = (index: number) =>
+  CHART_SWEEP_DELAY_MS + CHART_SWEEP_DURATION_MS * (BARS[index].cx / CHART_WIDTH - 1);
+
 const BADGES = [
   { icon: ShieldCheck, label: 'Authentication Ready', sublabel: 'Verified & Secure' },
   { icon: Lock, label: 'Enterprise Security', sublabel: 'Protected Workspace' },
@@ -286,6 +296,25 @@ export function LoginExperience({ children }: { children: ReactNode }) {
                         <feMergeNode in="SourceGraphic" />
                       </feMerge>
                     </filter>
+                    <linearGradient id="barSweepGradient" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#22d3ee" stopOpacity="0" />
+                      <stop offset="18%" stopColor="#67e8f9" stopOpacity="0.26" />
+                      <stop offset="50%" stopColor="#ecfeff" stopOpacity="0.88" />
+                      <stop offset="82%" stopColor="#67e8f9" stopOpacity="0.26" />
+                      <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
+                    </linearGradient>
+                    <clipPath id="barSweepClip">
+                      {BARS.map((bar, index) => (
+                        <rect
+                          key={`bar-sweep-clip-${index}`}
+                          x={bar.x}
+                          y={bar.y}
+                          width={bar.width}
+                          height={bar.height}
+                          rx={1}
+                        />
+                      ))}
+                    </clipPath>
                   </defs>
 
                   <line
@@ -313,6 +342,7 @@ export function LoginExperience({ children }: { children: ReactNode }) {
                       key={`bar-${index}`}
                       className="login-chart-bar-hover"
                       style={{
+                        '--chart-sweep-delay': `${getBarSweepDelay(index)}ms`,
                         transformBox: 'view-box',
                         transformOrigin: `${bar.cx}px ${BASELINE_Y}px`,
                       } as CSSProperties}
@@ -321,7 +351,7 @@ export function LoginExperience({ children }: { children: ReactNode }) {
                         className={`login-chart-bar login-chart-bar-${index}`}
                         filter="url(#barGlow)"
                         style={{
-                          '--chart-point-delay': `${getChartBarDelay(index)}ms`,
+                          '--chart-point-delay': `${CHART_LINE_START_DELAY_MS}ms`,
                           opacity: 0,
                           transform: 'scaleY(0)',
                           transformBox: 'view-box',
@@ -413,7 +443,7 @@ export function LoginExperience({ children }: { children: ReactNode }) {
                     points={MAIN_LINE_POINTS}
                     fill="none"
                     stroke="#e0faff"
-                    strokeOpacity={0}
+                    strokeOpacity={0.96}
                     strokeWidth={3.2}
                     strokeLinejoin="round"
                     strokeLinecap="round"
@@ -438,6 +468,21 @@ export function LoginExperience({ children }: { children: ReactNode }) {
                     />
                   </g>
 
+                  <rect
+                    className="login-chart-bars-sweep"
+                    x={GRAPH_LEFT - 122}
+                    y={BASELINE_Y - CHART_DRAW_HEIGHT - 6}
+                    width={156}
+                    height={CHART_DRAW_HEIGHT + 12}
+                    fill="url(#barSweepGradient)"
+                    clipPath="url(#barSweepClip)"
+                    filter="url(#barGlow)"
+                    style={{
+                      '--bar-sweep-distance': `${GRAPH_WIDTH + 244}px`,
+                      mixBlendMode: 'screen',
+                    } as CSSProperties}
+                  />
+
                   {BARS.slice(0, -1).map((bar, index) => (
                     <g
                       key={`dot-${index}`}
@@ -455,6 +500,21 @@ export function LoginExperience({ children }: { children: ReactNode }) {
                       <circle cx={bar.cx} cy={bar.lineY} r={2} fill="#cffafe" />
                     </g>
                   ))}
+
+                  <polyline
+                    className="login-chart-line-sweep"
+                    points={MAIN_LINE_POINTS}
+                    fill="none"
+                    stroke="#a855f7"
+                    strokeOpacity={0}
+                    strokeWidth={3.2}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    style={{
+                      strokeDasharray: `72 ${CHART_LINE_DASH_LENGTH}`,
+                      strokeDashoffset: CHART_LINE_DASH_LENGTH,
+                    }}
+                  />
                 </svg>
               </div>
 
@@ -1133,6 +1193,22 @@ export function LoginExperience({ children }: { children: ReactNode }) {
                 animation: popInDot ${CHART_DOT_POP_DURATION_MS}ms ease-out forwards, pulseDot ${CHART_PULSE_DURATION_MS}ms ease-in-out infinite alternate;
                 animation-delay: var(--chart-point-delay), var(--chart-pulse-delay);
               }
+
+              .login-root.is-ready .login-chart-bar-hover {
+                animation: none;
+              }
+
+              .login-root.is-ready .login-chart-bars-sweep {
+                opacity: 0;
+                will-change: transform, opacity;
+                animation: travelBarSweep ${CHART_SWEEP_DURATION_MS}ms ease-in-out infinite;
+                animation-delay: ${CHART_SWEEP_DELAY_MS}ms;
+              }
+
+              .login-root.is-ready .login-chart-line-sweep {
+                animation: travelChartLineSweep ${CHART_SWEEP_DURATION_MS}ms ease-in-out infinite;
+                animation-delay: ${CHART_SWEEP_DELAY_MS}ms;
+              }
             }
 
             @keyframes fadeSlideUp {
@@ -1216,6 +1292,44 @@ export function LoginExperience({ children }: { children: ReactNode }) {
               }
               to {
                 opacity: 1;
+              }
+            }
+
+            @keyframes travelBarSweep {
+              0%,
+              12% {
+                opacity: 0;
+                transform: translateX(0);
+              }
+              20% {
+                opacity: 0.96;
+              }
+              82% {
+                opacity: 0.96;
+              }
+              92%,
+              100% {
+                opacity: 0;
+                transform: translateX(var(--bar-sweep-distance));
+              }
+            }
+
+            @keyframes travelChartLineSweep {
+              0%,
+              10% {
+                opacity: 0;
+                stroke-dashoffset: ${CHART_LINE_DASH_LENGTH};
+              }
+              20% {
+                opacity: 0.95;
+              }
+              80% {
+                opacity: 0.95;
+              }
+              92%,
+              100% {
+                opacity: 0;
+                stroke-dashoffset: -60;
               }
             }
           `}</style>

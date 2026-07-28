@@ -67,6 +67,7 @@ export const BILL_DUE_OPTIONS = [
   "Net 30",
   "Net 45",
   "Net 60",
+  "Net 90",
   "Due end of month",
   "Due end of next month",
 ] as const;
