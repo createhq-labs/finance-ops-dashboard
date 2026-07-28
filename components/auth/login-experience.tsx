@@ -474,6 +474,67 @@ export function LoginExperience({ children }: { children: ReactNode }) {
 
           <div className="login-right">
             <div className="login-anim login-card">
+              <svg className="login-card-border" viewBox="0 0 440 440" preserveAspectRatio="none" aria-hidden="true">
+                <defs>
+                  <linearGradient
+                    id="login-card-border-static-gradient"
+                    gradientUnits="userSpaceOnUse"
+                    x1="24"
+                    y1="18"
+                    x2="416"
+                    y2="422"
+                  >
+                    <stop offset="0%" stopColor="#22d3ee" />
+                    <stop offset="68%" stopColor="#22d3ee" />
+                    <stop offset="86%" stopColor="#d946ef" />
+                    <stop offset="100%" stopColor="#8b5cf6" />
+                  </linearGradient>
+                  <linearGradient
+                    id="login-card-border-gradient"
+                    gradientUnits="userSpaceOnUse"
+                    x1="24"
+                    y1="18"
+                    x2="416"
+                    y2="422"
+                  >
+                    <stop offset="0%" stopColor="#bae6fd" />
+                    <stop offset="22%" stopColor="#67e8f9" />
+                    <stop offset="44%" stopColor="#38bdf8" />
+                    <stop offset="66%" stopColor="#6366f1" />
+                    <stop offset="84%" stopColor="#a855f7" />
+                    <stop offset="100%" stopColor="#bae6fd" />
+                    <animateTransform
+                      attributeName="gradientTransform"
+                      type="rotate"
+                      from="0 220 220"
+                      to="360 220 220"
+                      dur="3000ms"
+                      repeatCount="indefinite"
+                    />
+                  </linearGradient>
+                </defs>
+                <rect
+                  x="1.5"
+                  y="1.5"
+                  width="437"
+                  height="437"
+                  rx="28"
+                  fill="none"
+                  stroke="url(#login-card-border-static-gradient)"
+                  strokeWidth="3"
+                />
+                <rect
+                  className="login-card-border-animated"
+                  x="1.5"
+                  y="1.5"
+                  width="437"
+                  height="437"
+                  rx="28"
+                  fill="none"
+                  stroke="url(#login-card-border-gradient)"
+                  strokeWidth="3"
+                />
+              </svg>
               <div className="login-card-lock">
                 <svg
                   className="login-card-hex"
@@ -833,28 +894,37 @@ export function LoginExperience({ children }: { children: ReactNode }) {
             }
 
             .login-card {
-              --login-border-angle: 100deg;
+              position: relative;
               width: 100%;
               max-width: 440px;
               padding: 40px;
               border-radius: 28px;
-              border: 3px solid transparent;
-              background:
-                linear-gradient(160deg, #0a0e14 0%, #05070b 100%) padding-box,
-                linear-gradient(
-                  var(--login-border-angle),
-                  #22d3ee 0%,
-                  #67e8f9 18%,
-                  #38bdf8 34%,
-                  #6366f1 58%,
-                  #8b5cf6 78%,
-                  #d946ef 100%
-                ) border-box;
+              background: linear-gradient(160deg, #0a0e14 0%, #05070b 100%);
+              isolation: isolate;
+              overflow: hidden;
               transition: box-shadow 200ms ease;
             }
 
-            .login-card:hover {
-              animation: rotateBorder 3000ms linear infinite;
+            .login-card-border {
+              position: absolute;
+              inset: 0;
+              width: 100%;
+              height: 100%;
+              pointer-events: none;
+            }
+
+            .login-card-border-animated {
+              opacity: 0;
+              transition: opacity 200ms ease;
+            }
+
+            .login-card:hover .login-card-border-animated,
+            .login-card:focus-within .login-card-border-animated {
+              opacity: 1;
+            }
+
+            .login-card:hover,
+            .login-card:focus-within {
               box-shadow:
                 0 0 38px rgba(34, 211, 238, 0.22),
                 0 0 78px rgba(168, 85, 247, 0.18);
@@ -1084,15 +1154,6 @@ export function LoginExperience({ children }: { children: ReactNode }) {
               to {
                 opacity: 1;
                 transform: translateX(0);
-              }
-            }
-
-            @keyframes rotateBorder {
-              from {
-                --login-border-angle: 0deg;
-              }
-              to {
-                --login-border-angle: 360deg;
               }
             }
 
