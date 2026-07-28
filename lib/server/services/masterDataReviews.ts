@@ -12,6 +12,8 @@ export type GstAddressReviewPayload = {
   country: string | null;
   pincode: string | null;
 };
+type EntityReviewType = 'agency' | 'brand';
+
 
 type PendingReviewInsert = {
   type: 'agency' | 'brand' | 'creator' | 'agency_gst_address' | 'brand_gst_address';
@@ -94,14 +96,45 @@ function buildApprovedGstMappingKey(payload: GstAddressReviewPayload) {
   ].join('::');
 }
 
+function getCorrectedEntityConflictTarget(submissionPayload: SanitizedSubmissionPayload): {
+  currentType: EntityReviewType;
+  oppositeType: EntityReviewType;
+  normalizedValue: string;
+} | null {
+  if (!submissionPayload.previous_submission_id) return null;
+
+  if (submissionPayload.entity_type === 'Agency') {
+    const normalizedValue = normalizeMasterValue(String(submissionPayload.agency_name ?? ''));
+    if (!normalizedValue) return null;
+    return {
+      currentType: 'agency',
+      oppositeType: 'brand',
+      normalizedValue,
+    };
+  }
+
+  if (submissionPayload.entity_type === 'Brand') {
+    const normalizedValue = normalizeMasterValue(String(submissionPayload.brand_name ?? ''));
+    if (!normalizedValue) return null;
+    return {
+      currentType: 'brand',
+      oppositeType: 'agency',
+      normalizedValue,
+    };
+  }
+
+  return null;
+}
+
 export async function createPendingMasterDataReviews(params: {
+  adminClient: SupabaseClient;
   userClient: SupabaseClient;
   appUser: AppUser;
   submissionId: string;
   submissionPayload: SanitizedSubmissionPayload;
   lineItemsPayload: SanitizedLineItemPayload[];
 }) {
-  const { userClient, appUser, submissionId, submissionPayload, lineItemsPayload } = params;
+  const { adminClient, userClient, appUser, submissionId, submissionPayload, lineItemsPayload } = params;
   const [agenciesRes, brandsRes, creatorsRes, gstMappingsRes] = await Promise.all([
     userClient.from('brands').select('agency_name').eq('is_active', true).not('agency_name', 'is', null),
     userClient.from('brands').select('brand_name').eq('is_active', true).not('brand_name', 'is', null),
@@ -155,6 +188,7 @@ export async function createPendingMasterDataReviews(params: {
 
   const inserts: PendingReviewInsert[] = [];
   const seen = new Set<string>();
+  const correctedEntityConflictTarget = getCorrectedEntityConflictTarget(submissionPayload);
 
   function pushPendingReview(
     type: PendingReviewInsert['type'],
@@ -196,14 +230,16 @@ export async function createPendingMasterDataReviews(params: {
     );
   }
 
-  const normalizedSubmissionBrand = normalizeMasterValue(String(submissionPayload.brand_name ?? ''));
-  pushPendingReview(
-    'brand',
-    submissionPayload.brand_name,
-    normalizedSubmissionBrand,
-    approvedBrandNames.has(normalizedSubmissionBrand),
-    submissionPayload.brand_trade_name
-  );
+  if (submissionPayload.entity_type === 'Brand') {
+    const normalizedSubmissionBrand = normalizeMasterValue(String(submissionPayload.brand_name ?? ''));
+    pushPendingReview(
+      'brand',
+      submissionPayload.brand_name,
+      normalizedSubmissionBrand,
+      approvedBrandNames.has(normalizedSubmissionBrand),
+      submissionPayload.brand_trade_name
+    );
+  }
 
   for (const lineItem of lineItemsPayload) {
     const normalizedCreator = normalizeMasterValue(String(lineItem.creator_name ?? ''));
@@ -262,6 +298,43 @@ export async function createPendingMasterDataReviews(params: {
   );
 
   const filteredInserts = inserts.filter((item) => !existingPendingKeys.has(item.type + ':' + item.normalized_value));
+
+  if (correctedEntityConflictTarget) {
+    const reviewTimestamp = new Date().toISOString();
+    const { error: staleConflictError } = await adminClient
+      .from('master_data_reviews')
+      .update({
+        status: 'rejected',
+        rejection_reason: 'Superseded by corrected resubmission as ' + correctedEntityConflictTarget.currentType + '.',
+        reviewed_at: reviewTimestamp,
+        updated_at: reviewTimestamp,
+      })
+      .eq('status', 'pending')
+      .eq('type', correctedEntityConflictTarget.oppositeType)
+      .eq('normalized_value', correctedEntityConflictTarget.normalizedValue)
+      .eq('submitted_by', appUser.id);
+
+    if (staleConflictError) {
+      console.error('master_data_reviews stale opposite-type cleanup failed', {
+        submissionId,
+        currentType: correctedEntityConflictTarget.currentType,
+        oppositeType: correctedEntityConflictTarget.oppositeType,
+        normalizedValue: correctedEntityConflictTarget.normalizedValue,
+        error: staleConflictError,
+      });
+
+      return {
+        success: false as const,
+        created: 0,
+        createdReviews: [] as CreatedReviewSummary[],
+        error: staleConflictError.message,
+        code: staleConflictError.code ?? null,
+        details: staleConflictError.details ?? null,
+        hint: staleConflictError.hint ?? null,
+      };
+    }
+  }
+
   if (filteredInserts.length === 0) {
     return { success: true as const, created: 0, createdReviews: [] as CreatedReviewSummary[] };
   }

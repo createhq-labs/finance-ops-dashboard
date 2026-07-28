@@ -8,17 +8,23 @@ export const SUBMISSION_ATTACHMENT_ALLOWED_MIME_TYPES = [
 
 export const PRODUCT_REIMBURSEMENT_DOCUMENT_TYPE = 'product_reimbursement';
 export const REFERENCE_PO_DOCUMENT_TYPE = 'reference_po';
+export const GST_SCREENSHOT_DOCUMENT_TYPE = 'gst_screenshot';
 
 export const PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES = SUBMISSION_ATTACHMENT_MAX_FILE_SIZE_BYTES;
 export const PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES = SUBMISSION_ATTACHMENT_ALLOWED_MIME_TYPES;
 export const REFERENCE_PO_MAX_FILE_SIZE_BYTES = SUBMISSION_ATTACHMENT_MAX_FILE_SIZE_BYTES;
 export const REFERENCE_PO_ALLOWED_MIME_TYPES = SUBMISSION_ATTACHMENT_ALLOWED_MIME_TYPES;
+export const GST_SCREENSHOT_MAX_FILE_SIZE_BYTES = SUBMISSION_ATTACHMENT_MAX_FILE_SIZE_BYTES;
+export const GST_SCREENSHOT_ALLOWED_MIME_TYPES = SUBMISSION_ATTACHMENT_ALLOWED_MIME_TYPES;
 
 export type ProductReimbursementAllowedMimeType =
   (typeof PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES)[number];
 
 export type ReferencePoAllowedMimeType =
   (typeof REFERENCE_PO_ALLOWED_MIME_TYPES)[number];
+
+export type GstScreenshotAllowedMimeType =
+  (typeof GST_SCREENSHOT_ALLOWED_MIME_TYPES)[number];
 
 export type SubmissionAttachmentSummary = {
   id: string;
@@ -53,6 +59,12 @@ export function pickReferencePoAttachment(
   attachments: unknown
 ): SubmissionAttachmentSummary | null {
   return pickSubmissionAttachmentByType(attachments, REFERENCE_PO_DOCUMENT_TYPE);
+}
+
+export function pickGstScreenshotAttachment(
+  attachments: unknown
+): SubmissionAttachmentSummary | null {
+  return pickSubmissionAttachmentByType(attachments, GST_SCREENSHOT_DOCUMENT_TYPE);
 }
 
 export function formatAttachmentSize(bytes: number | null | undefined) {

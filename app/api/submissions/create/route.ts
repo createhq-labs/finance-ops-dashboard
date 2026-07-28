@@ -418,6 +418,7 @@ export async function POST(req: NextRequest) {
     }
 
     const masterReviewResult = await createPendingMasterDataReviews({
+      adminClient,
       userClient,
       appUser,
       submissionId: result.submission.id,

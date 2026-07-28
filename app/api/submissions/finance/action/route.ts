@@ -217,28 +217,29 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.action === 'reject') {
-      const note = body.rejection_note?.trim();
-      if (!note) throw new Error('rejection_note is required');
+      const note = body.rejection_note?.trim() || '';
       const existingEmployeeNote = (currentSubmission.finance_comment ?? currentSubmission.rejection_note ?? '').trim();
-      if (currentSubmission.intake_status === 'rejected' && existingEmployeeNote === note) {
-        return noChange('Submission is already rejected with the same note.');
+      if (currentSubmission.intake_status === 'declined' && existingEmployeeNote === note) {
+        return noChange('Submission is already rejected.');
       }
-      patch.intake_status = 'rejected';
+      patch.intake_status = 'declined';
       patch.reviewed_by = appUser.id;
       patch.reviewed_at = now;
-      patch.rejection_note = note;
-      patch.finance_comment = note;
+      patch.rejection_note = note || null;
+      patch.finance_comment = note || null;
       patch.invoice_status = deriveNextInvoiceStatusDbValue({
         ...currentSubmission,
-        intake_status: 'rejected',
+        intake_status: 'declined',
       });
       activityAction = 'submission_rejected';
       activityFromStatus = currentSubmission.intake_status ?? null;
-      activityToStatus = 'rejected';
+      activityToStatus = 'declined';
       notificationType = 'submission_rejected';
       notificationAuditAction = 'submission_rejected';
       notificationTitle = 'Submission rejected';
-      notificationMessage = `${submissionLabel} was rejected: ${note}`;
+      notificationMessage = note
+        ? `${submissionLabel} was rejected: ${note}`
+        : `${submissionLabel} was rejected by finance.`;
       changed = true;
     }
 
