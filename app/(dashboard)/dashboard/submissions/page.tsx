@@ -435,7 +435,7 @@ export default function EmployeeSubmissionsPage() {
           <SubmissionTable
             rows={rows}
             onOpen={(id, selectedRow) => {
-              if (selectedRow && canResubmitSubmission(user.role, selectedRow)) {
+              if (user.role === 'employee' && selectedRow && canResubmitSubmission(user.role, selectedRow)) {
                 router.push('/dashboard/submissions/new?resubmit_id=' + id);
                 return;
               }
@@ -443,7 +443,7 @@ export default function EmployeeSubmissionsPage() {
             }}
             columns={['pi', 'entity', 'amount', 'intake_status', 'invoice_status', 'submitted_at', 'rejection_note', 'actions']}
             emptyLabel="No submissions found yet."
-            getActionLabel={(currentRow) => canResubmitSubmission(user.role, currentRow) ? 'Resubmit' : 'View'}
+            getActionLabel={(currentRow) => (user.role === 'employee' && canResubmitSubmission(user.role, currentRow)) ? 'Resubmit' : 'View'}
             viewer={user.role}
             viewerBusinessLine={user.business_line}
             highlightedRowId={highlightedSubmissionId}

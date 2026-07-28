@@ -125,6 +125,7 @@ function parseDueDate(submittedAt: string | null | undefined, billDue: string | 
   if (due.includes('net 30')) return addDays(date, 31);
   if (due.includes('net 45')) return addDays(date, 46);
   if (due.includes('net 60')) return addDays(date, 61);
+  if (due.includes('net 90')) return addDays(date, 91);
   if (due.includes('due end of next month')) return endOfMonth(new Date(date.getFullYear(), date.getMonth() + 1, 1));
   if (due.includes('due end of month')) return endOfMonth(date);
   return startOfNextDay(date);
