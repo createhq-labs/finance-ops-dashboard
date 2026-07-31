@@ -2,6 +2,9 @@ import { randomUUID } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AppUser, SubmissionAttachmentRecord } from '../types/submissions';
 import {
+  GST_SCREENSHOT_ALLOWED_MIME_TYPES,
+  GST_SCREENSHOT_DOCUMENT_TYPE,
+  GST_SCREENSHOT_MAX_FILE_SIZE_BYTES,
   PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES,
   PRODUCT_REIMBURSEMENT_DOCUMENT_TYPE,
   PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES,
@@ -63,6 +66,17 @@ export function validateReferencePoFile(file: UploadableFile | null | undefined)
     typeLabel: 'Only PDF, PNG, JPEG, or WEBP files are allowed for reference PO uploads.',
     maxSizeBytes: REFERENCE_PO_MAX_FILE_SIZE_BYTES,
     allowedMimeTypes: REFERENCE_PO_ALLOWED_MIME_TYPES,
+  });
+}
+
+export function validateGstScreenshotFile(file: UploadableFile | null | undefined) {
+  validateSubmissionAttachmentFile({
+    file,
+    requiredLabel: 'GST screenshot is required.',
+    sizeLabel: 'GST screenshot file must be 10 MB or smaller.',
+    typeLabel: 'Only PDF, PNG, JPEG, or WEBP files are allowed for GST screenshot uploads.',
+    maxSizeBytes: GST_SCREENSHOT_MAX_FILE_SIZE_BYTES,
+    allowedMimeTypes: GST_SCREENSHOT_ALLOWED_MIME_TYPES,
   });
 }
 
@@ -133,6 +147,60 @@ async function uploadSubmissionAttachment(params: {
   return data as SubmissionAttachmentRecord;
 }
 
+async function listSubmissionAttachmentsByType(params: {
+  adminClient: SupabaseClient;
+  submissionId: string | null | undefined;
+  documentType: string;
+}) {
+  const { adminClient, submissionId, documentType } = params;
+  if (!submissionId) return [];
+
+  const { data, error } = await adminClient
+    .from('submission_attachments')
+    .select('id, submission_id, document_type, file_name, file_path, file_size_bytes, mime_type, uploaded_by, uploaded_at')
+    .eq('submission_id', submissionId)
+    .eq('document_type', documentType)
+    .order('uploaded_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as SubmissionAttachmentRecord[];
+}
+
+export async function getLatestSubmissionAttachmentByType(params: {
+  adminClient: SupabaseClient;
+  submissionId: string | null | undefined;
+  documentType: string;
+}) {
+  const rows = await listSubmissionAttachmentsByType(params);
+  return rows[0] ?? null;
+}
+
+export async function removeSubmissionAttachmentsByType(params: {
+  adminClient: SupabaseClient;
+  submissionId: string | null | undefined;
+  documentType: string;
+}) {
+  const { adminClient, submissionId, documentType } = params;
+  if (!submissionId) return [] as SubmissionAttachmentRecord[];
+
+  const rows = await listSubmissionAttachmentsByType({ adminClient, submissionId, documentType });
+  if (rows.length === 0) {
+    return [] as SubmissionAttachmentRecord[];
+  }
+
+  const filePaths = rows.map((row) => row.file_path).filter(Boolean);
+  if (filePaths.length > 0) {
+    const { error: storageError } = await adminClient.storage.from('finance-documents').remove(filePaths);
+    if (storageError) throw new Error(storageError.message);
+  }
+
+  const ids = rows.map((row) => row.id);
+  const { error: deleteError } = await adminClient.from('submission_attachments').delete().in('id', ids);
+  if (deleteError) throw new Error(deleteError.message);
+
+  return rows;
+}
+
 export async function uploadProductReimbursementAttachment(params: {
   adminClient: SupabaseClient;
   submissionId: string;
@@ -153,52 +221,65 @@ export async function uploadProductReimbursementAttachment(params: {
   });
 }
 
+export async function uploadReferencePoAttachment(params: {
+  adminClient: SupabaseClient;
+  submissionId: string;
+  uploadedBy: string;
+  file: UploadableFile;
+}): Promise<SubmissionAttachmentRecord> {
+  const { adminClient, submissionId, uploadedBy, file } = params;
+  return uploadSubmissionAttachment({
+    adminClient,
+    submissionId,
+    uploadedBy,
+    file,
+    documentType: REFERENCE_PO_DOCUMENT_TYPE,
+    storageFolder: 'reference-po',
+    validateFile: validateReferencePoFile,
+    insertErrorMessage: 'Failed to save reference PO attachment metadata.',
+    uploadErrorMessage: 'Failed to upload reference PO document.',
+  });
+}
+
+export async function uploadGstScreenshotAttachment(params: {
+  adminClient: SupabaseClient;
+  submissionId: string;
+  uploadedBy: string;
+  file: UploadableFile;
+}): Promise<SubmissionAttachmentRecord> {
+  const { adminClient, submissionId, uploadedBy, file } = params;
+  return uploadSubmissionAttachment({
+    adminClient,
+    submissionId,
+    uploadedBy,
+    file,
+    documentType: GST_SCREENSHOT_DOCUMENT_TYPE,
+    storageFolder: 'gst-screenshot',
+    validateFile: validateGstScreenshotFile,
+    insertErrorMessage: 'Failed to save GST screenshot metadata.',
+    uploadErrorMessage: 'Failed to upload GST screenshot.',
+  });
+}
+
+
 export async function getProductReimbursementAttachmentForSubmission(params: {
   adminClient: SupabaseClient;
   submissionId: string | null | undefined;
 }): Promise<SubmissionAttachmentRecord | null> {
-  const { adminClient, submissionId } = params;
-  if (!submissionId) return null;
-
-  const { data, error } = await adminClient
-    .from('submission_attachments')
-    .select('id, submission_id, document_type, file_name, file_path, file_size_bytes, mime_type, uploaded_by, uploaded_at')
-    .eq('submission_id', submissionId)
-    .eq('document_type', PRODUCT_REIMBURSEMENT_DOCUMENT_TYPE)
-    .order('uploaded_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  if (!data) return null;
-
-  const attachment = data as SubmissionAttachmentRecord;
-  if (!attachment.file_path || !attachment.file_name || !attachment.mime_type) return null;
-  return attachment;
+  return getLatestSubmissionAttachmentByType({
+    ...params,
+    documentType: PRODUCT_REIMBURSEMENT_DOCUMENT_TYPE,
+  });
 }
 
 export async function getReferencePoAttachmentForSubmission(params: {
   adminClient: SupabaseClient;
   submissionId: string | null | undefined;
 }): Promise<SubmissionAttachmentRecord | null> {
-  const { adminClient, submissionId } = params;
-  if (!submissionId) return null;
-
-  const { data, error } = await adminClient
-    .from('submission_attachments')
-    .select('id, submission_id, document_type, file_name, file_path, file_size_bytes, mime_type, uploaded_by, uploaded_at')
-    .eq('submission_id', submissionId)
-    .eq('document_type', REFERENCE_PO_DOCUMENT_TYPE)
-    .order('uploaded_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  if (!data) return null;
-
-  const attachment = data as SubmissionAttachmentRecord;
-  if (!attachment.file_path || !attachment.file_name || !attachment.mime_type) return null;
-  return attachment;
+  return getLatestSubmissionAttachmentByType({
+    ...params,
+    documentType: REFERENCE_PO_DOCUMENT_TYPE,
+  });
 }
 
 export async function carryForwardProductReimbursementAttachment(params: {
@@ -275,26 +356,6 @@ export async function carryForwardReferencePoAttachment(params: {
   }
 
   return data as SubmissionAttachmentRecord;
-}
-
-export async function uploadReferencePoAttachment(params: {
-  adminClient: SupabaseClient;
-  submissionId: string;
-  uploadedBy: string;
-  file: UploadableFile;
-}): Promise<SubmissionAttachmentRecord> {
-  const { adminClient, submissionId, uploadedBy, file } = params;
-  return uploadSubmissionAttachment({
-    adminClient,
-    submissionId,
-    uploadedBy,
-    file,
-    documentType: REFERENCE_PO_DOCUMENT_TYPE,
-    storageFolder: 'reference-po',
-    validateFile: validateReferencePoFile,
-    insertErrorMessage: 'Failed to save reference PO attachment metadata.',
-    uploadErrorMessage: 'Failed to upload reference PO document.',
-  });
 }
 
 export async function getSubmissionAttachmentForUser(params: {

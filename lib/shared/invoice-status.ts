@@ -65,7 +65,7 @@ export function deriveInvoiceStatusMachine(source: InvoiceStatusSource): Invoice
   const hasInvoiceNumber = hasValue(source.invoice_number);
   const hasDebitNoteNumber = hasValue(source.debit_note_number);
 
-  if (intakeStatus === 'rejected') return 'invoice_cancelled';
+  if (intakeStatus === 'rejected' || intakeStatus === 'declined') return 'invoice_cancelled';
   if (hasInvoiceNumber && hasDebitNoteNumber) return 'invoice_plus_debit_note';
   if (hasDebitNoteNumber) return 'debit_note';
   if (hasInvoiceNumber) return 'invoice_created';

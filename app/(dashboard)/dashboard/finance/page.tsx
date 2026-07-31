@@ -795,6 +795,10 @@ export default function FinanceReviewPage() {
         }
         action = 'request_resubmission';
         payload = { rejection_note: note };
+      } else if (value === 'declined') {
+        const note = String(targetRow.finance_comment || targetRow.rejection_note || '').trim();
+        action = 'reject';
+        if (note) payload = { rejection_note: note };
       } else {
         return { success: false, message: 'Submitted state is controlled by submission workflow.' };
       }
@@ -992,7 +996,7 @@ export default function FinanceReviewPage() {
           onSearch={setQuery}
           onPrimaryChange={(key, value) => {
             if (key === 'businessLine') setBusinessLineFilter((value || 'all') as 'all' | 'TM' | 'IM');
-            if (key === 'status') setIntakeStatusFilter((value || 'all') as 'all' | 'submitted' | 'accepted' | 'rejected');
+            if (key === 'status') setIntakeStatusFilter((value || 'all') as 'all' | 'submitted' | 'accepted' | 'rejected' | 'declined');
             if (key === 'employee') setEmployeeFilter(value || 'all');
           }}
           onAdvancedChange={(filters) => {

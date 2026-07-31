@@ -1991,14 +1991,14 @@ function BadgeSelectCell({
             }
           }}
           className={[
-       STATUS_PILL_BASE,
-        field === 'intake_status'
-    ? 'w-[84px] transition-none text-[11px]'
-    : 'max-w-[124px] transition-none',
-  tone,
-  saving ? 'ring-1 ring-primary/40 bg-primary/5' : '',
-  active ? 'ring-1 ring-primary/40' : '',
-].join(' ')}
+            STATUS_PILL_BASE,
+            field === 'intake_status'
+              ? 'w-[84px] transition-none text-[11px]'
+              : 'max-w-[124px] transition-none',
+            tone,
+            saving ? 'ring-1 ring-primary/40 bg-primary/5' : '',
+            active ? 'ring-1 ring-primary/40' : '',
+          ].join(' ')}
           title={saving ? 'Saving...' : displayLabel}
         >
           <span className="truncate">{saving ? 'Saving...' : truncateStatusLabel(displayLabel)}</span>

@@ -234,7 +234,8 @@ export default function LoginPage() {
             transition: all 200ms ease;
           }
 
-          .login-submit:hover:not(:disabled) {
+          .login-submit:hover:not(:disabled),
+          .login-submit:focus-visible:not(:disabled) {
             animation: rotateButtonBorder 3000ms linear infinite;
             background:
               linear-gradient(135deg, #22d3ee 0%, #6366f1 100%) padding-box,
