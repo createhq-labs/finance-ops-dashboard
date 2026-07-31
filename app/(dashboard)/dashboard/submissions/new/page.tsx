@@ -121,6 +121,8 @@ export default function NewSubmissionPage() {
             campaign_notes?: string | null;
             finance_comment?: string | null;
             rejection_note?: string | null;
+            submitted_by_name?: string | null;
+            submitted_by_email?: string | null;
             submission_attachments?: Array<{
               id: string;
               document_type: string;
@@ -213,6 +215,13 @@ export default function NewSubmissionPage() {
         currency: (String(foundRecord.currency ?? 'INR').toUpperCase() as InvoiceIntakeFormValues["currency"]) || 'INR',
         imCommercials: commercialsValue > 0 ? String(commercialsValue) : '',
       };
+
+      if (user.role === 'team_lead' && !foundCanEdit) {
+        const ownerName = String(foundRecord.submitted_by_name ?? '').trim();
+        const ownerEmail = String(foundRecord.submitted_by_email ?? '').trim();
+        if (ownerName) nextPrefill.submitterName = ownerName;
+        if (ownerEmail) nextPrefill.submitterEmail = ownerEmail;
+      }
 
       if (businessLine === 'TM') {
         nextPrefill.scDeliverables = scRows;
@@ -398,8 +407,8 @@ export default function NewSubmissionPage() {
           <InvoiceIntakeForm
             currentUserRole={user.role}
             currentUserBusinessLine={user.business_line ?? null}
-            submitterName={user.full_name || ''}
-            submitterEmail={user.email || ''}
+            submitterName={prefillValues?.submitterName || user.full_name || ''}
+            submitterEmail={prefillValues?.submitterEmail || user.email || ''}
             initialValues={prefillValues}
             previousSubmissionId={activeSubmissionId || undefined}
             existingProductReimbursementAttachment={Boolean(existingReimbursementAttachment)}

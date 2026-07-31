@@ -4,6 +4,7 @@ type AdminSubmissionRow = {
   invoice_type?: string | null;
   business_line?: string | null;
   submitted_at?: string | null;
+  closed_status?: string | null;
 };
 
 export type RevenueSeriesPoint = {
@@ -11,6 +12,12 @@ export type RevenueSeriesPoint = {
   label: string;
   pi: number;
   ti: number;
+  imPi: number;
+  tmPi: number;
+  imTi: number;
+  tmTi: number;
+  submitted: number;
+  closed: number;
 };
 
 function normalizeText(value: string | null | undefined) {
@@ -52,6 +59,12 @@ export function getRevenueSeries(rows: AdminSubmissionRow[], months = 6) {
       label: cursor.toLocaleDateString('en-IN', { month: 'short' }),
       pi: 0,
       ti: 0,
+      imPi: 0,
+      tmPi: 0,
+      imTi: 0,
+      tmTi: 0,
+      submitted: 0,
+      closed: 0,
     });
   }
 
@@ -63,9 +76,22 @@ export function getRevenueSeries(rows: AdminSubmissionRow[], months = 6) {
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
     const bucket = buckets.get(key);
     if (!bucket) continue;
+
+    bucket.submitted += 1;
+    if (normalizeText(row.closed_status) === 'closed') bucket.closed += 1;
+
     const amount = getRevenueAmount(row);
-    if (isPiInvoiceType(row.invoice_type)) bucket.pi += amount;
-    if (isTiInvoiceType(row.invoice_type)) bucket.ti += amount;
+    const isPi = isPiInvoiceType(row.invoice_type);
+    const isTi = isTiInvoiceType(row.invoice_type);
+    if (isPi) bucket.pi += amount;
+    if (isTi) bucket.ti += amount;
+    if (row.business_line === 'IM') {
+      if (isPi) bucket.imPi += amount;
+      if (isTi) bucket.imTi += amount;
+    } else if (row.business_line === 'TM') {
+      if (isPi) bucket.tmPi += amount;
+      if (isTi) bucket.tmTi += amount;
+    }
   }
 
   return Array.from(buckets.values());
