@@ -5,6 +5,7 @@ import { SearchableSelect } from "../searchable-select";
 import type { GstMappingOption, InvoiceIntakeFormValues } from "../types";
 
 type Props = {
+  viewOnly?: boolean;
   values: InvoiceIntakeFormValues;
   onChange: <K extends keyof InvoiceIntakeFormValues>(key: K, value: InvoiceIntakeFormValues[K]) => void;
   onEntityNameSelect: (value: string) => void;
@@ -22,6 +23,7 @@ type Props = {
 };
 
 export function BillingEntitySection({
+  viewOnly = false,
   values,
   onChange,
   onEntityNameSelect,
@@ -264,21 +266,37 @@ export function BillingEntitySection({
 
           <label className="intake-field billing-entity-wide">
             <span className="intake-label">Address *</span>
-            <textarea
-              ref={addressRef}
-              className="intake-input"
-              rows={1}
-              value={values.addressLine}
-              onChange={(event) => {
-                onChange("addressLine", event.target.value);
-                requestAnimationFrame(resizeAddressField);
-              }}
-              onFocus={resizeAddressField}
-              placeholder="Billing address"
-              data-field="addressLine"
-              required
-              style={{ minHeight: 38, resize: "none", overflow: "hidden" }}
-            />
+            {viewOnly ? (
+              <div
+                className="intake-input"
+                data-field="addressLine"
+                style={{
+                  minHeight: 38,
+                  whiteSpace: 'pre-wrap',
+                  overflow: 'visible',
+                  background: 'var(--intake-input-readonly-bg)',
+                  color: '#94a3b8'
+                }}
+              >
+                {values.addressLine || '-'}
+              </div>
+            ) : (
+              <textarea
+                ref={addressRef}
+                className="intake-input"
+                rows={1}
+                value={values.addressLine}
+                onChange={(event) => {
+                  onChange("addressLine", event.target.value);
+                  requestAnimationFrame(resizeAddressField);
+                }}
+                onFocus={resizeAddressField}
+                placeholder="Billing address"
+                data-field="addressLine"
+                required
+                style={{ minHeight: 38, resize: "none", overflow: "hidden" }}
+              />
+            )}
             <div style={{ minHeight: 16 }}>
               {errors.addressLine ? <p className="text-danger intake-inline-error">{errors.addressLine}</p> : null}
             </div>
@@ -287,7 +305,7 @@ export function BillingEntitySection({
           <div className="billing-location-grid billing-entity-wide" style={{ display: "grid", gap: 12, alignItems: "start" }}>
             <label className="intake-field">
               <span className="intake-label">City *</span>
-              <input className="intake-input" value={values.city} onChange={(event) => onChange("city", event.target.value)} onBlur={() => setCityTouched(true)} data-field="city" required />
+              <input className="intake-input" value={values.city} onChange={(event) => onChange("city", event.target.value)} onBlur={() => setCityTouched(true)} data-field="city" readOnly={viewOnly} required />
               <div style={{ minHeight: 16 }}>
                 {errors.city ? <p className="text-danger intake-inline-error">{errors.city}</p> : null}
                 {!errors.city && cityTouched && locationMismatch ? <p className="text-danger intake-inline-error">City may not match the pincode.</p> : null}
@@ -296,7 +314,7 @@ export function BillingEntitySection({
 
             <label className="intake-field">
               <span className="intake-label">State *</span>
-              <input className="intake-input" value={values.state} onChange={(event) => onChange("state", event.target.value)} onBlur={() => setStateTouched(true)} data-field="state" required />
+              <input className="intake-input" value={values.state} onChange={(event) => onChange("state", event.target.value)} onBlur={() => setStateTouched(true)} data-field="state" readOnly={viewOnly} required />
               <div style={{ minHeight: 16 }}>
                 {errors.state ? <p className="text-danger intake-inline-error">{errors.state}</p> : null}
                 {!errors.state && stateTouched && pincodeStateMismatch ? <p className="text-danger intake-inline-error">State may not match the pincode.</p> : null}
@@ -305,13 +323,13 @@ export function BillingEntitySection({
 
             <label className="intake-field">
               <span className="intake-label">Country *</span>
-              <input className="intake-input" value={values.country} onChange={(event) => onChange("country", event.target.value)} data-field="country" required />
+              <input className="intake-input" value={values.country} onChange={(event) => onChange("country", event.target.value)} data-field="country" readOnly={viewOnly} required />
               <div style={{ minHeight: 16 }}>{errors.country ? <p className="text-danger intake-inline-error">{errors.country}</p> : null}</div>
             </label>
 
             <label className="intake-field">
               <span className="intake-label">Pincode *</span>
-              <input className="intake-input" value={values.pincode} onChange={(event) => onChange("pincode", event.target.value)} onBlur={() => setPincodeTouched(true)} data-field="pincode" required={isIndianClient} />
+              <input className="intake-input" value={values.pincode} onChange={(event) => onChange("pincode", event.target.value)} onBlur={() => setPincodeTouched(true)} data-field="pincode" readOnly={viewOnly} required={isIndianClient} />
               <div style={{ minHeight: 16 }}>
                 {errors.pincode ? <p className="text-danger intake-inline-error">{errors.pincode}</p> : null}
                 {!errors.pincode && pincodeTouched && !pincodeValid ? <p className="text-danger intake-inline-error">Enter a valid 6 digit pincode.</p> : null}

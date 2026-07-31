@@ -1992,7 +1992,9 @@ function BadgeSelectCell({
           }}
           className={[
             STATUS_PILL_BASE,
-            'w-[84px] transition-none text-[11px]',
+            field === 'intake_status'
+              ? 'w-[84px] transition-none text-[11px]'
+              : 'max-w-[124px] transition-none',
             tone,
             saving ? 'ring-1 ring-primary/40 bg-primary/5' : '',
             active ? 'ring-1 ring-primary/40' : '',
@@ -2055,43 +2057,63 @@ function BadgeSelectCell({
           document.body
         ) : null}
       </div>
-      <div className="inline-flex h-5 w-5 items-center justify-center">
-        {locked && onUnlock ? (
-          <button
-            type="button"
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              onUnlock();
-            }}
-            className="inline-flex h-5 w-5 items-center justify-center rounded-md text-rose-600 transition-none hover:bg-rose-500/10 dark:text-rose-300"
-            aria-label="Unlock closed submission"
-            title="Unlock closed submission"
-          >
-            <span className="text-[11px] leading-none">??</span>
-          </button>
-        ) : onOpenAudit ? (
-          <button
-            type="button"
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={onOpenAudit}
-            className={[
-              'inline-flex h-5 w-5 items-center justify-center rounded-md transition-none hover:bg-muted/40',
-              field === 'closed_status' && normalizeText(row.closed_status) === 'open' && getFinanceNotes(row).trim()
-                ? 'text-rose-600 dark:text-rose-300'
-                : 'text-foreground',
-            ].join(' ')}
-            aria-label="Open audit details"
-            title="Status audit"
-          >
-            <span className="inline-flex h-3 w-3 items-center justify-center rounded-full border border-current text-[0.5rem] font-medium leading-none opacity-85">
-              i
-            </span>
-          </button>
-        ) : (
-          <span className="block h-5 w-5" aria-hidden="true" />
-        )}
-      </div>
+      {field === 'intake_status' ? (
+        <div className="inline-flex h-5 w-5 items-center justify-center">
+          {onOpenAudit ? (
+            <button
+              type="button"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={onOpenAudit}
+              className="inline-flex h-5 w-5 items-center justify-center rounded-md text-foreground transition-none hover:bg-muted/40"
+              aria-label="Open audit details"
+              title="Status audit"
+            >
+              <span className="inline-flex h-3 w-3 items-center justify-center rounded-full border border-current text-[0.5rem] font-medium leading-none opacity-85">
+                i
+              </span>
+            </button>
+          ) : (
+            <span className="block h-5 w-5" aria-hidden="true" />
+          )}
+        </div>
+      ) : (
+        <>
+          {locked && onUnlock ? (
+            <button
+              type="button"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onUnlock();
+              }}
+              className="inline-flex h-5 w-5 items-center justify-center rounded-md text-rose-600 transition-none hover:bg-rose-500/10 dark:text-rose-300"
+              aria-label="Unlock closed submission"
+              title="Unlock closed submission"
+            >
+              <span className="text-[11px] leading-none">🔒</span>
+            </button>
+          ) : null}
+          {onOpenAudit ? (
+            <button
+              type="button"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={onOpenAudit}
+              className={[
+                'inline-flex h-5 w-5 items-center justify-center rounded-md transition-none hover:bg-muted/40',
+                field === 'closed_status' && normalizeText(row.closed_status) === 'open' && getFinanceNotes(row).trim()
+                  ? 'text-rose-600 dark:text-rose-300'
+                  : 'text-foreground',
+              ].join(' ')}
+              aria-label="Open audit details"
+              title="Status audit"
+            >
+              <span className="inline-flex h-3 w-3 items-center justify-center rounded-full border border-current text-[0.5rem] font-medium leading-none opacity-85">
+                i
+              </span>
+            </button>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
@@ -2213,6 +2235,7 @@ export function SubmissionTable({
   onMasterDataReviewAction,
   highlightedRowId,
   paginationFooter,
+  hideActions,
 }: {
   rows: SubmissionRow[];
   onOpen?: (id: string, row: SubmissionRow) => void;
@@ -2226,6 +2249,7 @@ export function SubmissionTable({
   onMasterDataReviewAction?: (review: MasterDataReviewSummary, action: 'approve' | 'reject') => Promise<MasterDataActionResult>;
   highlightedRowId?: string | null;
   paginationFooter?: ReactNode;
+  hideActions?: boolean;
 }) {
   void columns;
   const router = useRouter();
@@ -2251,8 +2275,11 @@ export function SubmissionTable({
     if (canToggleCampaignColumns && (column === 'campaign_code' || column === 'campaign_name') && hiddenOptionalColumns[column]) {
       return false;
     }
+    if (hideActions && column === 'actions') {
+      return false;
+    }
     return true;
-  }), [baseColumns, canToggleCampaignColumns, hiddenOptionalColumns]);
+  }), [baseColumns, canToggleCampaignColumns, hiddenOptionalColumns, hideActions]);
   const isFinanceViewer = viewer === 'finance' || viewer === 'admin';
   const [collapsedColumns, setCollapsedColumns] = useState<Record<'invoice_number' | 'debit_note_number' | 'campaign_code' | 'campaign_name' | 'city' | 'state' | 'country' | 'pincode', boolean>>({
     invoice_number: false,
@@ -3454,26 +3481,33 @@ export function SubmissionTable({
           />
         );
 
+        if (!changeFields || !row.previous_submission_id) {
+          return field === 'intake_status' ? (
+            <div className="inline-grid grid-cols-[112px_18px] items-center gap-0.5 whitespace-nowrap align-middle">
+              {statusCell}
+              <span className="block h-4 min-w-[20px]" aria-hidden="true" />
+            </div>
+          ) : (
+            statusCell
+          );
+        }
+
         return (
           <div className="inline-grid grid-cols-[112px_18px] items-center gap-0.5 whitespace-nowrap align-middle">
             {statusCell}
-            {changeFields && row.previous_submission_id ? (
-              <button
-                type="button"
-                onMouseDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  openChangeSummaryPopover(row, changeFields, event);
-                }}
-                className="inline-flex h-4 min-w-[20px] shrink-0 items-center justify-center rounded-full border border-rose-300 bg-rose-50 px-1 text-[9px] font-semibold leading-none text-rose-700 transition-none hover:bg-rose-100 dark:border-rose-400/35 dark:bg-rose-500/12 dark:text-rose-200 dark:hover:bg-rose-500/20"
-                title="View changes in latest resubmission"
-                aria-label={'View ' + changeFields.length + ' changed fields in latest resubmission'}
-              >
-                {changeFields.length}
-              </button>
-            ) : (
-              <span className="block h-4 min-w-[20px]" aria-hidden="true" />
-            )}
+            <button
+              type="button"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                openChangeSummaryPopover(row, changeFields, event);
+              }}
+              className="inline-flex h-4 min-w-[18px] shrink-0 items-center justify-center rounded-full border border-rose-300 bg-rose-50 px-1 text-[9px] font-semibold leading-none text-rose-700 transition-none hover:bg-rose-100 dark:border-rose-400/35 dark:bg-rose-500/12 dark:text-rose-200 dark:hover:bg-rose-500/20"
+              title="View changes in latest resubmission"
+              aria-label={'View ' + changeFields.length + ' changed fields in latest resubmission'}
+            >
+              {changeFields.length}
+            </button>
           </div>
         );
       }
@@ -3986,7 +4020,7 @@ export function SubmissionTable({
                 <div
                   ref={changeSummaryPopoverRef}
                   data-resubmission-change-dialog="true"
-                  className="fixed z-[10050] flex w-[252px] max-h-[320px] flex-col overflow-hidden rounded-xl border bg-white dark:bg-black"
+                  className="fixed z-[10050] flex w-[252px] max-h-[320px] flex-col overflow-hidden rounded-xl border bg-white text-slate-900 dark:bg-black dark:text-slate-100"
                   style={{
                     top: changeSummaryPosition?.top ?? -9999,
                     left: changeSummaryPosition?.left ?? -9999,

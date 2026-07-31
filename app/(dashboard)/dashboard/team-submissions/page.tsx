@@ -1,17 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { FilterBar } from '../../../../components/dashboard/filter-bar';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
-import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
-import { getDrawerViewerRole } from '../../../../lib/client/dashboard-access';
 import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../lib/shared/submission-attachments';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { TeamMemberManagement } from '../../../../components/settings/team-member-management';
@@ -77,6 +75,9 @@ type TeamSubmissionApiRow = {
   submitted_by_name?: string | null;
   submitted_by_email?: string | null;
   submission_attachments?: SubmissionAttachmentApiRow[];
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  reviewed_by_name?: string | null;
 };
 
 type TeamMemberApiRow = {
@@ -173,6 +174,8 @@ function mapTeamSubmissionRow(item: TeamSubmissionApiRow): SubmissionRow {
     agency_name: item.agency_name || null,
     agency_trade_name: item.agency_trade_name || null,
     brand_trade_name: item.brand_trade_name || null,
+    reviewed_at: item.reviewed_at || null,
+    reviewed_by_name: item.reviewed_by_name || null,
     intake_line_items: item.intake_line_items || [],
     product_reimbursement_attachment: pickProductReimbursementAttachment(item.submission_attachments),
     reference_po_attachment: pickReferencePoAttachment(item.submission_attachments),
@@ -201,6 +204,7 @@ function resetTeamFilters(
 }
 
 export default function TeamSubmissionsPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading } = useDashboardSession();
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -217,7 +221,6 @@ export default function TeamSubmissionsPage() {
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [rowsError, setRowsError] = useState('');
-  const [openId, setOpenId] = useState<string | null>(null);
   const [showTeamMembers, setShowTeamMembers] = useState(false);
   const [highlightedSubmissionId, setHighlightedSubmissionId] = useState<string | null>(null);
   const [deepLinkNotice, setDeepLinkNotice] = useState('');
@@ -326,8 +329,6 @@ export default function TeamSubmissionsPage() {
     observer.observe(target);
     return () => observer.disconnect();
   }, [hasMore, loadMore, loadingMore]);
-
-  const row = useMemo(() => rows.find((entry) => entry.id === openId) || null, [rows, openId]);
 
   useEffect(() => {
     if (!highlightedSubmissionId) return undefined;
@@ -464,7 +465,8 @@ export default function TeamSubmissionsPage() {
                       { value: 'all', label: 'All' },
                       { value: 'submitted', label: 'Submitted' },
                       { value: 'accepted', label: 'Accepted' },
-                      { value: 'rejected', label: 'Rejected' },
+                      { value: 'rejected', label: 'Resubmission Requested' },
+                      { value: 'declined', label: 'Rejected' },
                     ],
                   },
                 ]}
@@ -494,7 +496,9 @@ export default function TeamSubmissionsPage() {
               <div className="grid gap-3 p-0">
                 <SubmissionTable
                   rows={rows}
-                  onOpen={(id) => setOpenId(id)}
+                  onOpen={(id) => {
+                    router.push('/dashboard/submissions/new?view_id=' + id);
+                  }}
                   emptyLabel="No mapped employee submissions found yet."
                   getActionLabel={() => 'View'}
                   viewer="team_lead"
@@ -526,7 +530,6 @@ export default function TeamSubmissionsPage() {
         )
       ) : null}
 
-      <SubmissionDrawer open={Boolean(row)} onClose={() => setOpenId(null)} row={row} viewer={getDrawerViewerRole(user.role)} />
 
       {showTeamMembers ? (
         <div className="fixed inset-0 z-50 bg-slate-950/50 p-4 backdrop-blur-[1px]" onClick={() => setShowTeamMembers(false)}>

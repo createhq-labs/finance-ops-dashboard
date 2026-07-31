@@ -6,6 +6,7 @@ import type { ExistingInvoiceAttachment, InvoiceIntakeFormValues } from "../type
 import { CURRENCY_OPTIONS, CURRENCY_SEARCH_TEXT_BY_OPTION } from "../../../lib/shared/currency";
 
 type Props = {
+  viewOnly?: boolean;
   values: InvoiceIntakeFormValues;
   onChange: <K extends keyof InvoiceIntakeFormValues>(key: K, value: InvoiceIntakeFormValues[K]) => void;
   errors?: Record<string, string>;
@@ -275,6 +276,7 @@ function ImDeliverablesField({
 }
 
 export function CreatorDeliverablesSection({
+  viewOnly = false,
   values,
   onChange,
   errors = {},
@@ -358,6 +360,7 @@ export function CreatorDeliverablesSection({
         onViewExistingProductReimbursementAttachment={onViewExistingProductReimbursementAttachment}
         onRemoveExistingProductReimbursementAttachment={onRemoveExistingProductReimbursementAttachment}
         onRetainExistingProductReimbursementAttachment={onRetainExistingProductReimbursementAttachment}
+        viewOnly={viewOnly}
       />
     );
   }
@@ -385,6 +388,7 @@ export function CreatorDeliverablesSection({
         onViewExistingProductReimbursementAttachment={onViewExistingProductReimbursementAttachment}
         onRemoveExistingProductReimbursementAttachment={onRemoveExistingProductReimbursementAttachment}
         onRetainExistingProductReimbursementAttachment={onRetainExistingProductReimbursementAttachment}
+        viewOnly={viewOnly}
       />
     );
   }
@@ -434,7 +438,7 @@ export function CreatorDeliverablesSection({
         <div className={showCurrency ? "campaign-grid-foreign" : "campaign-grid"}>
           <label className="intake-field min-w-0">
             <span className="intake-label">Campaign Code *</span>
-            <input className="intake-input min-w-0" value={values.campaignCode} onChange={(e) => onChange("campaignCode", e.target.value)} data-field="campaignCode" autoComplete="off" title={values.campaignCode} />
+            <input className="intake-input min-w-0" value={values.campaignCode} onChange={(e) => onChange("campaignCode", e.target.value)} data-field="campaignCode" readOnly={viewOnly} autoComplete="off" title={values.campaignCode} />
             <div style={{ minHeight: 16 }}>
               {errors.campaignCode ? <p className="text-danger intake-inline-error">{errors.campaignCode}</p> : null}
             </div>
@@ -442,7 +446,7 @@ export function CreatorDeliverablesSection({
 
           <label className="intake-field min-w-0">
             <span className="intake-label">Campaign Name *</span>
-            <input className="intake-input min-w-0" value={values.campaignName} onChange={(e) => onChange("campaignName", e.target.value)} data-field="campaignName" autoComplete="off" title={values.campaignName} />
+            <input className="intake-input min-w-0" value={values.campaignName} onChange={(e) => onChange("campaignName", e.target.value)} data-field="campaignName" readOnly={viewOnly} autoComplete="off" title={values.campaignName} />
             <div style={{ minHeight: 16 }}>
               {errors.campaignName ? <p className="text-danger intake-inline-error">{errors.campaignName}</p> : null}
             </div>
@@ -479,6 +483,7 @@ export function CreatorDeliverablesSection({
                     step="any"
                     min="0"
                     value={values.reimbursementAmount}
+                    readOnly={viewOnly}
                     onChange={(event) => onChange("reimbursementAmount", event.target.value)}
                     data-field="reimbursementAmount"
                     autoComplete="off"
@@ -500,6 +505,7 @@ export function CreatorDeliverablesSection({
                   onViewExistingAttachment={onViewExistingProductReimbursementAttachment}
                   onRemoveExistingAttachment={onRemoveExistingProductReimbursementAttachment}
                   onRetainExistingAttachment={onRetainExistingProductReimbursementAttachment}
+                  viewOnly={viewOnly}
                 />
               </div>
             ) : null}

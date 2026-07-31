@@ -1,6 +1,7 @@
 import type { InvoiceIntakeFormValues } from "../types";
 
 type Props = {
+  viewOnly?: boolean;
   values: InvoiceIntakeFormValues;
   totalAmount: string;
   onChange: <K extends keyof InvoiceIntakeFormValues>(key: K, value: InvoiceIntakeFormValues[K]) => void;
@@ -18,7 +19,7 @@ const COMMERCIALS_MEDIA_CSS = [
   "}",
 ].join("\n");
 
-export function CommercialsSection({ values, totalAmount, onChange, errors = {} }: Props) {
+export function CommercialsSection({ viewOnly = false, values, totalAmount, onChange, errors = {} }: Props) {
   const isInfluencerMarketing = values.businessLine === "IM";
   const currencyLabel = values.currency || "INR";
 
@@ -52,7 +53,7 @@ export function CommercialsSection({ values, totalAmount, onChange, errors = {} 
               step={isInfluencerMarketing ? "any" : undefined}
               min={isInfluencerMarketing ? "0" : undefined}
               value={isInfluencerMarketing ? values.imCommercials : totalAmount}
-              readOnly={!isInfluencerMarketing}
+              readOnly={viewOnly || !isInfluencerMarketing}
               placeholder={isInfluencerMarketing ? "Enter deal amount (" + currencyLabel + ")" : "Auto-calculated from rows"}
               onChange={(e) => onChange("imCommercials", e.target.value)}
               data-field="imCommercials"
@@ -72,6 +73,7 @@ export function CommercialsSection({ values, totalAmount, onChange, errors = {} 
               step="any"
               min="0"
               value={values.commission}
+              readOnly={viewOnly}
               onChange={(e) => onChange("commission", e.target.value)}
               data-field="commission"
               autoComplete="off"

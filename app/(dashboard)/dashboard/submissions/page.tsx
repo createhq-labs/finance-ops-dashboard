@@ -2,19 +2,18 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FilterBar } from '../../../../components/dashboard/filter-bar';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
-import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { PAYMENT_RECEIVED_STATUS_OPTIONS } from '../../../../lib/client/finance-status';
 import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../lib/shared/submission-attachments';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
-import { canResubmitSubmission, canSubmitInvoice, getDrawerViewerRole, getSubmissionsLabel } from '../../../../lib/client/dashboard-access';
+import { canResubmitSubmission, canSubmitInvoice, getSubmissionsLabel } from '../../../../lib/client/dashboard-access';
 
 type SubmissionAttachmentApiRow = {
   id: string;
@@ -72,6 +71,9 @@ type MySubmissionApiRow = {
   submitted_at: string | null;
   rejection_note: string | null;
   submission_attachments?: SubmissionAttachmentApiRow[];
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  reviewed_by_name?: string | null;
 };
 
 type MySubmissionsResponse = {
@@ -157,6 +159,8 @@ function mapSubmissionRow(item: MySubmissionApiRow, userName?: string | null, us
     agency_name: item.agency_name || null,
     agency_trade_name: item.agency_trade_name || null,
     brand_trade_name: item.brand_trade_name || null,
+    reviewed_at: item.reviewed_at || null,
+    reviewed_by_name: item.reviewed_by_name || null,
     intake_line_items: item.intake_line_items || [],
     product_reimbursement_attachment: pickProductReimbursementAttachment(item.submission_attachments),
     reference_po_attachment: pickReferencePoAttachment(item.submission_attachments),
@@ -191,7 +195,6 @@ export default function EmployeeSubmissionsPage() {
   const [hasMore, setHasMore] = useState(false);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [rowsError, setRowsError] = useState('');
-  const [openId, setOpenId] = useState<string | null>(null);
   const [highlightedSubmissionId, setHighlightedSubmissionId] = useState<string | null>(null);
   const [deepLinkNotice, setDeepLinkNotice] = useState('');
   const handledSubmissionIdRef = useRef<string | null>(null);
@@ -280,8 +283,6 @@ export default function EmployeeSubmissionsPage() {
     observer.observe(target);
     return () => observer.disconnect();
   }, [hasMore, loadMore, loadingMore]);
-
-  const row = useMemo(() => rows.find((entry) => entry.id === openId) || null, [rows, openId]);
 
   function resetAllFilters() {
     setQuery('');
@@ -388,7 +389,8 @@ export default function EmployeeSubmissionsPage() {
                 { value: 'all', label: 'All Statuses' },
                 { value: 'submitted', label: 'Submitted' },
                 { value: 'accepted', label: 'Accepted' },
-                { value: 'rejected', label: 'Rejected' },
+                { value: 'rejected', label: 'Resubmission Requested' },
+                { value: 'declined', label: 'Rejected' },
               ],
             },
           ]}
@@ -439,7 +441,7 @@ export default function EmployeeSubmissionsPage() {
                 router.push('/dashboard/submissions/new?resubmit_id=' + id);
                 return;
               }
-              setOpenId(id);
+              router.push('/dashboard/submissions/new?view_id=' + id);
             }}
             columns={['pi', 'entity', 'amount', 'intake_status', 'invoice_status', 'submitted_at', 'rejection_note', 'actions']}
             emptyLabel="No submissions found yet."
@@ -470,15 +472,6 @@ export default function EmployeeSubmissionsPage() {
         </div>
       ) : null}
 
-      <SubmissionDrawer
-        open={Boolean(row)}
-        onClose={() => setOpenId(null)}
-        row={row}
-        viewer={getDrawerViewerRole(user.role)}
-        onResubmit={(id) => {
-          router.push('/dashboard/submissions/new?resubmit_id=' + id);
-        }}
-      />
     </div>
   );
 }

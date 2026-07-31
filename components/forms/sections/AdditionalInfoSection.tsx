@@ -3,6 +3,7 @@ import { AttachmentUploadField } from "../invoice-line-items";
 import type { ExistingInvoiceAttachment, InvoiceIntakeFormValues } from "../types";
 
 type Props = {
+  viewOnly?: boolean;
   values: InvoiceIntakeFormValues;
   referencePoFile: File | null;
   referencePoError?: string;
@@ -17,6 +18,7 @@ type Props = {
 };
 
 export function AdditionalInfoSection({
+  viewOnly = false,
   values,
   referencePoFile,
   referencePoError = "",
@@ -72,6 +74,7 @@ export function AdditionalInfoSection({
                   className="intake-input intake-textarea"
                   rows={1}
                   value={values.additionalInformation}
+                  readOnly={viewOnly}
                   onChange={(e) => onChange("additionalInformation", e.target.value)}
                   data-field="additionalInformation"
                   style={{ minHeight: 56, maxHeight: 140, overflowY: "auto", resize: "none", paddingRight: 24, paddingBottom: 18 }}
@@ -112,6 +115,7 @@ export function AdditionalInfoSection({
                 onViewExistingAttachment={onViewExistingReferencePoAttachment}
                 onRemoveExistingAttachment={onRemoveExistingReferencePoAttachment}
                 onRetainExistingAttachment={onRetainExistingReferencePoAttachment}
+                viewOnly={viewOnly}
               />
             </div>
           </div>

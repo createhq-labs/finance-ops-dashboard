@@ -7,11 +7,10 @@ import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
-import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SubmissionTable, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
-import { getDefaultDashboardPath, getDrawerViewerRole } from '../../../../lib/client/dashboard-access';
+import { getDefaultDashboardPath } from '../../../../lib/client/dashboard-access';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../lib/shared/submission-attachments';
 
@@ -206,7 +205,6 @@ export default function TransferredSubmissionsClient() {
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [rowsError, setRowsError] = useState('');
-  const [openId, setOpenId] = useState<string | null>(null);
   const [highlightedSubmissionId, setHighlightedSubmissionId] = useState<string | null>(null);
   const [deepLinkNotice, setDeepLinkNotice] = useState('');
   const handledSubmissionIdRef = useRef<string | null>(null);
@@ -304,8 +302,6 @@ export default function TransferredSubmissionsClient() {
     observer.observe(target);
     return () => observer.disconnect();
   }, [hasMore, loadMore, loadingMore]);
-
-  const row = useMemo(() => rows.find((entry) => entry.id === openId) || null, [rows, openId]);
 
   useEffect(() => {
     if (!highlightedSubmissionId) return undefined;
@@ -419,7 +415,8 @@ export default function TransferredSubmissionsClient() {
                     { value: 'all', label: 'All' },
                     { value: 'submitted', label: 'Submitted' },
                     { value: 'accepted', label: 'Accepted' },
-                    { value: 'rejected', label: 'Rejected' },
+                    { value: 'rejected', label: 'Resubmission Requested' },
+                    { value: 'declined', label: 'Rejected' },
                   ],
                 },
               ]}
@@ -462,7 +459,7 @@ export default function TransferredSubmissionsClient() {
           <SectionCard padding={0}>
             <SubmissionTable
               rows={rows}
-              onOpen={(id) => setOpenId(id)}
+              onOpen={(id) => router.push('/dashboard/submissions/new?view_id=' + id)}
               emptyLabel="No transferred submissions are assigned to you right now."
               getActionLabel={() => 'Open'}
               viewer="team_lead"
@@ -489,7 +486,6 @@ export default function TransferredSubmissionsClient() {
         </>
       ) : null}
 
-      <SubmissionDrawer open={Boolean(row)} onClose={() => setOpenId(null)} row={row} viewer={getDrawerViewerRole(user.role)} />
     </div>
   );
 }

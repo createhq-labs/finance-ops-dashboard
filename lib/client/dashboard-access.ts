@@ -100,7 +100,11 @@ export function canViewSystemFields(role: AppRole) {
   return canViewSystemPage(role);
 }
 
-export function canResubmitSubmission(role: AppRole, row: { intake_status: 'submitted' | 'rejected' | 'accepted' | 'declined' }) {
+export function canResubmitSubmission(
+  role: AppRole,
+  row: { intake_status: 'submitted' | 'rejected' | 'accepted' | 'declined' }
+) {
+  void row;
   return isEmployeeRole(role) || isTeamLeadRole(role);
 }
 

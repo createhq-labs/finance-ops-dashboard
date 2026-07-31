@@ -31,6 +31,7 @@ type Props = {
   existingReferencePoAttachment?: ExistingInvoiceAttachment | null;
   onSubmit?: (submission: InvoiceIntakeFormSubmitInput) => Promise<void> | void;
   submitEnabled?: boolean;
+  viewOnly?: boolean;
 };
 
 const EMPTY_SC_ROW = { deliverable: "", amount: "" };
@@ -203,6 +204,7 @@ export function InvoiceIntakeForm({
   existingReferencePoAttachment = null,
   onSubmit,
   submitEnabled = false,
+  viewOnly = false,
 }: Props) {
   const formRef = useRef<HTMLFormElement | null>(null);
   const previousBillingBrandRef = useRef("");
@@ -222,6 +224,7 @@ export function InvoiceIntakeForm({
   const [, setActiveField] = useState<string>("submitterName");
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
+  const [readOnlyClickHint, setReadOnlyClickHint] = useState<{ x: number; y: number; message: string } | null>(null);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [manualLocationEdits, setManualLocationEdits] = useState({
     city: false,
@@ -449,6 +452,7 @@ export function InvoiceIntakeForm({
   }, [initialValues, submitterEmail, submitterName]);
 
   useEffect(() => {
+    if (viewOnly) return;
     if (typeof window === "undefined") return;
     if (!formRecoveryKey) return;
     if (previousSubmissionId && !initialValues) return;
@@ -504,6 +508,7 @@ export function InvoiceIntakeForm({
   }, [formRecoveryContext, formRecoveryKey, initialValues, previousSubmissionId, submitterEmail, submitterName]);
 
   useEffect(() => {
+    if (viewOnly) return;
     if (typeof window === "undefined") return;
     if (!formRecoveryKey || restoredStorageKeyRef.current !== formRecoveryKey) return;
 
@@ -537,6 +542,13 @@ export function InvoiceIntakeForm({
   }, [formRecoveryContext, formRecoveryKey, hasInteracted, values]);
 
   useEffect(() => {
+    if (!readOnlyClickHint) return;
+    const timer = window.setTimeout(() => setReadOnlyClickHint(null), 1400);
+    return () => window.clearTimeout(timer);
+  }, [readOnlyClickHint]);
+
+  useEffect(() => {
+    if (viewOnly) return;
     function handleDocumentKeyDown(event: KeyboardEvent) {
       const form = formRef.current;
       if (!form) return;
@@ -707,11 +719,11 @@ export function InvoiceIntakeForm({
         changed = true;
       }
 
-      const nextMcRows = prev.mcRows.map((row) => {
+      const nextMcRows = Array.isArray(prev.mcRows) ? prev.mcRows.map((row) => {
         if (row.brand.trim() && row.brand !== previousBillingBrand) return row;
         changed = true;
         return { ...row, brand: billingBrand };
-      });
+      }) : [];
 
       if (changed) next.mcRows = nextMcRows;
       return changed ? next : prev;
@@ -1645,6 +1657,7 @@ export function InvoiceIntakeForm({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (viewOnly) return;
     if (submitting) return;
 
     const nextErrors = validateForm(values);
@@ -1719,13 +1732,23 @@ export function InvoiceIntakeForm({
       className="intake-form"
       autoComplete="off"
       noValidate
+      style={{ position: 'relative' }}
       onFocusCapture={(event) => {
         const target = event.target as HTMLElement | null;
         const field = target?.closest?.("[data-field]") as HTMLElement | null;
         const fieldKey = field?.getAttribute("data-field");
         if (fieldKey) setActiveField(fieldKey);
       }}
+      onClickCapture={(event) => {
+        if (!viewOnly) return;
+        const target = event.target as HTMLElement | null;
+        if (target?.closest?.('[data-view-allowed="true"]')) return;
+        const field = target?.closest?.('[data-field], .intake-field, .intake-section-body, .intake-toggle-group') as HTMLElement | null;
+        if (!field) return;
+        setReadOnlyClickHint({ x: event.clientX, y: event.clientY, message: 'Click Edit to modify this submission.' });
+      }}
     >
+      <fieldset disabled={viewOnly} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, display: 'grid', gap: 16 }}>
       <section className="intake-section">
         <div className="intake-section-header">
           <div>
@@ -1816,6 +1839,7 @@ export function InvoiceIntakeForm({
       </section>
 
       <BillingEntitySection
+        viewOnly={viewOnly}
         values={values}
         onChange={update}
         onEntityNameSelect={handleEntityNameSelect}
@@ -1833,6 +1857,7 @@ export function InvoiceIntakeForm({
       />
       <InvoiceDetailsSection values={values} onChange={update} errors={visibleFieldErrors} />
       <CreatorDeliverablesSection
+        viewOnly={viewOnly}
         values={values}
         onChange={update}
         errors={visibleFieldErrors}
@@ -1862,8 +1887,9 @@ export function InvoiceIntakeForm({
         onPatchScCreator={patchScCreator}
         onPatchMcCreator={patchMcCreator}
       />
-      <CommercialsSection values={values} totalAmount={totalAmount} onChange={update} errors={visibleFieldErrors} />
+      <CommercialsSection viewOnly={viewOnly} values={values} totalAmount={totalAmount} onChange={update} errors={visibleFieldErrors} />
       <AdditionalInfoSection
+        viewOnly={viewOnly}
         values={values}
         referencePoFile={referencePoFile}
         referencePoError={referencePoError}
@@ -1880,7 +1906,18 @@ export function InvoiceIntakeForm({
         onChange={update}
         errors={visibleFieldErrors}
       />
-      <FormActions onReset={handleReset} submitting={submitting} submitEnabled={submitEnabled && Boolean(onSubmit)} />
+      </fieldset>
+
+      {!viewOnly ? <FormActions onReset={handleReset} submitting={submitting} submitEnabled={submitEnabled && Boolean(onSubmit)} /> : null}
+
+      {readOnlyClickHint ? (
+        <div
+          className="pointer-events-none fixed z-[90] rounded-md border border-sky-300/70 bg-card px-2 py-1 text-[11px] font-medium text-sky-700 shadow-sm dark:border-sky-300/35 dark:text-sky-200"
+          style={{ left: readOnlyClickHint.x + 10, top: readOnlyClickHint.y - 12 }}
+        >
+          {readOnlyClickHint.message}
+        </div>
+      ) : null}
 
       {error ? <p className="text-danger intake-inline-error">{error}</p> : null}
     </form>
