@@ -42,7 +42,7 @@ export type SubmissionRow = {
   currency?: string | null;
   owner_name?: string;
   submitter_email?: string;
-  intake_status: 'submitted' | 'rejected' | 'accepted';
+  intake_status: 'submitted' | 'rejected' | 'accepted' | 'declined';
   invoice_status: string;
   sync_status: 'pending_sheet_sync' | 'synced' | 'failed';
   submitted_at: string;
@@ -281,7 +281,7 @@ const COLUMN_TITLES: Record<SheetColumnId, string> = {
 const COLUMN_WIDTHS: Record<SheetColumnId, number> = {
   pi: 164,
   submitted_at: 124,
-  intake_status: 176,
+  intake_status: 162,
   invoice_status: 136,
   payment_received: 140,
   payment_made: 136,
@@ -692,6 +692,7 @@ function getEditableOptions(field: StatusEditableField) {
     { value: 'submitted', label: 'Submitted' },
     { value: 'accepted', label: 'Accepted' },
     { value: 'rejected', label: 'Resubmission Requested' },
+    { value: 'declined', label: 'Rejected' },
   ];
 }
 
@@ -723,6 +724,7 @@ function renderStatusLabel(field: StatusEditableField, value: string | null | un
   if (!value) return 'Pending';
   if (value === 'accepted') return 'Accepted';
   if (value === 'rejected') return 'Resubmission Requested';
+  if (value === 'declined') return 'Rejected';
   return 'Submitted';
 }
 
@@ -768,6 +770,9 @@ function getStatusTone(field: StatusEditableField, value: string | null | undefi
   }
   if (field === 'intake_status' && normalized === 'submitted') {
     return 'border-amber-300/90 bg-amber-500/12 text-amber-900 dark:border-amber-500/75 dark:bg-amber-400/26 dark:text-white';
+  }
+  if (field === 'intake_status' && normalized === 'declined') {
+    return 'border-slate-300/90 bg-slate-500/14 text-slate-800 dark:border-slate-300/80 dark:bg-slate-400/20 dark:text-white';
   }
   if (normalized === 'invoice_created') {
     return 'border-cyan-300/90 bg-cyan-500/16 text-cyan-900 dark:border-cyan-300/75 dark:bg-cyan-400/27 dark:text-white';
@@ -1944,7 +1949,7 @@ function BadgeSelectCell({
   }, [menuRect, options.length]);
 
   return (
-    <div ref={rootRef} className="relative inline-flex max-w-full items-center gap-1.5" onDoubleClick={onCopy}>
+    <div ref={rootRef} className="relative inline-grid w-[112px] grid-cols-[84px_16px] items-center gap-0.5" onDoubleClick={onCopy}>
       <CopyNotice active={copied} />
       <div className="relative max-w-full">
         <button
@@ -1986,12 +1991,14 @@ function BadgeSelectCell({
             }
           }}
           className={[
-            STATUS_PILL_BASE,
-            'max-w-[124px] transition-none',
-            tone,
-            saving ? 'ring-1 ring-primary/40 bg-primary/5' : '',
-            active ? 'ring-1 ring-primary/40' : '',
-          ].join(' ')}
+       STATUS_PILL_BASE,
+        field === 'intake_status'
+    ? 'w-[84px] transition-none text-[11px]'
+    : 'max-w-[124px] transition-none',
+  tone,
+  saving ? 'ring-1 ring-primary/40 bg-primary/5' : '',
+  active ? 'ring-1 ring-primary/40' : '',
+].join(' ')}
           title={saving ? 'Saving...' : displayLabel}
         >
           <span className="truncate">{saving ? 'Saving...' : truncateStatusLabel(displayLabel)}</span>
@@ -2050,40 +2057,63 @@ function BadgeSelectCell({
           document.body
         ) : null}
       </div>
-      {locked && onUnlock ? (
-        <button
-          type="button"
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            onUnlock();
-          }}
-          className="inline-flex h-5 w-5 items-center justify-center rounded-md text-rose-600 transition-none hover:bg-rose-500/10 dark:text-rose-300"
-          aria-label="Unlock closed submission"
-          title="Unlock closed submission"
-        >
-          <span className="text-[11px] leading-none">🔒</span>
-        </button>
-      ) : null}
-      {onOpenAudit ? (
-        <button
-          type="button"
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={onOpenAudit}
-          className={[
-            'inline-flex h-5 w-5 items-center justify-center rounded-md transition-none hover:bg-muted/40',
-            field === 'closed_status' && normalizeText(row.closed_status) === 'open' && getFinanceNotes(row).trim()
-              ? 'text-rose-600 dark:text-rose-300'
-              : 'text-foreground',
-          ].join(' ')}
-          aria-label="Open audit details"
-          title="Status audit"
-        >
-          <span className="inline-flex h-3 w-3 items-center justify-center rounded-full border border-current text-[0.5rem] font-medium leading-none opacity-85">
-            i
-          </span>
-        </button>
-      ) : null}
+      {field === 'intake_status' ? (
+        <div className="inline-flex h-5 w-5 items-center justify-center">
+          {onOpenAudit ? (
+            <button
+              type="button"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={onOpenAudit}
+              className="inline-flex h-5 w-5 items-center justify-center rounded-md text-foreground transition-none hover:bg-muted/40"
+              aria-label="Open audit details"
+              title="Status audit"
+            >
+              <span className="inline-flex h-3 w-3 items-center justify-center rounded-full border border-current text-[0.5rem] font-medium leading-none opacity-85">
+                i
+              </span>
+            </button>
+          ) : (
+            <span className="block h-5 w-5" aria-hidden="true" />
+          )}
+        </div>
+      ) : (
+        <>
+          {locked && onUnlock ? (
+            <button
+              type="button"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onUnlock();
+              }}
+              className="inline-flex h-5 w-5 items-center justify-center rounded-md text-rose-600 transition-none hover:bg-rose-500/10 dark:text-rose-300"
+              aria-label="Unlock closed submission"
+              title="Unlock closed submission"
+            >
+              <span className="text-[11px] leading-none">🔒</span>
+            </button>
+          ) : null}
+          {onOpenAudit ? (
+            <button
+              type="button"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={onOpenAudit}
+              className={[
+                'inline-flex h-5 w-5 items-center justify-center rounded-md transition-none hover:bg-muted/40',
+                field === 'closed_status' && normalizeText(row.closed_status) === 'open' && getFinanceNotes(row).trim()
+                  ? 'text-rose-600 dark:text-rose-300'
+                  : 'text-foreground',
+              ].join(' ')}
+              aria-label="Open audit details"
+              title="Status audit"
+            >
+              <span className="inline-flex h-3 w-3 items-center justify-center rounded-full border border-current text-[0.5rem] font-medium leading-none opacity-85">
+                i
+              </span>
+            </button>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
@@ -2093,6 +2123,7 @@ const MemoDataCell = memo(function MemoDataCell({
   columnIndex,
   sticky,
   rowClosed,
+  rowDeclined,
   cellStyle,
   isFocused,
   isActiveEditor,
@@ -2111,6 +2142,7 @@ const MemoDataCell = memo(function MemoDataCell({
   columnIndex: number;
   sticky: boolean;
   rowClosed: boolean;
+  rowDeclined: boolean;
   cellStyle: CSSProperties;
   isFocused: boolean;
   isActiveEditor: boolean;
@@ -2143,10 +2175,14 @@ const MemoDataCell = memo(function MemoDataCell({
     ? sticky
       ? 'border-r border-border/60 bg-emerald-50 dark:bg-emerald-950'
       : 'bg-emerald-50 dark:bg-emerald-950'
-    : sticky
-      ? 'bg-card border-r border-border/60'
-      : 'bg-card',
-  !rowClosed ? 'transition-colors duration-100 group-hover:bg-sky-50/90 hover:bg-sky-50/90 dark:group-hover:bg-slate-800/80 dark:hover:bg-slate-800/80' : 'transition-colors duration-100',
+    : rowDeclined
+      ? sticky
+        ? 'border-r border-border/60 bg-slate-100 dark:bg-slate-800/90'
+        : 'bg-slate-100 dark:bg-slate-800/90'
+      : sticky
+        ? 'bg-card border-r border-border/60'
+        : 'bg-card',
+  !rowClosed && !rowDeclined ? 'transition-colors duration-100 group-hover:bg-sky-50/90 hover:bg-sky-50/90 dark:group-hover:bg-slate-800/80 dark:hover:bg-slate-800/80' : 'transition-colors duration-100',
   isFocused ? 'bg-primary/5 ring-1 ring-primary/40 ring-inset' : '',
   rowHighlighted ? '!bg-red-300/30 dark:!bg-red-900/70 animate-[pulse_0.85s_ease-in-out_5]' : '',
 ].join(' ')}
@@ -2175,6 +2211,7 @@ const MemoDataCell = memo(function MemoDataCell({
   prev.columnIndex === next.columnIndex &&
   prev.sticky === next.sticky &&
   prev.rowClosed === next.rowClosed &&
+  prev.rowDeclined === next.rowDeclined &&
   prev.isFocused === next.isFocused &&
   prev.isActiveEditor === next.isActiveEditor &&
   prev.isLockedExpanded === next.isLockedExpanded &&
@@ -2198,6 +2235,7 @@ export function SubmissionTable({
   onMasterDataReviewAction,
   highlightedRowId,
   paginationFooter,
+  hideActions,
 }: {
   rows: SubmissionRow[];
   onOpen?: (id: string, row: SubmissionRow) => void;
@@ -2211,6 +2249,7 @@ export function SubmissionTable({
   onMasterDataReviewAction?: (review: MasterDataReviewSummary, action: 'approve' | 'reject') => Promise<MasterDataActionResult>;
   highlightedRowId?: string | null;
   paginationFooter?: ReactNode;
+  hideActions?: boolean;
 }) {
   void columns;
   const router = useRouter();
@@ -2236,8 +2275,11 @@ export function SubmissionTable({
     if (canToggleCampaignColumns && (column === 'campaign_code' || column === 'campaign_name') && hiddenOptionalColumns[column]) {
       return false;
     }
+    if (hideActions && column === 'actions') {
+      return false;
+    }
     return true;
-  }), [baseColumns, canToggleCampaignColumns, hiddenOptionalColumns]);
+  }), [baseColumns, canToggleCampaignColumns, hiddenOptionalColumns, hideActions]);
   const isFinanceViewer = viewer === 'finance' || viewer === 'admin';
   const [collapsedColumns, setCollapsedColumns] = useState<Record<'invoice_number' | 'debit_note_number' | 'campaign_code' | 'campaign_name' | 'city' | 'state' | 'country' | 'pincode', boolean>>({
     invoice_number: false,
@@ -3440,11 +3482,18 @@ export function SubmissionTable({
         );
 
         if (!changeFields || !row.previous_submission_id) {
-          return statusCell;
+          return field === 'intake_status' ? (
+            <div className="inline-grid grid-cols-[112px_18px] items-center gap-0.5 whitespace-nowrap align-middle">
+              {statusCell}
+              <span className="block h-4 min-w-[20px]" aria-hidden="true" />
+            </div>
+          ) : (
+            statusCell
+          );
         }
 
         return (
-          <div className="inline-flex max-w-full items-center gap-1.5 whitespace-nowrap align-middle">
+          <div className="inline-grid grid-cols-[112px_18px] items-center gap-0.5 whitespace-nowrap align-middle">
             {statusCell}
             <button
               type="button"
@@ -3453,7 +3502,7 @@ export function SubmissionTable({
                 event.stopPropagation();
                 openChangeSummaryPopover(row, changeFields, event);
               }}
-              className="inline-flex h-5 min-w-[24px] shrink-0 items-center justify-center rounded-full border border-rose-300 bg-rose-50 px-1.5 text-[10px] font-semibold leading-none text-rose-700 transition-none hover:bg-rose-100 dark:border-rose-400/35 dark:bg-rose-500/12 dark:text-rose-200 dark:hover:bg-rose-500/20"
+              className="inline-flex h-4 min-w-[18px] shrink-0 items-center justify-center rounded-full border border-rose-300 bg-rose-50 px-1 text-[9px] font-semibold leading-none text-rose-700 transition-none hover:bg-rose-100 dark:border-rose-400/35 dark:bg-rose-500/12 dark:text-rose-200 dark:hover:bg-rose-500/20"
               title="View changes in latest resubmission"
               aria-label={'View ' + changeFields.length + ' changed fields in latest resubmission'}
             >
@@ -3877,8 +3926,9 @@ export function SubmissionTable({
               const row = item.row;
               const rowIndex = item.rowIndex;
               const rowClosed = isClosedRow(row);
+              const rowDeclined = normalizeText(row.intake_status) === 'declined';
               return (
-                <tr key={item.kind + ':' + row.id + ':' + (item.isHistory ? 'history' : 'main')} className={[ 'group', item.isHistory ? 'bg-muted/10' : '', 'transition-colors duration-100 hover:bg-sky-50/60 dark:hover:bg-slate-800/60' ].join(' ')} data-pi-group-panel={item.isHistory ? 'true' : undefined} data-submission-row={row.id}>
+                <tr key={item.kind + ':' + row.id + ':' + (item.isHistory ? 'history' : 'main')} className={[ 'group', item.isHistory ? 'bg-muted/10' : rowDeclined ? 'bg-slate-100/80 dark:bg-slate-800/80' : '', !rowDeclined ? 'transition-colors duration-100 hover:bg-sky-50/60 dark:hover:bg-slate-800/60' : 'transition-colors duration-100' ].join(' ')} data-pi-group-panel={item.isHistory ? 'true' : undefined} data-submission-row={row.id}>
                   {activeColumns.map((column, columnIndex) => {
                     const sticky =
                       column === 'pi' ||
@@ -3912,6 +3962,7 @@ export function SubmissionTable({
                         onKeyDownCell={handleCellKeyDown}
                         renderContent={() => renderCell(column, row, rowIndex, columnIndex, item.isHistory)}
                         rowClosed={rowClosed}
+                        rowDeclined={rowDeclined}
                         rowHighlighted={highlightedRowId === row.id}
                       />
                     );
@@ -3969,12 +4020,11 @@ export function SubmissionTable({
                 <div
                   ref={changeSummaryPopoverRef}
                   data-resubmission-change-dialog="true"
-                  className="fixed z-[10050] flex w-[252px] max-h-[320px] flex-col overflow-hidden rounded-xl border bg-black dark:bg-black"
+                  className="fixed z-[10050] flex w-[252px] max-h-[320px] flex-col overflow-hidden rounded-xl border bg-white text-slate-900 dark:bg-black dark:text-slate-100"
                   style={{
                     top: changeSummaryPosition?.top ?? -9999,
                     left: changeSummaryPosition?.left ?? -9999,
                     borderColor: 'var(--ring)',
-                    backgroundColor: '#000',
                   }}
                 >
                   <div className="flex items-start justify-between gap-2 border-b border-border/60 px-3 py-2">
@@ -3991,7 +4041,7 @@ export function SubmissionTable({
                       <X size={12} />
                     </button>
                   </div>
-                  <div className="flex-1 overflow-visible px-0 py-2">
+                  <div className="flex-1 overflow-y-auto px-0 py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:w-0 [&::-webkit-scrollbar]:h-0">
                     {scalarFields.length > 0 ? (
                       <div className="ml-3 border-l-2 border-l-sky-400/80 pl-2.5">
                         <div className="pb-1 text-[10px] font-medium uppercase tracking-[0.05em] text-sky-700 dark:text-sky-300">Value changes</div>

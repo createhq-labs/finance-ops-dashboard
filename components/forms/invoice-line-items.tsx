@@ -8,9 +8,11 @@ import { SearchableSelect } from "./searchable-select";
 function CurrencyField({
   currency,
   onChange,
+  disabled = false,
 }: {
   currency: string;
   onChange: (next: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="grid gap-1 min-w-0 invoice-row-currency-cell">
@@ -22,6 +24,7 @@ function CurrencyField({
         dataField="currency"
         className="intake-currency-select"
         searchTextByOption={CURRENCY_SEARCH_TEXT_BY_OPTION}
+        disabled={disabled}
       />
       <div style={{ minHeight: 16 }} />
     </div>
@@ -77,6 +80,7 @@ export function AttachmentUploadField({
   onViewExistingAttachment,
   onRemoveExistingAttachment,
   onRetainExistingAttachment,
+  viewOnly = false,
 }: {
   fieldKey: string;
   file: File | null;
@@ -91,6 +95,7 @@ export function AttachmentUploadField({
   onViewExistingAttachment?: (attachment: ExistingInvoiceAttachment) => void;
   onRemoveExistingAttachment?: () => void;
   onRetainExistingAttachment?: () => void;
+  viewOnly?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -106,6 +111,78 @@ export function AttachmentUploadField({
   const isPdf = Boolean(file && (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')));
   const displayError = error || formError;
   const fileTypeIcon = getFileTypeIcon(file);
+
+  if (viewOnly) {
+    const visibleAttachment = file
+      ? { fileName: file.name, fileSizeBytes: file.size, documentType: fieldKey }
+      : existingAttachment && !existingAttachmentRemoved
+        ? existingAttachment
+        : null;
+    const existingVisibleAttachment = !file && existingAttachment && !existingAttachmentRemoved ? existingAttachment : null;
+
+    return (
+      <div className="grid w-full max-w-full min-w-0 gap-2 overflow-hidden" data-field={fieldKey} tabIndex={-1}>
+        {visibleAttachment ? (
+          <div className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 overflow-hidden rounded-xl border border-sky-200/70 bg-card px-3 py-3 dark:border-sky-400/20 sm:flex-nowrap">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-sky-200/80 bg-sky-50 text-sky-900 dark:border-sky-300/20 dark:bg-sky-400/12 dark:text-sky-100">
+              {file ? fileTypeIcon : <FileText size={20} aria-hidden="true" />}
+            </span>
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <div className="truncate text-[13px] font-medium text-foreground" title={visibleAttachment.fileName}>
+                {visibleAttachment.fileName}
+              </div>
+              <div className="truncate text-[11px] text-muted-foreground">
+                {file ? formatSelectedFileSize(file) : formatAttachmentSize(visibleAttachment.fileSizeBytes)}
+              </div>
+            </div>
+            {file ? (
+              <div
+                role="button"
+                tabIndex={0}
+                data-view-allowed="true"
+                onClick={() => setPreviewOpen(true)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setPreviewOpen(true);
+                  }
+                }}
+                className="inline-flex h-7 items-center rounded-md border border-sky-300/60 bg-sky-100/90 px-2.5 text-[11px] font-medium text-sky-900 transition-none hover:bg-sky-200 dark:border-sky-300/25 dark:bg-sky-400/16 dark:text-sky-50 dark:hover:bg-sky-400/24"
+                aria-label="View file"
+                title="View"
+              >
+                View
+              </div>
+            ) : onViewExistingAttachment && existingVisibleAttachment ? (
+              <div
+                role="button"
+                tabIndex={0}
+                data-view-allowed="true"
+                onClick={() => onViewExistingAttachment(existingVisibleAttachment)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onViewExistingAttachment(existingVisibleAttachment);
+                  }
+                }}
+                className="inline-flex h-7 items-center rounded-md border border-sky-300/60 bg-sky-100/90 px-2.5 text-[11px] font-medium text-sky-900 transition-none hover:bg-sky-200 dark:border-sky-300/25 dark:bg-sky-400/16 dark:text-sky-50 dark:hover:bg-sky-400/24"
+                aria-label="View existing file"
+                title="View"
+              >
+                View
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-border/70 bg-card px-3 py-3 text-[12px] text-muted-foreground">
+            No file attached.
+          </div>
+        )}
+
+        {displayError ? <p className="text-danger intake-inline-error">{displayError}</p> : null}
+      </div>
+    );
+  }
 
   function clearSelectedFile() {
     if (inputRef.current) inputRef.current.value = '';
@@ -308,6 +385,7 @@ export function ProductReimbursementField({
   onViewExistingAttachment,
   onRemoveExistingAttachment,
   onRetainExistingAttachment,
+  viewOnly,
 }: {
   fieldKey: string;
   file: File | null;
@@ -320,6 +398,7 @@ export function ProductReimbursementField({
   onViewExistingAttachment?: (attachment: ExistingInvoiceAttachment) => void;
   onRemoveExistingAttachment?: () => void;
   onRetainExistingAttachment?: () => void;
+  viewOnly?: boolean;
 }) {
   return (
     <AttachmentUploadField
@@ -335,6 +414,7 @@ export function ProductReimbursementField({
       onViewExistingAttachment={onViewExistingAttachment}
       onRemoveExistingAttachment={onRemoveExistingAttachment}
       onRetainExistingAttachment={onRetainExistingAttachment}
+      viewOnly={viewOnly}
     />
   );
 }
@@ -363,6 +443,7 @@ type SingleCreatorProps = {
   onViewExistingProductReimbursementAttachment?: (attachment: ExistingInvoiceAttachment) => void;
   onRemoveExistingProductReimbursementAttachment?: () => void;
   onRetainExistingProductReimbursementAttachment?: () => void;
+  viewOnly?: boolean;
 };
 
 export function SingleCreatorRows({
@@ -389,6 +470,7 @@ export function SingleCreatorRows({
   onViewExistingProductReimbursementAttachment,
   onRemoveExistingProductReimbursementAttachment,
   onRetainExistingProductReimbursementAttachment,
+  viewOnly = false,
 }: SingleCreatorProps) {
   const gridColumns = showCurrency
     ? "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_68px_minmax(0,1.3fr)_minmax(132px,0.85fr)_96px]"
@@ -447,6 +529,7 @@ export function SingleCreatorRows({
   <CurrencyField
     currency={currency}
     onChange={onCurrencyChange}
+    disabled={viewOnly}
   />
 ) : null}
                 <div className="grid min-w-0 gap-1">
@@ -475,6 +558,7 @@ export function SingleCreatorRows({
                     onChange={(e) => onRowChange(idx, { amount: e.target.value })}
                     data-field={`scDeliverables.${idx}.amount`}
                     autoComplete="off"
+                    readOnly={viewOnly}
                   />
                   <div style={{ minHeight: 16 }}>
                     {errors[`scDeliverables.${idx}.amount`] ? <p className="text-danger intake-inline-error">{errors[`scDeliverables.${idx}.amount`]}</p> : null}
@@ -498,6 +582,7 @@ export function SingleCreatorRows({
                     onViewExistingAttachment={onViewExistingProductReimbursementAttachment}
                     onRemoveExistingAttachment={onRemoveExistingProductReimbursementAttachment}
                     onRetainExistingAttachment={onRetainExistingProductReimbursementAttachment}
+                    viewOnly={viewOnly}
                   />
                 </div>
               ) : null}
@@ -537,6 +622,7 @@ type MultiCreatorProps = {
   onViewExistingProductReimbursementAttachment?: (attachment: ExistingInvoiceAttachment) => void;
   onRemoveExistingProductReimbursementAttachment?: () => void;
   onRetainExistingProductReimbursementAttachment?: () => void;
+  viewOnly?: boolean;
 };
 
 export function MultiCreatorRows({
@@ -560,6 +646,7 @@ export function MultiCreatorRows({
   onViewExistingProductReimbursementAttachment,
   onRemoveExistingProductReimbursementAttachment,
   onRetainExistingProductReimbursementAttachment,
+  viewOnly = false,
 }: MultiCreatorProps) {
   const gridColumns = showCurrency
     ? "grid gap-x-1 gap-y-2 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)_68px_minmax(0,1.3fr)_minmax(132px,0.85fr)_96px]"
@@ -618,6 +705,7 @@ export function MultiCreatorRows({
   <CurrencyField
     currency={currency}
     onChange={onCurrencyChange}
+    disabled={viewOnly}
   />
 ) : null}
 
@@ -648,6 +736,7 @@ export function MultiCreatorRows({
                     onChange={(e) => onRowChange(idx, { amount: e.target.value })}
                     data-field={`mcRows.${idx}.amount`}
                     autoComplete="off"
+                    readOnly={viewOnly}
                   />
                   <div style={{ minHeight: 16 }}>
                     {errors[`mcRows.${idx}.amount`] ? <p className="text-danger intake-inline-error">{errors[`mcRows.${idx}.amount`]}</p> : null}
@@ -672,6 +761,7 @@ export function MultiCreatorRows({
                     onViewExistingAttachment={onViewExistingProductReimbursementAttachment}
                     onRemoveExistingAttachment={onRemoveExistingProductReimbursementAttachment}
                     onRetainExistingAttachment={onRetainExistingProductReimbursementAttachment}
+                    viewOnly={viewOnly}
                   />
                 </div>
               ) : null}

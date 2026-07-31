@@ -2,6 +2,7 @@
 
 import { AlertCircle, ChevronDown, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { inferAddressData } from "../../lib/shared/address-utils";
 import type { GstMappingOption } from "./types";
 
@@ -14,7 +15,83 @@ type Props = {
   onClear: () => void;
 };
 
-const GST_PATTERN = /^[0-3][0-9][A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+const GST_CHARSET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const VALID_GST_STATE_CODES = new Set([
+  "01", "02", "03", "04", "05", "06", "07", "08", "09", "10",
+  "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+  "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31",
+  "32", "33", "34", "35", "36", "37", "38", "97",
+]);
+
+type GstValidationResult = {
+  error: string | null;
+  isCompleteValid: boolean;
+};
+
+function getGstChecksumCharacter(value: string) {
+  let factor = 2;
+  let sum = 0;
+
+  for (let index = value.length - 1; index >= 0; index -= 1) {
+    const codePoint = GST_CHARSET.indexOf(value[index]);
+    if (codePoint < 0) return "";
+
+    const addend = factor * codePoint;
+    factor = factor === 2 ? 1 : 2;
+    sum += Math.floor(addend / GST_CHARSET.length) + (addend % GST_CHARSET.length);
+  }
+
+  const remainder = sum % GST_CHARSET.length;
+  return GST_CHARSET[(GST_CHARSET.length - remainder) % GST_CHARSET.length] ?? "";
+}
+
+function validateGstinProgressive(value: string): GstValidationResult {
+  if (!value) return { error: null, isCompleteValid: false };
+
+  const stateCode = value.slice(0, Math.min(2, value.length));
+  if (stateCode && !/^\d+$/.test(stateCode)) {
+    return { error: "Please enter a valid GST state code.", isCompleteValid: false };
+  }
+
+  if (stateCode.length === 2 && !VALID_GST_STATE_CODES.has(stateCode)) {
+    return { error: "Please enter a valid GST state code.", isCompleteValid: false };
+  }
+
+  const panLetters = value.slice(2, Math.min(7, value.length));
+  if (panLetters && !/^[A-Z]+$/.test(panLetters)) {
+    return { error: "GST number format is incorrect. Please check the GSTIN.", isCompleteValid: false };
+  }
+
+  const panDigits = value.slice(7, Math.min(11, value.length));
+  if (panDigits && !/^\d+$/.test(panDigits)) {
+    return { error: "GST number format is incorrect. Please check the GSTIN.", isCompleteValid: false };
+  }
+
+  const panLastLetter = value.slice(11, Math.min(12, value.length));
+  if (panLastLetter && !/^[A-Z]$/.test(panLastLetter)) {
+    return { error: "GST number format is incorrect. Please check the GSTIN.", isCompleteValid: false };
+  }
+
+  const entityNumber = value.slice(12, Math.min(13, value.length));
+  if (entityNumber && !/^[1-9A-Z]$/.test(entityNumber)) {
+    return { error: "GST number format is incorrect. Please check the GSTIN.", isCompleteValid: false };
+  }
+
+  const defaultZ = value.slice(13, Math.min(14, value.length));
+  if (defaultZ && defaultZ !== "Z") {
+    return { error: "GST number format is incorrect. Please check the GSTIN.", isCompleteValid: false };
+  }
+
+  if (value.length < 15) return { error: null, isCompleteValid: false };
+
+  const checksum = value[14];
+  const expectedChecksum = getGstChecksumCharacter(value.slice(0, 14));
+  if (!expectedChecksum || checksum !== expectedChecksum) {
+    return { error: "Invalid GST number. Please verify the GSTIN entered.", isCompleteValid: false };
+  }
+
+  return { error: null, isCompleteValid: true };
+}
 
 function normalizeGstInput(value: string) {
   return value.replace(/[^0-9A-Za-z]/g, "").toUpperCase().slice(0, 15);
@@ -126,10 +203,11 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
   const rootRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const editRef = useRef<HTMLInputElement | null>(null);
+  const invalidAnchorRef = useRef<HTMLSpanElement | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [editingPendingValue, setEditingPendingValue] = useState(false);
-  const [showInvalidHint, setShowInvalidHint] = useState(false);
+  const [invalidHintPosition, setInvalidHintPosition] = useState<{ left: number; top: number } | null>(null);
 
   const normalizedValue = normalizeGstInput(value);
   const selectedEntry = useMemo(
@@ -138,7 +216,8 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
   );
   const pendingSelection = Boolean(normalizedValue) && !selectedEntry && mode === "new";
   const normalizedQuery = normalizeGstInput(query);
-  const canAddNew = GST_PATTERN.test(normalizedQuery);
+  const gstValidation = useMemo(() => validateGstinProgressive(normalizedQuery), [normalizedQuery]);
+  const canAddNew = gstValidation.isCompleteValid;
 
   const filteredOptions = useMemo(() => {
     const trimmed = query.trim().toLowerCase();
@@ -154,7 +233,7 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
 
   const showAddState = normalizedQuery.length > 0 && filteredOptions.length === 0;
   const remainingCharacters = Math.max(15 - normalizedQuery.length, 0);
-  const hasCompleteInvalidGst = normalizedQuery.length === 15 && !canAddNew;
+  const gstValidationError = gstValidation.error;
 
   useEffect(() => {
     if (!editingPendingValue) return;
@@ -164,16 +243,31 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
   useEffect(() => {
     if (!open) return;
     setQuery("");
-    setShowInvalidHint(false);
     requestAnimationFrame(() => searchRef.current?.focus());
   }, [open]);
 
   useEffect(() => {
-    if (!hasCompleteInvalidGst) {
-      setShowInvalidHint(false);
+    if (!open || !gstValidationError) {
+      setInvalidHintPosition(null);
+      return;
     }
-  }, [hasCompleteInvalidGst]);
 
+    const updateInvalidHintPosition = () => {
+      const rect = invalidAnchorRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setInvalidHintPosition({ left: rect.left, top: rect.bottom + 6 });
+    };
+
+    const frame = requestAnimationFrame(updateInvalidHintPosition);
+    window.addEventListener("resize", updateInvalidHintPosition);
+    window.addEventListener("scroll", updateInvalidHintPosition, true);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updateInvalidHintPosition);
+      window.removeEventListener("scroll", updateInvalidHintPosition, true);
+    };
+  }, [gstValidationError, open, normalizedQuery]);
   useEffect(() => {
     if (!open) return;
 
@@ -270,9 +364,27 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
       </button>
       )}
 
+      {open && gstValidationError && invalidHintPosition && typeof document !== "undefined"
+        ? createPortal(
+            <span
+              className="gst-picker-invalid-popover"
+              style={{
+                position: "fixed",
+                left: invalidHintPosition.left,
+                top: invalidHintPosition.top,
+                zIndex: 2140,
+              }}
+            >
+              {gstValidationError}
+            </span>,
+            document.body
+          )
+        : null}
+
       {open ? (
         <div
           className="intake-searchable-panel intake-select-panel"
+          style={{ overflow: "visible" }}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.preventDefault();
@@ -292,7 +404,11 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
                 ref={searchRef}
                 className="gst-picker-search-input"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  const shouldNormalizeGst = /\d/.test(nextValue);
+                  setQuery(shouldNormalizeGst ? normalizeGstInput(nextValue) : nextValue);
+                }}
                 placeholder="Search by GST or entity..."
               />
             </div>
@@ -363,27 +479,17 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
                 className="gst-picker-add-card"
               >
                 <span
-                  className={"gst-picker-add-preview truncate font-mono text-[13px]" + (hasCompleteInvalidGst ? " gst-picker-add-preview-invalid" : "")}
+                  className={"gst-picker-add-preview truncate font-mono text-[13px]" + (gstValidationError ? " gst-picker-add-preview-invalid" : "")}
                 >
-                  {hasCompleteInvalidGst ? (
-                    <span className="gst-picker-invalid-anchor">
-                      <button
-                        type="button"
+                  {gstValidationError ? (
+                    <span ref={invalidAnchorRef} className="gst-picker-invalid-anchor">
+                      <span
+                        role="img"
                         aria-label="Invalid GST number format"
                         className="gst-picker-invalid-button"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          setShowInvalidHint((current) => !current);
-                        }}
                       >
                         <AlertCircle className="h-4 w-4" />
-                      </button>
-                      {showInvalidHint ? (
-                        <span className="gst-picker-invalid-popover">
-                          Invalid GST number format
-                        </span>
-                      ) : null}
+                      </span>
                     </span>
                   ) : null}
                   <span className="truncate">{formatGstForDisplay(normalizedQuery)}</span>
@@ -397,7 +503,7 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
                   Add GST
                 </button>
               </div>
-              {!hasCompleteInvalidGst ? (
+              {!gstValidationError ? (
                 <p className={"gst-picker-add-helper text-[11px] " + (canAddNew ? "text-success" : "text-muted")}>
                   {canAddNew
                     ? "Valid GST - press Enter or click Add GST."
@@ -411,3 +517,9 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
     </div>
   );
 }
+
+
+
+
+
+

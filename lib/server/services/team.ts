@@ -326,7 +326,7 @@ export async function listTeamLeadSubmissions(
   let submissionsQuery = client
     .from('intake_submissions')
     .select(
-      'id, submitted_by, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, invoice_number, debit_note_number, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, is_latest_version, submission_attachments(id,document_type,file_name,file_size_bytes,mime_type,uploaded_at), intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)'
+      'id, submitted_by, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, invoice_number, debit_note_number, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, reviewed_by, reviewed_at, is_latest_version, submission_attachments(id,document_type,file_name,file_size_bytes,mime_type,uploaded_at), intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)'
     )
     .in('submitted_by', employeeIds)
     .order('submitted_at', { ascending: false }) as unknown as FilterQuery;
@@ -368,19 +368,28 @@ export async function listTeamLeadSubmissions(
   const previousSubmissionIds = Array.from(
     new Set(pageRows.map((row) => String(row.previous_submission_id ?? '')).filter(Boolean))
   );
+  const reviewedByIds = Array.from(
+    new Set(pageRows.map((row) => String(row.reviewed_by ?? '')).filter(Boolean))
+  );
 
   let userMap = new Map<string, { full_name: string; email: string }>();
-  if (submittedByIds.length > 0) {
+  let reviewerNameMap = new Map<string, string>();
+  const userIdsToLoad = Array.from(new Set([...submittedByIds, ...reviewedByIds]));
+  if (userIdsToLoad.length > 0) {
     const { data: users, error: usersError } = await client
       .from('users')
       .select('id, full_name, email')
-      .in('id', submittedByIds);
+      .in('id', userIdsToLoad);
     if (usersError) throw new Error(usersError.message);
+    const normalizedUsers = (users ?? []) as Array<{ id: string; full_name: string; email: string }>;
     userMap = new Map(
-      ((users ?? []) as Array<{ id: string; full_name: string; email: string }>).map((user) => [
+      normalizedUsers.map((user) => [
         user.id,
         { full_name: String(user.full_name ?? ''), email: String(user.email ?? '') },
       ])
+    );
+    reviewerNameMap = new Map(
+      normalizedUsers.map((user) => [user.id, String(user.full_name ?? '').trim()])
     );
   }
 
@@ -407,6 +416,7 @@ export async function listTeamLeadSubmissions(
       invoice_status: deriveInvoiceStatusDbValue(row),
       submitted_by_name: owner?.full_name ?? null,
       submitted_by_email: owner?.email ?? null,
+      reviewed_by_name: row.reviewed_by ? reviewerNameMap.get(String(row.reviewed_by)) ?? null : null,
       previous_submission_pi: previousSubmissionId ? previousPiMap.get(previousSubmissionId) ?? null : null,
       version_status: mapVersionStatus(previousSubmissionId, row.is_latest_version as boolean | null | undefined),
     };

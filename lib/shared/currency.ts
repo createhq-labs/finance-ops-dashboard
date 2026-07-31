@@ -79,7 +79,7 @@ export function getCurrencyTitle(currency: string | null | undefined, amount?: n
 }
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(value || 0);
+  return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value || 0);
 }
 
 export function formatSubmissionAmount(value: number | null | undefined, currency?: string | null) {

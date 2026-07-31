@@ -7,7 +7,6 @@ import { FilterBar } from '../../../../components/dashboard/filter-bar';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
-import { SubmissionDrawer } from '../../../../components/dashboard/submission-drawer';
 import { SearchableSelect } from '../../../../components/forms/searchable-select';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { SubmissionTable, type MasterDataCellKey, type MasterDataReviewSummary, type SubmissionRow } from '../../../../components/dashboard/submission-table';
@@ -16,16 +15,11 @@ import { WorkspaceLoader } from '../../../../components/layout/workspace-loader'
 import {
   CLOSURE_STATUS_OPTIONS,
   CREATOR_INVOICE_STATUS_OPTIONS,
-  INVOICE_STATUS_OPTIONS,
   PAYMENT_MADE_STATUS_OPTIONS,
   PAYMENT_RECEIVED_STATUS_OPTIONS,
-  formatClosureStatus,
-  formatCreatorInvoiceStatus,
   formatInvoiceStatus,
-  formatPaymentMadeStatus,
-  formatPaymentReceivedStatus,
 } from '../../../../lib/client/finance-status';
-import { canViewFinanceDashboard, getDefaultDashboardPath, getDrawerViewerRole, getFinanceDashboardTitle } from '../../../../lib/client/dashboard-access';
+import { canViewFinanceDashboard, getDefaultDashboardPath, getFinanceDashboardTitle } from '../../../../lib/client/dashboard-access';
 import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../lib/shared/submission-attachments';
 
 type SubmissionAttachmentApiRow = {
@@ -175,6 +169,9 @@ type FinanceEditableField =
   | 'finance_comment'
   | 'invoice_number'
   | 'debit_note_number';
+
+// Intentionally disabled until the finance read-only submission workflow is finalized.
+const ENABLE_FINANCE_VIEW_ACTION = false;
 
 const PAYMENT_RECEIVED_VALUES = PAYMENT_RECEIVED_STATUS_OPTIONS.map((option) => option.value);
 const PAYMENT_MADE_VALUES = PAYMENT_MADE_STATUS_OPTIONS.map((option) => option.value);
@@ -405,52 +402,6 @@ function mapMasterDataReviews(items: MasterDataReviewApiRow[]): MasterDataReview
   return next;
 }
 
-function TrackingRow({
-  label,
-  value,
-  fieldKey,
-  isEditing,
-  actionSubmitting,
-  onEdit,
-  onCancel,
-  children,
-}: {
-  label: string;
-  value: string;
-  fieldKey: string;
-  isEditing: boolean;
-  actionSubmitting: boolean;
-  onEdit?: (fieldKey: string) => void;
-  onCancel: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="surface" style={{ padding: 12, display: 'grid', gap: 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <div>
-          <div className="text-muted" style={{ fontSize: 12 }}>{label}</div>
-          <div style={{ fontWeight: 600 }}>{value}</div>
-        </div>
-        {!isEditing ? (
-          <button
-            className="btn"
-            type="button"
-            disabled={actionSubmitting}
-            onClick={() => onEdit?.(fieldKey)}
-          >
-            Edit
-          </button>
-        ) : (
-          <button className="btn" type="button" disabled={actionSubmitting} onClick={onCancel}>
-            Cancel
-          </button>
-        )}
-      </div>
-      {isEditing ? children : null}
-    </div>
-  );
-}
-
 export default function FinanceReviewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -465,10 +416,9 @@ export default function FinanceReviewPage() {
   const [hasMore, setHasMore] = useState(false);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [rowsError, setRowsError] = useState('');
-  const [openId, setOpenId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [businessLineFilter, setBusinessLineFilter] = useState<'all' | 'TM' | 'IM'>('all');
-  const [intakeStatusFilter, setIntakeStatusFilter] = useState<'all' | 'submitted' | 'accepted' | 'rejected'>('all');
+  const [intakeStatusFilter, setIntakeStatusFilter] = useState<'all' | 'submitted' | 'accepted' | 'rejected' | 'declined'>('all');
   const [employeeFilter, setEmployeeFilter] = useState('all');
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('all');
   const [creatorInvoiceReceivedFilter, setCreatorInvoiceReceivedFilter] = useState<'all' | string>('all');
@@ -478,18 +428,6 @@ export default function FinanceReviewPage() {
   const [versionStatusFilter, setVersionStatusFilter] = useState<'all' | 'original' | 'resubmitted' | 'superseded'>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [actionSubmitting, setActionSubmitting] = useState(false);
-  const [actionError, setActionError] = useState('');
-  const [rejectionNote, setRejectionNote] = useState('');
-  const [invoiceNumber, setInvoiceNumber] = useState('');
-  const [debitNoteNumber, setDebitNoteNumber] = useState('');
-  const [creatorInvoiceStatus, setCreatorInvoiceStatus] = useState<string>('');
-  const [invoiceStatusValue, setInvoiceStatusValue] = useState<string>('');
-  const [paymentReceivedStatus, setPaymentReceivedStatus] = useState<string>('');
-  const [paymentMadeStatus, setPaymentMadeStatus] = useState<string>('');
-  const [closureStatus, setClosureStatus] = useState<string>('');
-  const [actionLoadingKey, setActionLoadingKey] = useState<FinanceAction | null>(null);
-  const [actionSuccess, setActionSuccess] = useState('');
   const [editingField, setEditingField] = useState<string | null>(null);
   const [highlightedSubmissionId, setHighlightedSubmissionId] = useState<string | null>(null);
   const [deepLinkNotice, setDeepLinkNotice] = useState('');
@@ -707,20 +645,6 @@ export default function FinanceReviewPage() {
     };
   }, [rows, searchParams, user, highlightedSubmissionId]);
 
-  const row = useMemo(() => rows.find((entry) => entry.id === openId) || null, [rows, openId]);
-
-  useEffect(() => {
-    if (!row || editingField) return;
-    setRejectionNote(row.rejection_note || '');
-    setCreatorInvoiceStatus(CREATOR_INVOICE_VALUES.includes(String(row.creator_invoice_received || '')) ? String(row.creator_invoice_received || '') : '');
-    setInvoiceStatusValue(normalizeInvoiceStatus(row.invoice_status));
-    setPaymentReceivedStatus(PAYMENT_RECEIVED_VALUES.includes(String(row.payment_received || '')) ? String(row.payment_received || '') : '');
-    setPaymentMadeStatus(PAYMENT_MADE_VALUES.includes(String(row.payment_made || '')) ? String(row.payment_made || '') : '');
-    setClosureStatus(CLOSURE_VALUES.includes(String(row.closed_status || '')) ? String(row.closed_status || '') : '');
-    setActionError('');
-    setActionSuccess('');
-  }, [row, editingField]);
-
   const employeeDirectory = useMemo(() => {
     const next: Record<string, string> = {};
     rows.forEach((entry) => {
@@ -740,26 +664,6 @@ export default function FinanceReviewPage() {
     () => Array.from(new Set(rows.map((entry) => entry.invoice_status).filter((status) => Boolean(status && status !== '-')))),
     [rows]
   );
-
-  function getActionLabel(action: FinanceAction) {
-    if (actionLoadingKey !== action) {
-      if (action === 'approve') return 'Approve';
-      if (action === 'reject') return 'Reject';
-      if (action === 'request_resubmission') return 'Request Resubmission';
-      if (action === 'mark_invoice_created') return 'Mark Invoice Created';
-      if (action === 'add_debit_note') return 'Add Debit Note';
-      if (action === 'update_payment_status') return 'Update Payment Status';
-      return 'Save Closure';
-    }
-
-    if (action === 'approve') return 'Approving...';
-    if (action === 'reject') return 'Rejecting...';
-    if (action === 'request_resubmission') return 'Saving...';
-    if (action === 'mark_invoice_created') return 'Saving...';
-    if (action === 'add_debit_note') return 'Saving...';
-    if (action === 'update_payment_status') return 'Updating...';
-    return 'Saving...';
-  }
 
   function applyUpdatedSubmission(targetRow: SubmissionRow, updated: Record<string, string | null | undefined>) {
     const has = (key: string) => Object.prototype.hasOwnProperty.call(updated, key);
@@ -826,35 +730,6 @@ export default function FinanceReviewPage() {
     const body = await response.json().catch(() => ({}));
     return { response, body };
   }
-
-  async function runFinanceAction(action: FinanceAction, extra: Record<string, string> = {}) {
-    if (!row) return;
-    if (actionSubmitting) return;
-    if (!user || !canViewFinanceDashboard(user.role)) return;
-    setActionSubmitting(true);
-    setActionLoadingKey(action);
-    setActionError('');
-    setActionSuccess('');
-
-    const { response, body } = await executeFinanceAction(row, action, extra);
-    if (!response.ok || !body?.success) {
-      setActionSubmitting(false);
-      setActionLoadingKey(null);
-      const nextMessage = body?.error || 'Finance action failed.';
-      if (handleAuthTokenRecoveryMessage(nextMessage)) return;
-      setActionError(nextMessage);
-      return;
-    }
-    try {
-      applyUpdatedSubmission(row, body?.submission || {});
-      setActionSuccess(body?.message || (body?.changed === false ? 'No changes were needed.' : 'Finance action saved successfully.'));
-      if (body?.changed !== false) setEditingField(null);
-    } finally {
-      setActionSubmitting(false);
-      setActionLoadingKey(null);
-    }
-  }
-
 
   async function handleMasterDataReviewAction(review: MasterDataReviewSummary, action: 'approve' | 'reject') {
     const endpoint = `/api/master-data/reviews/${review.id}/${action === 'approve' ? 'approve' : 'reject'}`;
@@ -1001,240 +876,7 @@ export default function FinanceReviewPage() {
     setDateFrom('');
     setDateTo('');
   }
-  const financePanel = row ? (
-    <div className="surface" style={{ padding: 16, display: 'grid', gap: 12 }}>
-      <div>
-        <strong>Finance Review</strong>
-        <p className="text-muted" style={{ margin: '4px 0 0' }}>
-          Mark the submission as checked if no mistakes were found, or request resubmission if the employee needs to correct something.
-        </p>
-      </div>
 
-      <div style={{ display: 'grid', gap: 12 }} className="surface">
-        <label className="intake-field">
-          <span className="intake-label">Resubmission Note</span>
-          <textarea
-            className="intake-input intake-textarea"
-            rows={3}
-            value={rejectionNote}
-            onChange={(e) => setRejectionNote(e.target.value)}
-            placeholder="Only used when requesting resubmission."
-          />
-        </label>
-      </div>
-
-      {actionError ? <p className="text-danger" style={{ margin: 0 }}>{actionError}</p> : null}
-      {actionSuccess ? <p style={{ margin: 0, color: 'var(--success, #16a34a)' }}>{actionSuccess}</p> : null}
-
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button className="btn btn-primary" type="button" disabled={actionSubmitting} onClick={() => void runFinanceAction('approve')}>
-          {actionLoadingKey === 'approve' ? 'Marking...' : 'Mark as Checked'}
-        </button>
-        <button className="btn" type="button" disabled={actionSubmitting} onClick={() => void runFinanceAction('request_resubmission', { rejection_note: rejectionNote })}>
-          {getActionLabel('request_resubmission')}
-        </button>
-      </div>
-
-      <div>
-        <strong>Finance Tracking</strong>
-        <p className="text-muted" style={{ margin: '4px 0 0' }}>
-          Update finance lifecycle fields one at a time. Current values stay separate from editable controls.
-        </p>
-      </div>
-
-      <div style={{ display: 'grid', gap: 10 }}>
-        <TrackingRow
-          label="Invoice Status"
-          value={row.invoice_status ? formatInvoiceStatus(row.invoice_status) : '—'}
-          fieldKey="invoice_status"
-          isEditing={editingField === 'invoice_status'}
-          actionSubmitting={actionSubmitting}
-          onEdit={() => {
-            setInvoiceStatusValue(normalizeInvoiceStatus(row.invoice_status));
-            setEditingField('invoice_status');
-          }}
-          onCancel={() => setEditingField(null)}
-        >
-          <div style={{ display: 'grid', gap: 10 }}>
-            <SearchableSelect
-              value={invoiceStatusValue}
-              onChange={(next) => setInvoiceStatusValue(next)}
-              options={[{ value: '', label: '\u2014' }, ...INVOICE_STATUS_OPTIONS]}
-            />
-            <button className="btn" type="button" disabled={actionSubmitting} onClick={() => void runFinanceAction('mark_invoice_created', { invoice_status: invoiceStatusValue })}>
-              {actionLoadingKey === 'mark_invoice_created' ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </TrackingRow>
-
-        <TrackingRow
-          label="Creator Invoice"
-          value={row.creator_invoice_received ? formatCreatorInvoiceStatus(row.creator_invoice_received) : '—'}
-          fieldKey="creator_invoice_status"
-          isEditing={editingField === 'creator_invoice_status'}
-          actionSubmitting={actionSubmitting}
-          onEdit={() => {
-            setCreatorInvoiceStatus(CREATOR_INVOICE_VALUES.includes(String(row.creator_invoice_received || '')) ? String(row.creator_invoice_received || '') : '');
-            setEditingField('creator_invoice_status');
-          }}
-          onCancel={() => setEditingField(null)}
-        >
-          <div style={{ display: 'grid', gap: 10 }}>
-            <SearchableSelect
-              value={creatorInvoiceStatus}
-              onChange={(next) => setCreatorInvoiceStatus(next)}
-              options={[{ value: '', label: '\u2014' }, ...CREATOR_INVOICE_STATUS_OPTIONS]}
-            />
-            <button
-              className="btn"
-              type="button"
-              disabled={actionSubmitting}
-              onClick={() => void runFinanceAction('update_payment_status', { creator_invoice_status: creatorInvoiceStatus })}
-            >
-              {actionLoadingKey === 'update_payment_status' ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </TrackingRow>
-
-        <TrackingRow
-          label="Payment Received"
-          value={row.payment_received ? formatPaymentReceivedStatus(row.payment_received) : '—'}
-          fieldKey="payment_received_status"
-          isEditing={editingField === 'payment_received_status'}
-          actionSubmitting={actionSubmitting}
-          onEdit={() => {
-            setPaymentReceivedStatus(PAYMENT_RECEIVED_VALUES.includes(String(row.payment_received || '')) ? String(row.payment_received || '') : '');
-            setEditingField('payment_received_status');
-          }}
-          onCancel={() => setEditingField(null)}
-        >
-          <div style={{ display: 'grid', gap: 10 }}>
-            <SearchableSelect
-              value={paymentReceivedStatus}
-              onChange={(next) => setPaymentReceivedStatus(next)}
-              options={[{ value: '', label: '\u2014' }, ...PAYMENT_RECEIVED_STATUS_OPTIONS]}
-            />
-            <button
-              className="btn"
-              type="button"
-              disabled={actionSubmitting}
-              onClick={() => void runFinanceAction('update_payment_status', { payment_received_status: paymentReceivedStatus })}
-            >
-              {actionLoadingKey === 'update_payment_status' ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </TrackingRow>
-
-        <TrackingRow
-          label="Payment Made"
-          value={row.payment_made ? formatPaymentMadeStatus(row.payment_made) : '—'}
-          fieldKey="payment_made_status"
-          isEditing={editingField === 'payment_made_status'}
-          actionSubmitting={actionSubmitting}
-          onEdit={() => {
-            setPaymentMadeStatus(PAYMENT_MADE_VALUES.includes(String(row.payment_made || '')) ? String(row.payment_made || '') : '');
-            setEditingField('payment_made_status');
-          }}
-          onCancel={() => setEditingField(null)}
-        >
-          <div style={{ display: 'grid', gap: 10 }}>
-            <SearchableSelect
-              value={paymentMadeStatus}
-              onChange={(next) => setPaymentMadeStatus(next)}
-              options={[{ value: '', label: '\u2014' }, ...PAYMENT_MADE_STATUS_OPTIONS]}
-            />
-            <button
-              className="btn"
-              type="button"
-              disabled={actionSubmitting}
-              onClick={() => void runFinanceAction('update_payment_status', { payment_made_status: paymentMadeStatus })}
-            >
-              {actionLoadingKey === 'update_payment_status' ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </TrackingRow>
-
-        <TrackingRow
-          label="Closure Status"
-          value={row.closed_status ? formatClosureStatus(row.closed_status) : '—'}
-          fieldKey="closure_status"
-          isEditing={editingField === 'closure_status'}
-          actionSubmitting={actionSubmitting}
-          onEdit={() => {
-            setClosureStatus(CLOSURE_VALUES.includes(String(row.closed_status || '')) ? String(row.closed_status || '') : '');
-            setEditingField('closure_status');
-          }}
-          onCancel={() => setEditingField(null)}
-        >
-          <div style={{ display: 'grid', gap: 10 }}>
-            <SearchableSelect
-              value={closureStatus}
-              onChange={(next) => setClosureStatus(next)}
-              options={[{ value: '', label: '\u2014' }, ...CLOSURE_STATUS_OPTIONS]}
-            />
-            <button className="btn" type="button" disabled={actionSubmitting} onClick={() => void runFinanceAction('close_submission', { closure_status: closureStatus })}>
-              {actionLoadingKey === 'close_submission' ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </TrackingRow>
-
-        <TrackingRow
-          label="Invoice Number"
-          value={row.invoice_number || 'Not set'}
-          fieldKey="invoice_number"
-          isEditing={editingField === 'invoice_number'}
-          actionSubmitting={actionSubmitting}
-          onEdit={() => {
-            setInvoiceNumber(row.invoice_number || '');
-            setEditingField('invoice_number');
-          }}
-          onCancel={() => setEditingField(null)}
-        >
-          <div style={{ display: 'grid', gap: 10 }}>
-            <input className="intake-input" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="Enter invoice number" />
-            <button
-              className="btn"
-              type="button"
-              disabled={actionSubmitting}
-              onClick={() => void runFinanceAction('mark_invoice_created', { invoice_number: invoiceNumber })}
-            >
-              {actionLoadingKey === 'mark_invoice_created' ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </TrackingRow>
-
-        <TrackingRow
-          label="Debit Note Number"
-          value={row.debit_note_number || 'Not set'}
-          fieldKey="debit_note_number"
-          isEditing={editingField === 'debit_note_number'}
-          actionSubmitting={actionSubmitting}
-          onEdit={() => {
-            setDebitNoteNumber(row.debit_note_number || '');
-            setEditingField('debit_note_number');
-          }}
-          onCancel={() => setEditingField(null)}
-        >
-          <div style={{ display: 'grid', gap: 10 }}>
-            <input className="intake-input" value={debitNoteNumber} onChange={(e) => setDebitNoteNumber(e.target.value)} placeholder="Enter debit note number" />
-            <button
-              className="btn"
-              type="button"
-              disabled={actionSubmitting}
-              onClick={() => void runFinanceAction('mark_invoice_created', { debit_note_number: debitNoteNumber })}
-            >
-              {actionLoadingKey === 'mark_invoice_created' ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </TrackingRow>
-
-        <div className="surface" style={{ padding: 12 }}>
-          <div className="text-muted" style={{ fontSize: 12 }}>Finance Internal Notes</div>
-          <div style={{ fontWeight: 600 }}>{row.finance_notes || 'No finance notes yet.'}</div>
-        </div>
-      </div>
-    </div>
-  ) : null;
 
   if (loading || !user || !canViewFinanceDashboard(user.role)) return null;
 
@@ -1249,7 +891,7 @@ export default function FinanceReviewPage() {
         <section style={{ display: 'grid', gap: 12, marginTop: -4, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
           <KpiCard title="Pending Review" value={String(pendingCount)} hint="Requires finance action" variant="warning" compact />
           <KpiCard title="Accepted" value={String(acceptedCount)} hint="Approved by finance" variant="teal" compact />
-          <KpiCard title="Rejected" value={String(rejectedCount)} hint="Returned with notes" variant="danger" compact />
+          <KpiCard title="Resubmission Requested" value={String(rejectedCount)} hint="Returned with notes" variant="danger" compact />
         </section>
 
       <SectionCard padding={16} className="overflow-visible">
@@ -1275,7 +917,8 @@ export default function FinanceReviewPage() {
                 { value: 'all', label: 'All Statuses' },
                 { value: 'submitted', label: 'Submitted' },
                 { value: 'accepted', label: 'Accepted' },
-                { value: 'rejected', label: 'Rejected' },
+                { value: 'rejected', label: 'Resubmission Requested' },
+                { value: 'declined', label: 'Rejected' },
               ],
             },
             {
@@ -1374,8 +1017,8 @@ export default function FinanceReviewPage() {
         <div className="grid gap-3">
           <SubmissionTable
             rows={rows}
-            onOpen={setOpenId}
-            columns={['pi', 'owner_name', 'entity', 'amount', 'intake_status', 'invoice_status', 'submitted_at', 'actions']}
+            onOpen={ENABLE_FINANCE_VIEW_ACTION ? (id) => router.push('/dashboard/submissions/new?view_id=' + id) : undefined}
+            hideActions={!ENABLE_FINANCE_VIEW_ACTION}
             emptyLabel="No finance submissions found for the current filters."
             viewer={user.role === 'admin' ? 'admin' : 'finance'}
             getActionLabel={() => 'View / Edit'}
@@ -1406,13 +1049,7 @@ export default function FinanceReviewPage() {
         </div>
       ) : null}
 
-      <SubmissionDrawer
-        open={Boolean(row)}
-        onClose={() => setOpenId(null)}
-        row={row}
-        viewer={getDrawerViewerRole(user.role)}
-        financePanel={financePanel}
-      />
+
     </div>
   );
 }

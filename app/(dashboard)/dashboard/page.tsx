@@ -2,12 +2,12 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import { useDashboardRefresh } from '../../../lib/client/use-dashboard-refresh';
 import { KpiCard } from '../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../components/dashboard/page-header';
 import { SectionCard } from '../../../components/dashboard/section-card';
 import { StatePanel } from '../../../components/dashboard/state-panel';
-import { SubmissionDrawer } from '../../../components/dashboard/submission-drawer';
 import { type SubmissionRow } from '../../../components/dashboard/submission-table';
 import { AnalyticsMetricCard, AnalyticsPanel, DonutChart, GaugeGrid, LineAreaChart, TimelineList, WorkflowBars } from '../../../components/dashboard/analytics-visuals';
 import { useDashboardSession } from '../../../components/layout/dashboard-session';
@@ -15,7 +15,7 @@ import { WorkspaceLoader } from '../../../components/layout/workspace-loader';
 import { getLineRevenue, getRevenueSeries } from '../../../lib/client/admin-stats';
 import { getPiDisplayMeta } from '../../../lib/client/pi-display';
 import { formatInvoiceStatus } from '../../../lib/client/finance-status';
-import { canResubmitSubmission, canSubmitInvoice, getDrawerViewerRole, getInvoiceIntakePath, getOverviewTitle, isEmployeeRole, isTeamLeadRole } from '../../../lib/client/dashboard-access';
+import { canSubmitInvoice, getInvoiceIntakePath, getOverviewTitle, isEmployeeRole, isTeamLeadRole } from '../../../lib/client/dashboard-access';
 
 type MySubmissionApiRow = {
   id: string;
@@ -73,6 +73,8 @@ function normalizeOverviewStatus(value: string | null | undefined) {
 function titleCaseStatus(value: string | null | undefined) {
   const normalized = normalizeOverviewStatus(value);
   if (!normalized) return 'Unknown';
+  if (normalized === 'rejected') return 'Resubmission Requested';
+  if (normalized === 'declined') return 'Rejected';
   return normalized
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -896,8 +898,8 @@ function mapTeamLeadOverviewRow(item: TeamLeadOverviewApiRow): SubmissionRow {
 }
 
 export default function DashboardHomePage() {
+  const router = useRouter();
   const { user, loading } = useDashboardSession();
-  const [openId, setOpenId] = useState<string | null>(null);
   const [showAllEmployeeActions, setShowAllEmployeeActions] = useState(false);
   const [rowsLoading, setRowsLoading] = useState(true);
   const [rowsError, setRowsError] = useState('');
@@ -1071,11 +1073,6 @@ export default function DashboardHomePage() {
     [teamRows]
   );
 
-  const row = useMemo(
-    () => [...visibleRows, ...teamVisibleRows].find((entry) => entry.id === openId) || null,
-    [openId, teamVisibleRows, visibleRows]
-  );
-
   if (loading || !user) return null;
   const isEmployee = isEmployeeRole(user.role);
   const isTeamLead = isTeamLeadRole(user.role);
@@ -1158,10 +1155,10 @@ export default function DashboardHomePage() {
                   <OverviewListRow
                     key={`employee-action-${entry.id}`}
                     title={getOverviewPiMeta(entry).label}
-                    primaryChip={<StatusChip label="Resubmission" tone="orange" />}
+                    primaryChip={<StatusChip label="Resubmission Requested" tone="orange" />}
                     note={renderResubmissionNote(entry.finance_comment || entry.rejection_note || 'Finance requested corrections.')}
                     action={
-                      <button className="btn" type="button" onClick={() => setOpenId(entry.id)}>
+                      <button className="btn" type="button" onClick={() => router.push(getInvoiceIntakePath() + '?view_id=' + entry.id)}>
                         Open
                       </button>
                     }
@@ -1188,7 +1185,7 @@ export default function DashboardHomePage() {
                           isCompletedActionHistoryEntry(entry, visibleRows)
                             ? 'Resubmission Completed'
                             : entry.intake_status === 'rejected'
-                              ? 'Resubmission'
+                              ? 'Resubmission Requested'
                               : titleCaseStatus(entry.intake_status)
                         }
                         tone={isCompletedActionHistoryEntry(entry, visibleRows) ? 'green' : overviewTone(entry.intake_status)}
@@ -1206,7 +1203,7 @@ export default function DashboardHomePage() {
                         : undefined
                     }
                     action={
-                      canResubmitSubmission(user.role, entry) && !isCompletedActionHistoryEntry(entry, visibleRows) ? (
+                      ((user.role === 'employee' || user.role === 'team_lead') && entry.intake_status === 'rejected' && !isCompletedActionHistoryEntry(entry, visibleRows)) ? (
                         <Link
                           href={`${getInvoiceIntakePath()}?resubmit_id=${entry.id}`}
                           className="btn"
@@ -1219,7 +1216,7 @@ export default function DashboardHomePage() {
                           Resubmit
                         </Link>
                       ) : (
-                        <button className="btn" type="button" onClick={() => setOpenId(entry.id)}>
+                        <button className="btn" type="button" onClick={() => router.push(getInvoiceIntakePath() + '?view_id=' + entry.id)}>
                           View
                         </button>
                       )
@@ -1272,7 +1269,6 @@ export default function DashboardHomePage() {
           />
         </section>
 
-        <SubmissionDrawer open={Boolean(row)} onClose={() => setOpenId(null)} row={row} viewer={getDrawerViewerRole(user.role)} />
       </div>
     );
   }
@@ -1333,7 +1329,7 @@ export default function DashboardHomePage() {
                       : undefined
                   }
                   action={
-                    <button className="btn" type="button" onClick={() => setOpenId(entry.id)}>
+                    <button className="btn" type="button" onClick={() => router.push(getInvoiceIntakePath() + '?view_id=' + entry.id)}>
                       View
                     </button>
                   }
@@ -1343,7 +1339,6 @@ export default function DashboardHomePage() {
           )}
         </PremiumOverviewCard>
 
-        <SubmissionDrawer open={Boolean(row)} onClose={() => setOpenId(null)} row={row} viewer={getDrawerViewerRole(user.role)} />
       </div>
     );
   }
@@ -1539,7 +1534,6 @@ export default function DashboardHomePage() {
           </AnalyticsPanel>
         </section>
 
-        <SubmissionDrawer open={Boolean(row)} onClose={() => setOpenId(null)} row={row} viewer={getDrawerViewerRole(user.role)} />
       </div>
     );
   }
@@ -1670,7 +1664,6 @@ export default function DashboardHomePage() {
         </PremiumOverviewCard>
       </section>
 
-      <SubmissionDrawer open={Boolean(row)} onClose={() => setOpenId(null)} row={row} viewer={getDrawerViewerRole(user.role)} />
     </div>
   );
 }

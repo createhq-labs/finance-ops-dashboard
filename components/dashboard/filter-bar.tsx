@@ -202,10 +202,10 @@ export function FilterBar({
                   type="button"
                   onClick={() => setOpen((current) => !current)}
                   className={[
-                    "inline-flex h-10 items-center gap-2 rounded-full border px-3 text-sm font-medium transition-colors duration-150",
-                    activeAdvancedCount > 0
-                      ? "border-sky-300/70 bg-sky-100/95 text-sky-950 shadow-[0_4px_12px_rgba(56,189,248,0.12)] dark:border-sky-300/30 dark:bg-sky-400/16 dark:text-sky-50"
-                      : "border-border/70 bg-card text-foreground hover:bg-muted/40",
+                    "inline-flex h-10 items-center gap-2 rounded-full border px-3 text-sm font-medium transition-[border-color,background-color,box-shadow,color] duration-150",
+                    open
+                      ? "border-sky-400 bg-sky-50/90 text-foreground shadow-[0_0_0_2px_rgba(56,189,248,0.18)] dark:border-cyan-300 dark:bg-cyan-400/10 dark:shadow-[0_0_0_2px_rgba(34,211,238,0.2)]"
+                      : "border-[color:var(--intake-input-border)] bg-[color:var(--intake-input-bg)] text-foreground hover:border-sky-400 hover:bg-sky-50/90 dark:hover:border-cyan-300 dark:hover:bg-cyan-400/10",
                   ].join(" ")}
                 >
                   <SlidersHorizontal className="h-4 w-4" />
@@ -275,7 +275,7 @@ export function FilterBar({
             <button
               type="button"
               onClick={handleReset}
-              className="inline-flex h-10 items-center rounded-full border border-border/70 bg-card px-3 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted/40 hover:text-destructive"
+              className="inline-flex h-10 items-center rounded-full border border-[color:var(--intake-input-border)] bg-[color:var(--intake-input-bg)] px-3 text-sm font-medium text-muted-foreground transition-[border-color,background-color,box-shadow,color] duration-150 hover:border-sky-400 hover:bg-sky-50/90 hover:text-destructive dark:hover:border-cyan-300 dark:hover:bg-cyan-400/10"
             >
               Reset
             </button>

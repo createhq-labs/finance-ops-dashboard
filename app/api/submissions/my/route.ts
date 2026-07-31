@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
     const offset = parseOffset(params.get('offset'));
 
     const baseSelect =
-      'id, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, is_latest_version, submission_attachments(id,document_type,file_name,file_size_bytes,mime_type,uploaded_at), intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
+      'id, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closure_status, reviewed_by, reviewed_at, is_latest_version, submission_attachments(id,document_type,file_name,file_size_bytes,mime_type,uploaded_at), intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
     const legacySelect =
       'id, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
 
@@ -139,6 +139,7 @@ export async function GET(req: NextRequest) {
     const pageRows = (data ?? []).slice(0, limit) as Array<Record<string, unknown>>;
     const hasMore = (data ?? []).length > limit;
     const previousSubmissionIds = Array.from(new Set(pageRows.map((row) => String(row.previous_submission_id ?? '')).filter(Boolean)));
+    const reviewedByIds = Array.from(new Set(pageRows.map((row) => String(row.reviewed_by ?? '')).filter(Boolean)));
 
     let previousPiMap = new Map<string, string | null>();
     if (previousSubmissionIds.length > 0) {
@@ -152,9 +153,24 @@ export async function GET(req: NextRequest) {
       previousPiMap = new Map((previousRows ?? []).map((row) => [String(row.id), row.proforma_invoice ? String(row.proforma_invoice) : null]));
     }
 
+    let reviewerNameMap = new Map<string, string>();
+    if (reviewedByIds.length > 0) {
+      const { data: reviewers, error: reviewersError } = await userClient
+        .from('users')
+        .select('id, full_name')
+        .in('id', reviewedByIds);
+      if (reviewersError) {
+        return NextResponse.json({ success: false, error: reviewersError.message }, { status: 400 });
+      }
+      reviewerNameMap = new Map(
+        (reviewers ?? []).map((reviewer) => [String(reviewer.id), String(reviewer.full_name ?? '').trim()])
+      );
+    }
+
     const submissions = pageRows.map((row) => ({
       ...row,
       invoice_status: deriveInvoiceStatusDbValue(row),
+      reviewed_by_name: row.reviewed_by ? reviewerNameMap.get(String(row.reviewed_by)) ?? null : null,
       previous_submission_pi: row.previous_submission_id ? previousPiMap.get(String(row.previous_submission_id)) ?? null : null,
       version_status: mapVersionStatus(row.previous_submission_id ? String(row.previous_submission_id) : null, row.is_latest_version as boolean | null | undefined),
     }));
