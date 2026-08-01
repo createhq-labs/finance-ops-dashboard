@@ -3,6 +3,7 @@ import type { SubmissionAttachmentSummary } from '../../shared/submission-attach
 import { GST_SCREENSHOT_DOCUMENT_TYPE } from '../../shared/submission-attachments';
 import type { AppUser } from '../types/submissions';
 import { createNotifications } from './notifications';
+import { getAttachmentAccessSummaryMap, type AttachmentAccessActor, type AttachmentAccessSummary } from './submissionAttachments';
 
 export type FollowUpType = 'payment_received_pending' | 'gst_pending';
 export type FollowUpStatus = 'pending' | 'completed';
@@ -42,6 +43,7 @@ export type FollowUpListItem = {
   gst_screenshot_attachment: SubmissionAttachmentSummary | null;
   gst_screenshot_uploaded_by_name: string | null;
   gst_screenshot_uploaded_at: string | null;
+  gst_screenshot_access_summary: { employee: AttachmentAccessSummary | null; team_lead: AttachmentAccessSummary | null } | null;
 };
 
 type SubmissionCandidate = {
@@ -174,11 +176,11 @@ async function getPrimaryTeamLeadMap(adminClient: SupabaseClient, employeeIds: s
 }
 
 async function getActiveUserMap(adminClient: SupabaseClient, userIds: string[]) {
-  if (userIds.length === 0) return new Map<string, { full_name?: string | null; email?: string | null; role?: string | null }>();
+  if (userIds.length === 0) return new Map<string, { full_name?: string | null; email?: string | null; role?: string | null; business_line?: string | null }>();
 
   const { data, error } = await adminClient
     .from('users')
-    .select('id, full_name, email, role')
+    .select('id, full_name, email, role, business_line')
     .in('id', userIds);
 
   if (error) throw new Error(error.message);
@@ -528,6 +530,37 @@ export async function listFollowUpsForUser(params: {
   const submissionMap = new Map((submissionsRes.data ?? []).map((row) => [String(row.id), row]));
   const normalizedQuery = query.trim().toLowerCase();
 
+  // One batched query for every GST attachment's access history, instead of a
+  // query per row. Visibility of the result (below) still follows the same
+  // finance/admin/developer-or-assigned-team-lead rule the dedicated audit
+  // endpoint previously enforced.
+  const isPrivilegedViewer = ['finance', 'admin', 'developer'].includes(appUser.role);
+  const accessAuditActors: AttachmentAccessActor[] = [];
+  for (const row of rows) {
+    if (row.follow_up_type !== 'gst_pending') continue;
+    const gstAttachment = gstScreenshotMap.get(row.submission_id);
+    if (!gstAttachment) continue;
+    const employee = userMap.get(row.assigned_employee_id);
+    accessAuditActors.push({
+      attachmentId: gstAttachment.id,
+      role: 'employee',
+      userId: row.assigned_employee_id,
+      name: employee?.full_name ?? null,
+      businessLine: employee?.business_line ?? null,
+    });
+    if (row.assigned_team_lead_id) {
+      const teamLead = userMap.get(row.assigned_team_lead_id);
+      accessAuditActors.push({
+        attachmentId: gstAttachment.id,
+        role: 'team_lead',
+        userId: row.assigned_team_lead_id,
+        name: teamLead?.full_name ?? null,
+        businessLine: teamLead?.business_line ?? null,
+      });
+    }
+  }
+  const accessSummaryMap = await getAttachmentAccessSummaryMap({ adminClient, actors: accessAuditActors });
+
   return rows
     .map((row) => {
       const submission = submissionMap.get(row.submission_id);
@@ -536,6 +569,13 @@ export async function listFollowUpsForUser(params: {
       const completedBy = row.completed_by ? userMap.get(row.completed_by) : null;
       const gstAttachment = gstScreenshotMap.get(row.submission_id) ?? null;
       const gstUploader = gstAttachment?.uploaded_by ? userMap.get(gstAttachment.uploaded_by) : null;
+      const canViewAccessSummary = isPrivilegedViewer || (appUser.role === 'team_lead' && row.assigned_team_lead_id === appUser.id);
+      const gstAccessSummary = canViewAccessSummary && gstAttachment
+        ? {
+            employee: accessSummaryMap.get(`${gstAttachment.id}:employee`) ?? null,
+            team_lead: row.assigned_team_lead_id ? accessSummaryMap.get(`${gstAttachment.id}:team_lead`) ?? null : null,
+          }
+        : null;
       return {
         ...row,
         assigned_employee_name: employee?.full_name ?? null,
@@ -562,6 +602,7 @@ export async function listFollowUpsForUser(params: {
           : null,
         gst_screenshot_uploaded_by_name: gstUploader?.full_name ?? null,
         gst_screenshot_uploaded_at: gstAttachment?.uploaded_at ?? null,
+        gst_screenshot_access_summary: gstAccessSummary,
       } satisfies FollowUpListItem;
     })
     .filter((item) => {
