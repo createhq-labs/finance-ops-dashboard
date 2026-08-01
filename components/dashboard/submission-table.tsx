@@ -89,6 +89,7 @@ export type SubmissionRow = {
   reviewed_by?: string | null;
   reviewed_at?: string | null;
   reviewed_by_name?: string | null;
+  accepted_at?: string | null;
   invoice_status_started?: boolean;
   creator_invoice_received_started?: boolean;
   payment_received_started?: boolean;
@@ -2451,33 +2452,34 @@ export function SubmissionTable({
 
     const groupIdByRowId: Record<string, string> = {};
     const expandableGroupIds = new Set<string>();
-    const sortedGroups = Array.from(groups.entries()).sort(
-      (a, b) => Math.min(...a[1].map((entry) => entry.index)) - Math.min(...b[1].map((entry) => entry.index))
-    );
 
-    const groupedRows = sortedGroups.map(([groupId, entries]) => {
-      const members = entries.map((entry) => entry.row);
-      const memberIds = new Set(members.map((entry) => entry.id));
-      const newerRefIds = new Set(
-        members
-          .map((entry) => entry.previous_submission_id)
-          .filter((entry): entry is string => Boolean(entry && memberIds.has(entry)))
-      );
-      const latest =
-        members.find((entry) => !newerRefIds.has(entry.id)) ??
-        [...members].sort((a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime())[0];
-      const history = [...members]
-        .filter((entry) => entry.id != latest.id)
-        .sort((a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime());
-      if (history.length > 0) {
-        expandableGroupIds.add(groupId);
-      }
-      groupIdByRowId[latest.id] = groupId;
-      for (const historyRow of history) {
-        groupIdByRowId[historyRow.id] = groupId;
-      }
-      return { groupId, latest, history };
-    });
+    const groupedRows = Array.from(groups.entries())
+      .map(([groupId, entries]) => {
+        const members = entries.map((entry) => entry.row);
+        const memberIds = new Set(members.map((entry) => entry.id));
+        const newerRefIds = new Set(
+          members
+            .map((entry) => entry.previous_submission_id)
+            .filter((entry): entry is string => Boolean(entry && memberIds.has(entry)))
+        );
+        const latest =
+          members.find((entry) => !newerRefIds.has(entry.id)) ??
+          [...members].sort((a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime())[0];
+        const history = [...members]
+          .filter((entry) => entry.id != latest.id)
+          .sort((a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime());
+        if (history.length > 0) {
+          expandableGroupIds.add(groupId);
+        }
+        groupIdByRowId[latest.id] = groupId;
+        for (const historyRow of history) {
+          groupIdByRowId[historyRow.id] = groupId;
+        }
+        const latestIndex = entries.find((entry) => entry.row.id === latest.id)?.index ?? Math.min(...entries.map((entry) => entry.index));
+        return { groupId, latest, history, latestIndex };
+      })
+      .sort((a, b) => a.latestIndex - b.latestIndex)
+      .map(({ groupId, latest, history }) => ({ groupId, latest, history }));
 
     return { groupedRows, groupIdByRowId, expandableGroupIds };
   }, [rows]);
