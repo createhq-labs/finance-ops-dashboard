@@ -3,8 +3,12 @@ import { getBearerToken, getCurrentAppUser } from '../../../../lib/server/auth';
 import { assertSupabaseEnv, createUserScopedClient } from '../../../../lib/server/supabase';
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
 import { deriveInvoiceStatusDbValue, normalizeInvoiceStatusMachine } from '../../../../lib/shared/invoice-status';
+import { sortFinanceQueueRows, type FinanceQueueLineItem } from '../../../../lib/client/finance-queue-sort';
 
 const EMPTY_UUID = '00000000-0000-0000-0000-000000000000';
+// Safety bound so the full filtered queue can be fetched and sorted before
+// limit/offset pagination is applied, instead of paginating pre-sort.
+const MAX_QUEUE_ROWS = 5000;
 
 type FilterQuery = {
   eq: (column: string, value: unknown) => FilterQuery;
@@ -157,7 +161,7 @@ export async function GET(req: NextRequest) {
     const runBaseQuery = async (selectClause: string) => {
       let query = userClient.from('intake_submissions').select(selectClause).order('submitted_at', { ascending: false }) as unknown as FilterQuery;
       query = applyFinanceFilters(query, params, employeeIds);
-      return query.range(offset, offset + limit);
+      return query.range(0, MAX_QUEUE_ROWS - 1);
     };
 
     let { data, error } = await runBaseQuery(baseSelect);
@@ -196,8 +200,42 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }
 
-    const pageRows = (data ?? []).slice(0, limit) as Array<Record<string, unknown>>;
-    const hasMore = (data ?? []).length > limit;
+    const allRows = (data ?? []) as Array<Record<string, unknown>>;
+
+    const acceptedIds = Array.from(new Set(allRows.filter((row) => row.intake_status === 'accepted').map((row) => String(row.id))));
+
+    const acceptedAtMap = new Map<string, string>();
+    if (acceptedIds.length > 0) {
+      const { data: approvalRows, error: approvalError } = await userClient
+        .from('activity_log')
+        .select('submission_id, created_at')
+        .in('submission_id', acceptedIds)
+        .eq('action_type', 'submission_approved')
+        .order('created_at', { ascending: true });
+      if (approvalError) {
+        return NextResponse.json({ success: false, error: approvalError.message }, { status: 400 });
+      }
+      for (const logRow of approvalRows ?? []) {
+        const submissionId = String(logRow.submission_id ?? '');
+        if (!submissionId || acceptedAtMap.has(submissionId)) continue;
+        acceptedAtMap.set(submissionId, String(logRow.created_at));
+      }
+    }
+
+    const sortableRows = allRows.map((row) => ({
+      id: String(row.id),
+      intake_status: String(row.intake_status ?? ''),
+      pi: (row.proforma_invoice as string | null) ?? null,
+      submitted_at: (row.submitted_at as string | null) ?? null,
+      accepted_at: acceptedAtMap.get(String(row.id)) ?? null,
+      invoice_type: (row.invoice_type as string | null) ?? null,
+      intake_line_items: (row.intake_line_items as FinanceQueueLineItem[] | null) ?? null,
+    }));
+    const rowsById = new Map(allRows.map((row) => [String(row.id), row]));
+    const sortedRows = sortFinanceQueueRows(sortableRows).map((sortableRow) => rowsById.get(sortableRow.id)!);
+
+    const pageRows = sortedRows.slice(offset, offset + limit) as Array<Record<string, unknown>>;
+    const hasMore = sortedRows.length > offset + limit;
 
     const submittedByIds = Array.from(new Set(pageRows.map((row) => String(row.submitted_by ?? '')).filter(Boolean)));
     const previousSubmissionIds = Array.from(new Set(pageRows.map((row) => String(row.previous_submission_id ?? '')).filter(Boolean)));
@@ -245,6 +283,7 @@ export async function GET(req: NextRequest) {
         previous_submission_pi: row.previous_submission_id ? previousPiMap.get(String(row.previous_submission_id)) ?? null : null,
         previous_submission_snapshot: row.previous_submission_id ? previousSubmissionMap.get(String(row.previous_submission_id)) ?? null : null,
         version_status: mapVersionStatus(row.previous_submission_id ? String(row.previous_submission_id) : null, row.is_latest_version as boolean | null | undefined),
+        accepted_at: acceptedAtMap.get(String(row.id)) ?? null,
       };
     });
 
