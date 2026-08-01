@@ -215,6 +215,7 @@ export function InvoiceIntakeForm({
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoredStorageKeyRef = useRef("");
   const suppressHistoryRef = useRef(false);
+  const lastRequestedPincodeRef = useRef("");
   const [values, setValues] = useState<InvoiceIntakeFormValues>({
     ...INITIAL_VALUES,
     submitterName,
@@ -444,6 +445,7 @@ export function InvoiceIntakeForm({
     }));
     setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
     setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+    lastRequestedPincodeRef.current = "";
     gstAddressSnapshotRef.current = null;
     setFieldErrors({});
     setHasInteracted(false);
@@ -693,8 +695,112 @@ export function InvoiceIntakeForm({
     });
   }, [autoFilledLocation, manualLocationEdits, values.addressLine, values.clientType]);
 
+  const gstMappingsForEntity = useMemo(
+    () => masters.gstMappings.filter((row) => row.entityType === values.entityType && row.entityName.trim().toLowerCase() === values.agencyBrandName.trim().toLowerCase()),
+    [masters.gstMappings, values.entityType, values.agencyBrandName]
+  );
+  const gstOptions = useMemo(() => gstMappingsForEntity.map((row) => row.gstNumber), [gstMappingsForEntity]);
+
+  const gstMappingByNumber = useMemo(
+    () =>
+      gstMappingsForEntity.reduce<Record<string, GstMappingOption>>((acc, row) => {
+        acc[row.gstNumber.toUpperCase()] = row;
+        return acc;
+      }, {}),
+    [gstMappingsForEntity]
+  );
+
   useEffect(() => {
+    if (viewOnly) return;
     if (values.clientType !== "Indian") return;
+    const inferred = inferAddressData(values.addressLine, values.clientType);
+    const pincode = inferred.pincode;
+    if (!/^\d{6}$/.test(pincode)) return;
+    if (lastRequestedPincodeRef.current === pincode) return;
+    if (values.gstNumber.trim() && gstMappingByNumber[values.gstNumber.trim().toUpperCase()]) return;
+
+    const controller = new AbortController();
+    let completed = false;
+
+    fetch(`/api/pincode?pincode=${pincode}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json().catch(() => null) as Promise<{
+          city?: string;
+          state?: string;
+          country?: string;
+          pincode?: string;
+          source?: string;
+        } | null>;
+      })
+      .then((lookup) => {
+        if (!lookup || controller.signal.aborted) return;
+        const lookupPincode = String(lookup.pincode || "").trim();
+        if (lookupPincode !== pincode) return;
+        completed = true;
+        lastRequestedPincodeRef.current = pincode;
+
+        setValues((prev) => {
+          if (viewOnly) return prev;
+          if (prev.clientType !== "Indian") return prev;
+          if (prev.gstNumber.trim() && gstMappingByNumber[prev.gstNumber.trim().toUpperCase()]) return prev;
+
+          const currentInferred = inferAddressData(prev.addressLine, prev.clientType);
+          if (currentInferred.pincode !== pincode) return prev;
+
+          const next = { ...prev };
+          let changed = false;
+          const nextCity = String(lookup.city || currentInferred.city || "").trim();
+          const nextState = String(lookup.state || currentInferred.state || "").trim();
+
+          if (!manualLocationEdits.pincode && next.pincode !== pincode) {
+            next.pincode = pincode;
+            changed = true;
+          }
+          if (!manualLocationEdits.state && nextState && next.state !== nextState) {
+            next.state = nextState;
+            changed = true;
+          }
+          if (!manualLocationEdits.city && nextCity && next.city !== nextCity) {
+            next.city = nextCity;
+            changed = true;
+          }
+          if (!manualLocationEdits.country && next.country !== "India") {
+            next.country = "India";
+            changed = true;
+          }
+
+          return changed ? next : prev;
+        });
+
+        setAutoFilledLocation((prev) => {
+          const currentInferred = inferAddressData(values.addressLine, values.clientType);
+          return {
+            ...prev,
+            city: prev.city || (!manualLocationEdits.city && Boolean(String(lookup.city || currentInferred.city || "").trim())),
+            state: prev.state || (!manualLocationEdits.state && Boolean(String(lookup.state || currentInferred.state || "").trim())),
+            country: prev.country || !manualLocationEdits.country,
+            pincode: prev.pincode || !manualLocationEdits.pincode,
+          };
+        });
+      })
+      .catch((error) => {
+        if (error instanceof Error && error.name === "AbortError") return;
+      });
+
+    return () => {
+      controller.abort();
+      if (!completed && lastRequestedPincodeRef.current === pincode) {
+        lastRequestedPincodeRef.current = "";
+      }
+    };
+  }, [gstMappingByNumber, manualLocationEdits, values.addressLine, values.clientType, values.gstNumber, viewOnly]);
+
+  useEffect(() => {
+    if (values.clientType !== "Indian") {
+      lastRequestedPincodeRef.current = "";
+      return;
+    }
     setValues((prev) => (prev.country === "India" ? prev : { ...prev, country: "India" }));
     setManualLocationEdits((prev) => (prev.country ? { ...prev, country: false } : prev));
     setAutoFilledLocation((prev) => ({ ...prev, country: true }));
@@ -830,21 +936,6 @@ export function InvoiceIntakeForm({
       return acc;
     }, {});
   }, [masters.brands]);
-  const gstMappingsForEntity = useMemo(
-    () => masters.gstMappings.filter((row) => row.entityType === values.entityType && row.entityName.trim().toLowerCase() === values.agencyBrandName.trim().toLowerCase()),
-    [masters.gstMappings, values.entityType, values.agencyBrandName]
-  );
-  const gstOptions = useMemo(() => gstMappingsForEntity.map((row) => row.gstNumber), [gstMappingsForEntity]);
-
-
-  const gstMappingByNumber = useMemo(
-    () =>
-      gstMappingsForEntity.reduce<Record<string, GstMappingOption>>((acc, row) => {
-        acc[row.gstNumber.toUpperCase()] = row;
-        return acc;
-      }, {}),
-    [gstMappingsForEntity]
-  );
 
   useEffect(() => {
     setValues((prev) => {
@@ -881,8 +972,21 @@ export function InvoiceIntakeForm({
     if (key === "commission" || key === "reimbursementAmount" || key === "imCommercials") {
       nextValue = sanitizeDecimalInput(String(value)) as InvoiceIntakeFormValues[K];
     }
-    if (key === "addressLine") {
+    if (key === "addressLine" && !String(nextValue).trim()) {
+      lastRequestedPincodeRef.current = "";
       setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
+      setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+      setValues((prev) => ({
+        ...prev,
+        addressLine: "",
+        city: "",
+        state: "",
+        country: prev.clientType === "Indian" ? "India" : "",
+        pincode: "",
+      }));
+      clearErrors(["addressLine", "city", "state", "country", "pincode"]);
+      setError("");
+      return;
     }
     if (key === "city" || key === "state" || key === "country" || key === "pincode") {
       setManualLocationEdits((prev) => ({ ...prev, [key]: true }));
@@ -890,6 +994,7 @@ export function InvoiceIntakeForm({
     }
 
     if (key === "entityType") {
+      lastRequestedPincodeRef.current = "";
       setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
       setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
       setValues((prev) => ({
@@ -918,6 +1023,7 @@ export function InvoiceIntakeForm({
 
   function handleEntityNameSelect(next: string) {
     if (!next.trim()) {
+      lastRequestedPincodeRef.current = "";
       setHasInteracted(true);
       setValues((prev) => ({
         ...prev,
@@ -952,6 +1058,7 @@ export function InvoiceIntakeForm({
 
   function handleTradeNameSelect(next: string) {
     if (!next.trim()) {
+      lastRequestedPincodeRef.current = "";
       setHasInteracted(true);
       setValues((prev) => ({
         ...prev,
@@ -1024,6 +1131,7 @@ export function InvoiceIntakeForm({
 
   function handleGstClear() {
     setHasInteracted(true);
+    lastRequestedPincodeRef.current = "";
     setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
     setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
     setValues((prev) => ({
@@ -1044,6 +1152,7 @@ export function InvoiceIntakeForm({
   function handleAddNewGstSelect() {
     setHasInteracted(true);
     gstAddressSnapshotRef.current = null;
+    lastRequestedPincodeRef.current = "";
     setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
     setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
     setValues((prev) => ({
@@ -1390,9 +1499,7 @@ export function InvoiceIntakeForm({
 
       if (!/^\d{6}$/.test(nextValues.pincode.trim())) errors.pincode = "Enter a valid 6-digit Indian pincode.";
       if (hasKnownPincodeLocationMismatch(nextValues.pincode, nextValues.city, nextValues.state)) {
-        errors.pincode = "Pincode does not match selected city/state.";
-        if (!errors.city) errors.city = "Pincode does not match selected city/state.";
-        if (!errors.state) errors.state = "Pincode does not match selected city/state.";
+        if (!errors.state) errors.state = "State may not match the pincode.";
       }
 
       const stateCodeMap: Record<string, string> = {
@@ -1698,6 +1805,7 @@ export function InvoiceIntakeForm({
   }
 
   function handleReset() {
+    lastRequestedPincodeRef.current = "";
     setValues({
       ...INITIAL_VALUES,
       submitterName: values.submitterName,
