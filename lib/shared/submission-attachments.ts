@@ -10,6 +10,12 @@ export const PRODUCT_REIMBURSEMENT_DOCUMENT_TYPE = 'product_reimbursement';
 export const REFERENCE_PO_DOCUMENT_TYPE = 'reference_po';
 export const GST_SCREENSHOT_DOCUMENT_TYPE = 'gst_screenshot';
 
+export const GST_SCREENSHOT_UPLOADABLE_FOLLOW_UP_STATUS = 'pending';
+
+export function isGstScreenshotUploadAllowed(followUpStatus: string | null | undefined) {
+  return String(followUpStatus ?? '').trim().toLowerCase() === GST_SCREENSHOT_UPLOADABLE_FOLLOW_UP_STATUS;
+}
+
 export const PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES = SUBMISSION_ATTACHMENT_MAX_FILE_SIZE_BYTES;
 export const PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES = SUBMISSION_ATTACHMENT_ALLOWED_MIME_TYPES;
 export const REFERENCE_PO_MAX_FILE_SIZE_BYTES = SUBMISSION_ATTACHMENT_MAX_FILE_SIZE_BYTES;
@@ -35,18 +41,41 @@ export type SubmissionAttachmentSummary = {
   uploaded_at?: string | null;
 };
 
+function getAttachmentUploadedTime(attachment: SubmissionAttachmentSummary) {
+  const uploadedAt = attachment.uploaded_at;
+  if (!uploadedAt) return Number.NEGATIVE_INFINITY;
+  const time = new Date(uploadedAt).getTime();
+  return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
+}
+
 function pickSubmissionAttachmentByType(
   attachments: unknown,
   documentType: string
 ): SubmissionAttachmentSummary | null {
   if (!Array.isArray(attachments)) return null;
 
-  const match = attachments.find((attachment) => {
-    if (!attachment || typeof attachment !== 'object') return false;
-    return String((attachment as { document_type?: unknown }).document_type ?? '') === documentType;
-  }) as SubmissionAttachmentSummary | undefined;
+  // Attachments of the same document_type are append-only (a replaced GST
+  // screenshot is retained as history), and embedded selects return them in no
+  // guaranteed order, so the newest uploaded_at wins rather than the first row.
+  let latest: SubmissionAttachmentSummary | null = null;
+  let latestTime = Number.NEGATIVE_INFINITY;
 
-  return match ?? null;
+  for (const candidate of attachments) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    if (String((candidate as { document_type?: unknown }).document_type ?? '') !== documentType) continue;
+
+    const attachment = candidate as SubmissionAttachmentSummary;
+    const uploadedTime = getAttachmentUploadedTime(attachment);
+
+    // Strictly-greater comparison keeps the first matching row on ties and when
+    // no row carries a usable uploaded_at, preserving the previous behaviour.
+    if (latest === null || uploadedTime > latestTime) {
+      latest = attachment;
+      latestTime = uploadedTime;
+    }
+  }
+
+  return latest;
 }
 
 export function pickProductReimbursementAttachment(

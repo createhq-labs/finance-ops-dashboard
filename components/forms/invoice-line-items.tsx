@@ -81,6 +81,7 @@ export function AttachmentUploadField({
   onRemoveExistingAttachment,
   onRetainExistingAttachment,
   viewOnly = false,
+  compact = false,
 }: {
   fieldKey: string;
   file: File | null;
@@ -96,6 +97,7 @@ export function AttachmentUploadField({
   onRemoveExistingAttachment?: () => void;
   onRetainExistingAttachment?: () => void;
   viewOnly?: boolean;
+  compact?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -270,22 +272,22 @@ export function AttachmentUploadField({
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 overflow-hidden rounded-xl border border-dashed border-sky-300/60 bg-sky-50/60 px-3 py-3 text-left transition-none hover:border-sky-400/70 dark:border-sky-400/25 dark:bg-sky-500/10 sm:flex-nowrap"
+            className={`flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 overflow-hidden rounded-xl border border-dashed border-sky-300/60 bg-sky-50/60 px-3 ${compact ? 'py-2' : 'py-3'} text-left transition-none hover:border-sky-400/70 dark:border-sky-400/25 dark:bg-sky-500/10 sm:flex-nowrap`}
           >
-            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-400/16 dark:text-sky-200">
-              <Paperclip size={18} />
+            <span className={`inline-flex ${compact ? 'h-8 w-8' : 'h-9 w-9'} shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-400/16 dark:text-sky-200`}>
+              <Paperclip size={compact ? 16 : 18} />
             </span>
             <span className="min-w-0 flex-1 break-words text-left">
               <span className="block text-[13px] font-medium text-foreground">{titleText}</span>
               {renderHelperText(helperText)}
             </span>
-            <span className="inline-flex h-8 shrink-0 items-center rounded-lg border border-sky-300/60 bg-sky-100/90 px-3 text-[12px] font-medium text-sky-900 dark:border-sky-300/25 dark:bg-sky-400/16 dark:text-sky-50 sm:ml-auto">
+            <span className={`inline-flex ${compact ? 'h-7' : 'h-8'} shrink-0 items-center rounded-lg border border-sky-300/60 bg-sky-100/90 px-3 text-[12px] font-medium text-sky-900 dark:border-sky-300/25 dark:bg-sky-400/16 dark:text-sky-50 sm:ml-auto`}>
               Browse
             </span>
           </button>
         ) : (
-          <div className="flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 overflow-hidden rounded-xl border border-sky-200/70 bg-card px-3 py-3 dark:border-sky-400/20 sm:flex-nowrap">
-            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-sky-200/80 bg-sky-50 text-sky-900 dark:border-sky-300/20 dark:bg-sky-400/12 dark:text-sky-100">
+          <div className={`flex w-full max-w-full min-w-0 flex-wrap items-center gap-3 overflow-hidden rounded-xl border border-sky-200/70 bg-card px-3 ${compact ? 'py-2' : 'py-3'} dark:border-sky-400/20 sm:flex-nowrap`}>
+            <span className={`inline-flex ${compact ? 'h-8 w-8' : 'h-10 w-10'} shrink-0 items-center justify-center rounded-lg border border-sky-200/80 bg-sky-50 text-sky-900 dark:border-sky-300/20 dark:bg-sky-400/12 dark:text-sky-100`}>
               {fileTypeIcon}
             </span>
             <div className="min-w-0 flex-1 overflow-hidden">

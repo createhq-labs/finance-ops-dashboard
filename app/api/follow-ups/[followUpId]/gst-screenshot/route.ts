@@ -4,12 +4,14 @@ import { logActivityEvent } from '../../../../../lib/server/services/activityLog
 import { getAccessTokenFromCookieHeader } from '../../../../../lib/server/services/authCookies';
 import {
   getLatestSubmissionAttachmentByType,
-  removeSubmissionAttachmentsByType,
   uploadGstScreenshotAttachment,
   validateGstScreenshotFile,
 } from '../../../../../lib/server/services/submissionAttachments';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../../lib/server/supabase';
-import { GST_SCREENSHOT_DOCUMENT_TYPE } from '../../../../../lib/shared/submission-attachments';
+import {
+  GST_SCREENSHOT_DOCUMENT_TYPE,
+  isGstScreenshotUploadAllowed,
+} from '../../../../../lib/shared/submission-attachments';
 
 type FormUploadFile = File & {
   name: string;
@@ -61,7 +63,7 @@ export async function POST(
 
     const { data: followUp, error: followUpError } = await adminClient
       .from('follow_ups')
-      .select('id, submission_id, follow_up_type')
+      .select('id, submission_id, follow_up_type, status')
       .eq('id', followUpId)
       .maybeSingle();
 
@@ -69,6 +71,9 @@ export async function POST(
     if (!followUp) throw new Error('Follow-up not found.');
     if (String(followUp.follow_up_type ?? '') !== 'gst_pending') {
       throw new Error('GST screenshot uploads are only available for GST follow-ups.');
+    }
+    if (!isGstScreenshotUploadAllowed(followUp.status)) {
+      throw new Error('GST screenshot uploads are only available while the follow-up is still pending.');
     }
 
     const submissionId = String(followUp.submission_id ?? '');
@@ -78,12 +83,10 @@ export async function POST(
       documentType: GST_SCREENSHOT_DOCUMENT_TYPE,
     });
 
-    const removedAttachments = await removeSubmissionAttachmentsByType({
-      adminClient,
-      submissionId,
-      documentType: GST_SCREENSHOT_DOCUMENT_TYPE,
-    });
-
+    // The new attachment is uploaded and persisted before anything else changes.
+    // Any earlier screenshot is retained in storage and in submission_attachments
+    // as history; it stops being the active screenshot purely because the read
+    // paths select the most recent uploaded_at row.
     const attachment = await uploadGstScreenshotAttachment({
       adminClient,
       submissionId,
@@ -91,30 +94,43 @@ export async function POST(
       file,
     });
 
-    await logActivityEvent(adminClient, {
-      actorUserId: appUser.id,
-      submissionId,
-      action: existingAttachment ? 'gst_screenshot_replaced' : 'gst_screenshot_uploaded',
-      details: {
-        follow_up_id: String(followUp.id),
-        attachment_id: attachment.id,
-        file_name: attachment.file_name,
-        replaced_attachment_ids: removedAttachments.map((item) => item.id),
-      },
-      structured: {
-        action_type: existingAttachment ? 'gst_screenshot_replaced' : 'gst_screenshot_uploaded',
-        entity_type: 'submission_attachment',
-        entity_id: attachment.id,
-        metadata: {
+    const supersededAttachmentIds = existingAttachment ? [existingAttachment.id] : [];
+
+    try {
+      await logActivityEvent(adminClient, {
+        actorUserId: appUser.id,
+        submissionId,
+        action: existingAttachment ? 'gst_screenshot_replaced' : 'gst_screenshot_uploaded',
+        details: {
           follow_up_id: String(followUp.id),
-          document_type: attachment.document_type,
+          attachment_id: attachment.id,
           file_name: attachment.file_name,
-          replaced_attachment_ids: removedAttachments.map((item) => item.id),
-          actor_role: appUser.role,
-          actor_user_id: appUser.id,
+          replaced_attachment_ids: supersededAttachmentIds,
         },
-      },
-    });
+        structured: {
+          action_type: existingAttachment ? 'gst_screenshot_replaced' : 'gst_screenshot_uploaded',
+          entity_type: 'submission_attachment',
+          entity_id: attachment.id,
+          metadata: {
+            follow_up_id: String(followUp.id),
+            document_type: attachment.document_type,
+            file_name: attachment.file_name,
+            replaced_attachment_ids: supersededAttachmentIds,
+            actor_role: appUser.role,
+            actor_user_id: appUser.id,
+          },
+        },
+      });
+    } catch (activityLogError) {
+      // The attachment is already committed. Activity logging is secondary and
+      // must not turn a successful upload into a failed response.
+      console.error('Failed to write GST screenshot activity log', {
+        followUpId: String(followUp.id),
+        submissionId,
+        attachmentId: attachment.id,
+        error: activityLogError instanceof Error ? activityLogError.message : String(activityLogError),
+      });
+    }
 
     return NextResponse.json({
       success: true,
