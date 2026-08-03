@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
 
     const userClient = createUserScopedClient(token);
     const adminClient = createServiceClient();
-    await syncFollowUps(adminClient);
+    
     const appUser = await getCurrentAppUser(userClient, token);
     const limit = clampLimit(req.nextUrl.searchParams.get('limit'), 40);
     const offset = parseOffset(req.nextUrl.searchParams.get('offset'));
