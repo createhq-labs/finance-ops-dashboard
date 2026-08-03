@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertCircle, CheckCircle2, Clock3, Download, FileText, History, Pencil, Upload, Users } from 'lucide-react';
-import { Fragment, useCallback, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { FinanceAuditCard, FinanceAuditPopover } from '../../../../components/dashboard/finance-audit-popover';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { FilterBar } from '../../../../components/dashboard/filter-bar';
@@ -11,6 +11,7 @@ import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { AttachmentUploadField } from '../../../../components/forms/invoice-line-items';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
+import { downloadXlsx } from '../../../../lib/client/xlsx-export';
 import { useDashboardRefresh } from '../../../../lib/client/use-dashboard-refresh';
 import { formatAttachmentSize, type SubmissionAttachmentSummary } from '../../../../lib/shared/submission-attachments';
 
@@ -36,6 +37,8 @@ type FollowUpRow = {
   proforma_invoice: string | null;
   agency_brand_name: string | null;
   bill_due: string | null;
+  intake_status: string | null;
+  invoice_status: string | null;
   payment_received_status: string | null;
   creator_invoice_status: string | null;
   payment_made_status: string | null;
@@ -94,15 +97,30 @@ function formatDueDate(value: string | null | undefined) {
   });
 }
 
+function formatMonthDeadline() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 15).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function makeExportTimestamp() {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
+
 function getFollowUpLabel(type: FollowUpRow['follow_up_type']) {
   return type === 'payment_received_pending' ? 'Bill Due' : 'GST Follow-up';
 }
 
 function getFollowUpDescription(row: FollowUpRow) {
   if (row.follow_up_type === 'payment_received_pending') {
-    return 'Payment is still pending after the bill due date for ' + (row.proforma_invoice || 'this submission') + '.';
+    return 'Payment overdue for ' + (row.proforma_invoice || 'this submission') + '.';
   }
-  return 'GST is still left in payment received status for ' + (row.proforma_invoice || 'this submission') + '.';
+  return 'GST still pending for ' + (row.proforma_invoice || 'this submission') + '.';
 }
 
 function canManageGstScreenshot(role: string | undefined) {
@@ -128,8 +146,10 @@ export default function FollowUpsPage() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<'all' | 'pending' | 'completed'>('all');
   const [type, setType] = useState<'all' | 'payment_received_pending' | 'gst_pending'>('all');
+  const [screenshot, setScreenshot] = useState<'all' | 'missing' | 'uploaded'>('all');
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState('');
+  const [monthlyGstMissingCount, setMonthlyGstMissingCount] = useState(0);
   const [attachmentActionKey, setAttachmentActionKey] = useState<string | null>(null);
   const [gstUploadRowId, setGstUploadRowId] = useState<string | null>(null);
   const [gstUploadFile, setGstUploadFile] = useState<File | null>(null);
@@ -143,7 +163,12 @@ export default function FollowUpsPage() {
     setQuery('');
     setStatus('all');
     setType('all');
+    setScreenshot('all');
   }
+
+  const canSeeMonthlyGstBanner = user?.role === 'finance' || user?.role === 'admin';
+  const today = new Date();
+  const isMonthlyGstBannerWindow = today.getDate() >= 10 && today.getDate() <= 15;
 
   const loadFollowUps = useCallback(async (reason: FollowUpRefreshReason = DEFAULT_REFRESH_REASON) => {
     if (!user) return;
@@ -159,6 +184,7 @@ export default function FollowUpsPage() {
       if (query.trim()) params.set('q', query.trim());
       if (status !== 'all') params.set('status', status);
       if (type !== 'all') params.set('type', type);
+      if (screenshot !== 'all') params.set('screenshot', screenshot);
 
       const response = await fetch('/api/follow-ups?' + params.toString(), {
         method: 'GET',
@@ -174,6 +200,21 @@ export default function FollowUpsPage() {
       }
       setError('');
       setRows(Array.isArray(body.follow_ups) ? body.follow_ups : []);
+
+      if (canSeeMonthlyGstBanner && isMonthlyGstBannerWindow) {
+        const bannerResponse = await fetch('/api/follow-ups/count?scope=gst_screenshot_missing', {
+          method: 'GET',
+          cache: 'no-store',
+        });
+        const bannerBody = await bannerResponse.json().catch(() => ({}));
+        setMonthlyGstMissingCount(
+          bannerResponse.ok && bannerBody?.success && typeof bannerBody.count === 'number'
+            ? bannerBody.count
+            : 0
+        );
+      } else {
+        setMonthlyGstMissingCount(0);
+      }
     } catch (nextError) {
       if (isInitialLoad) {
         setRows([]);
@@ -182,14 +223,29 @@ export default function FollowUpsPage() {
     } finally {
       if (isInitialLoad) setFetching(false);
     }
-  }, [query, status, type, user]);
+  }, [canSeeMonthlyGstBanner, isMonthlyGstBannerWindow, query, screenshot, status, type, user]);
 
-  useDashboardRefresh({
+  const { triggerRefresh } = useDashboardRefresh({
     enabled: Boolean(user) && !loading,
     refresh: loadFollowUps,
     intervalMs: user?.role === 'team_lead' ? 30000 : 60000,
     refreshOnFocus: true,
   });
+
+  // The hook above already fires an 'initial' refresh once `enabled` turns
+  // true, so this effect must only react to filter changes after that first
+  // render - otherwise the initial session-ready transition (user/loading)
+  // and this effect both fire a request for the same load.
+  const isFirstFilterEffect = useRef(true);
+  useEffect(() => {
+    if (isFirstFilterEffect.current) {
+      isFirstFilterEffect.current = false;
+      return;
+    }
+    if (!user || loading) return;
+    triggerRefresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, screenshot, status, type]);
 
   const stats = useMemo(() => {
     const now = Date.now();
@@ -207,6 +263,48 @@ export default function FollowUpsPage() {
   }, [rows]);
 
   const canManage = canManageGstScreenshot(user?.role);
+  const showMonthlyGstBanner = canSeeMonthlyGstBanner && isMonthlyGstBannerWindow && monthlyGstMissingCount > 0;
+
+  const applyPendingGstScreenshotFilter = useCallback(() => {
+    setStatus('pending');
+    setType('gst_pending');
+    setScreenshot('missing');
+  }, []);
+
+  const exportRows = useCallback(() => {
+    const header = [
+      'Follow-up',
+      'Submission',
+      'Agency / Brand',
+      'GST Screenshot',
+      'GST Screenshot File',
+      'Assigned Employee',
+      'Assigned Employee Email',
+      'Team Lead',
+      'Due Date',
+      'Status',
+      'Last Notification',
+      'Bill Due',
+      'Payment Received Status',
+    ];
+    const body = rows.map((row) => [
+      getFollowUpLabel(row.follow_up_type),
+      row.proforma_invoice || 'PI Not Required',
+      row.agency_brand_name || '',
+      row.follow_up_type === 'gst_pending' ? (row.gst_screenshot_attachment ? 'Uploaded' : 'Missing') : 'Not Applicable',
+      row.follow_up_type === 'gst_pending' ? row.gst_screenshot_attachment?.file_name || '' : '',
+      row.assigned_employee_name || '',
+      row.assigned_employee_email || '',
+      row.assigned_team_lead_name || '',
+      formatDueDate(row.due_date),
+      row.status === 'completed' ? 'Completed' : 'Pending',
+      formatDate(row.last_notified_at),
+      row.bill_due || '',
+      row.payment_received_status || '',
+    ]);
+
+    downloadXlsx(`follow-ups-${makeExportTimestamp()}.xlsx`, 'Follow-ups', [header, ...body]);
+  }, [rows]);
 
   // No fetch: the access summary is already preloaded on the row by the
   // follow-ups list response, so opening the popover has no loading delay.
@@ -292,13 +390,42 @@ export default function FollowUpsPage() {
         <KpiCard title="Completed" value={String(stats.completed)} hint="Closed from workflow progress" variant="teal" compact icon={<CheckCircle2 className="h-[18px] w-[18px]" />} />
       </div>
 
+      {showMonthlyGstBanner ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-amber-950 dark:border-amber-400/35 dark:bg-amber-400/12 dark:text-amber-100">
+          <div>
+            <div className="text-sm font-semibold">Monthly GST screenshot reminder</div>
+            <div className="mt-0.5 text-xs">
+              {monthlyGstMissingCount} pending screenshot{monthlyGstMissingCount === 1 ? '' : 's'} need upload by {formatMonthDeadline()}.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={applyPendingGstScreenshotFilter}
+            className="inline-flex h-9 items-center rounded-lg border border-amber-300 bg-amber-100 px-3 text-xs font-semibold text-amber-950 transition-none hover:bg-amber-200 dark:border-amber-300/30 dark:bg-amber-300/16 dark:text-amber-50 dark:hover:bg-amber-300/24"
+          >
+            View Pending GST
+          </button>
+        </div>
+      ) : null}
+
       <SectionCard
         title="Follow-up Queue"
         description="Monitor outstanding actions and manage GST screenshot attachments."
         actions={(
-          <span className="rounded-full border border-sky-300/55 bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/18 dark:text-sky-100">
-            {rows.length} visible
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={exportRows}
+              disabled={rows.length === 0}
+              className="inline-flex h-8 items-center gap-2 rounded-lg border border-border/70 bg-card px-3 text-xs font-semibold text-foreground transition-none hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Download size={14} />
+              Export .xlsx
+            </button>
+            <span className="rounded-full border border-sky-300/55 bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/18 dark:text-sky-100">
+              {rows.length} visible
+            </span>
+          </div>
         )}
         contentClassName="grid gap-4"
       >
@@ -328,13 +455,27 @@ export default function FollowUpsPage() {
                 ],
               },
             ]}
-            advancedFilters={[]}
+            advancedFilters={[
+              {
+                key: 'screenshot',
+                label: 'GST Screenshot',
+                type: 'select',
+                value: screenshot,
+                options: [
+                  { value: 'all', label: 'All screenshot statuses' },
+                  { value: 'missing', label: 'Screenshot missing' },
+                  { value: 'uploaded', label: 'Screenshot uploaded' },
+                ],
+              },
+            ]}
             onSearch={setQuery}
             onPrimaryChange={(key, value) => {
               if (key === 'status') setStatus((value || 'all') as 'all' | 'pending' | 'completed');
               if (key === 'type') setType((value || 'all') as 'all' | 'payment_received_pending' | 'gst_pending');
             }}
-            onAdvancedChange={() => undefined}
+            onAdvancedChange={(filters) => {
+              setScreenshot((filters.screenshot || 'all') as 'all' | 'missing' | 'uploaded');
+            }}
             onReset={resetAllFilters}
           />
 
@@ -345,8 +486,9 @@ export default function FollowUpsPage() {
           ) : rows.length === 0 ? (
             <StatePanel variant="empty" title="No follow-ups found" description="Adjust the filters or wait for new follow-up conditions to be generated." icon={<Clock3 className="h-5 w-5" />} />
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-border/50">
-              <table className="min-w-full table-fixed border-collapse text-left">
+            <div className="rounded-xl border border-border/50">
+  <div className="max-h-[calc(100vh-200px)] overflow-y-auto overflow-x-auto">
+    <table className="min-w-full table-fixed border-collapse text-left">
                 <thead className="sticky top-0 z-10 bg-card">
                   <tr className="border-b border-border/60 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground [&>th:not(:last-child)]:border-r [&>th:not(:last-child)]:border-border/40">
                     <th className="px-3 py-2">Follow-up</th>
@@ -397,7 +539,9 @@ export default function FollowUpsPage() {
                           </td>
                           <td className="px-3 py-3">
                             {!isGstRow ? (
-                              <span className="text-xs text-muted-foreground">-</span>
+                              <span className="inline-flex items-center rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-medium text-sky-700 ring-1 ring-sky-200 dark:bg-sky-500/12 dark:text-sky-300 dark:ring-sky-500/20">
+  Not applicable
+</span>
                             ) : attachment ? (
                               <div className="flex items-center justify-center gap-2">
   <div className="w-fit min-w-0 flex-none rounded-xl border border-sky-200/70 bg-card px-3 py-2 dark:border-sky-400/20">
@@ -541,7 +685,7 @@ export default function FollowUpsPage() {
                               <div className="mt-1 text-xs text-muted-foreground">Completed by {row.completed_by_name}</div>
                             ) : null}
                           </td>
-                          <td className="px-3 py-3 text-foreground">{formatDate(row.last_notified_at)}</td>
+                          <td className="px-3 py-3 text-foreground">{row.last_notified_at ? formatDate(row.last_notified_at) : 'Not sent yet'}</td>
                         </tr>
                         {isEditingThisRow && isGstRow ? (
                           <tr key={`${row.id}:upload`} className="border-b border-border/50 bg-card/50">
@@ -598,7 +742,8 @@ export default function FollowUpsPage() {
                   })}
                 </tbody>
               </table>
-            </div>
+  </div>
+</div>
           )}
         </div>
       </SectionCard>

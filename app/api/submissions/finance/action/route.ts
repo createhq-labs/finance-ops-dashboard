@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../../lib/server/auth';
 import { logSubmissionAction } from '../../../../../lib/server/services/activityLog';
 import { getAccessTokenFromCookieHeader } from '../../../../../lib/server/services/authCookies';
-import { syncFollowUps } from '../../../../../lib/server/services/followUps';
+import { reconcileFollowUpsForSubmission } from '../../../../../lib/server/services/followUps';
 import { deriveInvoiceStatusDbValue, normalizeInvoiceStatusMachine, toDbInvoiceStatus } from '../../../../../lib/shared/invoice-status';
 import { createEmployeeNotification, createSubmissionReopenedNotifications } from '../../../../../lib/server/services/notifications';
 import { allocateGapFreePiForSubmission, shouldSkipPiGeneration } from '../../../../../lib/server/services/submissions';
@@ -678,7 +678,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    await syncFollowUps(adminClient);
+    await reconcileFollowUpsForSubmission({
+      adminClient,
+      submissionId: body.submission_id,
+      completionActorUserId: appUser.id,
+    });
     return NextResponse.json({
       success: true,
       changed: true,
