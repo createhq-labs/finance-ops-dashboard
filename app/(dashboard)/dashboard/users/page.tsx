@@ -699,7 +699,7 @@ export default function UsersManagementPage() {
           actions={
             <div className="flex flex-wrap items-center gap-2">
               
-              <button type="button" onClick={openCreateModal} className={compactButtonClass(true)}>
+              <button type="button" onClick={openCreateModal} className={`${compactButtonClass(true)} dark:text-white`}>
                 <UserPlus className="mr-2 h-3.5 w-3.5" />
                 Add User
               </button>

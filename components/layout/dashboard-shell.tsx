@@ -33,6 +33,7 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { user, loading } = useDashboardSession();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [followUpCount, setFollowUpCount] = useState(0);
   const [collapsed, setCollapsed] = useState(true);
 
   useEffect(() => {
@@ -41,6 +42,33 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
       router.replace(getDefaultDashboardPath(user.role));
     }
   }, [loading, pathname, router, user]);
+
+  useEffect(() => {
+    if (loading || !user || !canViewFollowUps(user.role)) {
+      setFollowUpCount(0);
+      return;
+    }
+
+    let active = true;
+    const loadFollowUpCount = async () => {
+      try {
+        const response = await fetch('/api/follow-ups/count', { method: 'GET', cache: 'no-store' });
+        const body = await response.json().catch(() => ({}));
+        if (active && response.ok && body?.success) {
+          setFollowUpCount(Number(body.count) > 0 ? Number(body.count) : 0);
+        }
+      } catch {
+        if (active) setFollowUpCount(0);
+      }
+    };
+
+    void loadFollowUpCount();
+    const timer = window.setInterval(loadFollowUpCount, 60000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [loading, user]);
 
   const items = useMemo(() => {
     const role = user?.role;
@@ -57,7 +85,7 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
         ? [{ href: '/dashboard/team-submissions', label: 'Team Submissions', icon: ListChecks, group: 'operations' as const }]
         : []),
       ...(canViewFollowUps(role ?? 'employee')
-        ? [{ href: '/dashboard/follow-ups', label: 'Follow-ups', icon: ClipboardList, group: 'operations' as const }]
+        ? [{ href: '/dashboard/follow-ups', label: 'Follow-ups', icon: ClipboardList, group: 'operations' as const, badge: followUpCount > 0 ? followUpCount : undefined }]
         : []),
       ...(canViewTransferredSubmissions(role ?? 'employee')
         ? [{ href: '/dashboard/transferred-submissions', label: 'Transferred Submissions', icon: ListChecks, group: 'operations' as const }]
@@ -80,7 +108,7 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
       if (item.href === '/dashboard/transferred-submissions') return canViewTransferredSubmissions(role);
       return canAccessDashboardPath(role, item.href);
     });
-  }, [unreadCount, user?.role]);
+  }, [followUpCount, unreadCount, user?.role]);
 
   const groupOrder = ['workspace', 'operations', 'admin'] as const;
   const groupLabels: Record<string, string> = {

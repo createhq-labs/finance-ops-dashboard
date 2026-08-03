@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
     const query = req.nextUrl.searchParams.get('q') ?? '';
     const status = (req.nextUrl.searchParams.get('status') ?? 'all') as 'all' | 'pending' | 'completed';
     const type = (req.nextUrl.searchParams.get('type') ?? 'all') as 'all' | 'payment_received_pending' | 'gst_pending';
+    const screenshot = (req.nextUrl.searchParams.get('screenshot') ?? 'all') as 'all' | 'missing' | 'uploaded';
 
     const items = await listFollowUpsForUser({
       adminClient,
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
       query,
       status,
       type,
+      screenshot,
     });
 
     return NextResponse.json({ success: true, follow_ups: items }, { status: 200 });
