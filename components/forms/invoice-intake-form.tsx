@@ -247,6 +247,10 @@ export function InvoiceIntakeForm({
   const [referencePoAttachmentRemoved, setReferencePoAttachmentRemoved] = useState(false);
   const [masters, setMasters] = useState<FormDropdownMasterData>(getFallbackMasterData);
   const lockedBusinessLine = currentUserRole === 'employee' && currentUserBusinessLine ? currentUserBusinessLine : null;
+  const effectiveBusinessLine =
+    previousSubmissionId && initialValues?.businessLine
+      ? initialValues.businessLine
+      : lockedBusinessLine ?? INITIAL_VALUES.businessLine;
   const formRecoveryContext = useMemo(
     () => ({
       user: (submitterEmail || "anonymous").trim().toLowerCase(),
@@ -501,13 +505,15 @@ export function InvoiceIntakeForm({
       // Ignore incompatible or malformed local recovery data.
     }
 
+    nextValues.businessLine = effectiveBusinessLine;
+
     suppressHistoryRef.current = true;
     undoStackRef.current = [];
     redoStackRef.current = [];
     lastHistoryValuesRef.current = nextValues;
     restoredStorageKeyRef.current = formRecoveryKey;
     setValues(nextValues);
-  }, [formRecoveryContext, formRecoveryKey, initialValues, previousSubmissionId, submitterEmail, submitterName]);
+  }, [effectiveBusinessLine, formRecoveryContext, formRecoveryKey, initialValues, previousSubmissionId, submitterEmail, submitterName]);
 
   useEffect(() => {
     if (viewOnly) return;
@@ -1808,6 +1814,7 @@ export function InvoiceIntakeForm({
     lastRequestedPincodeRef.current = "";
     setValues({
       ...INITIAL_VALUES,
+      businessLine: effectiveBusinessLine,
       submitterName: values.submitterName,
       submitterEmail: values.submitterEmail,
     });
@@ -1828,6 +1835,7 @@ export function InvoiceIntakeForm({
     clearSavedRecovery();
     clearHistory({
       ...INITIAL_VALUES,
+      businessLine: effectiveBusinessLine,
       submitterName: values.submitterName,
       submitterEmail: values.submitterEmail,
     });
