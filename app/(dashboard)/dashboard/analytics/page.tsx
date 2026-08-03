@@ -4,18 +4,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '../../../../components/dashboard/page-header';
 import {
   AgingBuckets,
-  AnalyticsMetricCard,
-  AnalyticsPanel,
-  DonutChart,
+  AnalyticsMetricCard as BaseAnalyticsMetricCard,
+  AnalyticsPanel as BaseAnalyticsPanel,
+  DonutChart as BaseDonutChart,
   DotStatusList,
-  GaugeGrid,
-  GroupedBarChart,
-  LineAreaChart,
-  RankedProgressList,
-  StackedBarChart,
+  GaugeGrid as BaseGaugeGrid,
+  GroupedBarChart as BaseGroupedBarChart,
+  LineAreaChart as BaseLineAreaChart,
+  RankedProgressList as BaseRankedProgressList,
+  StackedBarChart as BaseStackedBarChart,
   StackedWorkloadRows,
   TimelineList,
-  WorkflowBars,
+  WorkflowBars as BaseWorkflowBars,
 } from '../../../../components/dashboard/analytics-visuals';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
@@ -104,6 +104,16 @@ const TM_COLOR = '#06b6d4';
 const TM_TI_COLOR = '#67e8f9';
 const PI_COLOR = '#6366f1';
 const TI_COLOR = '#06b6d4';
+
+const AnalyticsPanel = (props: Parameters<typeof BaseAnalyticsPanel>[0]) => <BaseAnalyticsPanel {...props} density="compact" />;
+const AnalyticsMetricCard = (props: Parameters<typeof BaseAnalyticsMetricCard>[0]) => <BaseAnalyticsMetricCard {...props} density="compact" />;
+const LineAreaChart = (props: Parameters<typeof BaseLineAreaChart>[0]) => <BaseLineAreaChart {...props} density="compact" />;
+const GroupedBarChart = (props: Parameters<typeof BaseGroupedBarChart>[0]) => <BaseGroupedBarChart {...props} density="compact" />;
+const StackedBarChart = (props: Parameters<typeof BaseStackedBarChart>[0]) => <BaseStackedBarChart {...props} density="compact" />;
+const DonutChart = (props: Parameters<typeof BaseDonutChart>[0]) => <BaseDonutChart {...props} density="compact" />;
+const RankedProgressList = (props: Parameters<typeof BaseRankedProgressList>[0]) => <BaseRankedProgressList {...props} density="compact" />;
+const GaugeGrid = (props: Parameters<typeof BaseGaugeGrid>[0]) => <BaseGaugeGrid {...props} density="compact" />;
+const WorkflowBars = (props: Parameters<typeof BaseWorkflowBars>[0]) => <BaseWorkflowBars {...props} density="compact" />;
 
 function safeNumber(value: number | string | null | undefined) {
   const parsed = Number(value ?? 0);

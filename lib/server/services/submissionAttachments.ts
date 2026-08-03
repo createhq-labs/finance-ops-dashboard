@@ -421,3 +421,79 @@ export async function createSubmissionAttachmentSignedUrl(params: {
 
   return data.signedUrl;
 }
+
+export type AttachmentAccessSummary = {
+  role: 'employee' | 'team_lead';
+  user_id: string;
+  name: string | null;
+  business_line: string | null;
+  viewed: boolean;
+  first_viewed_at: string | null;
+  last_viewed_at: string | null;
+  view_count: number;
+  downloaded: boolean;
+  first_downloaded_at: string | null;
+  last_downloaded_at: string | null;
+  download_count: number;
+};
+
+export type AttachmentAccessActor = {
+  attachmentId: string;
+  role: 'employee' | 'team_lead';
+  userId: string;
+  name: string | null;
+  businessLine: string | null;
+};
+
+// Aggregates existing activity_log rows (submission_attachment_viewed /
+// submission_attachment_downloaded) for many attachments in a single query,
+// scoped to the given actors only. Read-only: no new table, no new event is
+// written here. Filtering by exact actor_user_id (rather than role) is what
+// excludes finance/admin/developer access events from these metrics.
+export async function getAttachmentAccessSummaryMap(params: {
+  adminClient: SupabaseClient;
+  actors: AttachmentAccessActor[];
+}): Promise<Map<string, AttachmentAccessSummary>> {
+  const { adminClient, actors } = params;
+  const map = new Map<string, AttachmentAccessSummary>();
+  if (actors.length === 0) return map;
+
+  const attachmentIds = Array.from(new Set(actors.map((actor) => actor.attachmentId)));
+  const actorIds = Array.from(new Set(actors.map((actor) => actor.userId)));
+
+  const { data, error } = await adminClient
+    .from('activity_log')
+    .select('entity_id, actor_user_id, action, created_at')
+    .eq('entity_type', 'submission_attachment')
+    .in('entity_id', attachmentIds)
+    .in('actor_user_id', actorIds)
+    .in('action', ['submission_attachment_viewed', 'submission_attachment_downloaded'])
+    .order('created_at', { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []) as Array<{ entity_id: string | null; actor_user_id: string | null; action: string; created_at: string }>;
+
+  for (const actor of actors) {
+    const matching = rows.filter((row) => row.entity_id === actor.attachmentId && row.actor_user_id === actor.userId);
+    const viewedRows = matching.filter((row) => row.action === 'submission_attachment_viewed');
+    const downloadedRows = matching.filter((row) => row.action === 'submission_attachment_downloaded');
+
+    map.set(`${actor.attachmentId}:${actor.role}`, {
+      role: actor.role,
+      user_id: actor.userId,
+      name: actor.name,
+      business_line: actor.businessLine,
+      viewed: viewedRows.length > 0,
+      first_viewed_at: viewedRows[0]?.created_at ?? null,
+      last_viewed_at: viewedRows[viewedRows.length - 1]?.created_at ?? null,
+      view_count: viewedRows.length,
+      downloaded: downloadedRows.length > 0,
+      first_downloaded_at: downloadedRows[0]?.created_at ?? null,
+      last_downloaded_at: downloadedRows[downloadedRows.length - 1]?.created_at ?? null,
+      download_count: downloadedRows.length,
+    });
+  }
+
+  return map;
+}

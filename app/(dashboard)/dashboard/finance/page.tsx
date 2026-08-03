@@ -21,6 +21,7 @@ import {
 } from '../../../../lib/client/finance-status';
 import { canViewFinanceDashboard, getDefaultDashboardPath, getFinanceDashboardTitle } from '../../../../lib/client/dashboard-access';
 import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../lib/shared/submission-attachments';
+import { sortFinanceQueueRows } from '../../../../lib/client/finance-queue-sort';
 
 type SubmissionAttachmentApiRow = {
   id: string;
@@ -108,6 +109,7 @@ type FinanceApiRow = {
   reviewed_by?: string | null;
   reviewed_at?: string | null;
   reviewed_by_name?: string | null;
+  accepted_at?: string | null;
   payment_received?: string | null;
   payment_received_status?: string | null;
   creator_invoice_status?: string | null;
@@ -262,11 +264,7 @@ function mergeSubmissionRows(current: SubmissionRow[], incoming: SubmissionRow[]
   const merged = new Map<string, SubmissionRow>();
   for (const row of current) merged.set(row.id, row);
   for (const row of incoming) merged.set(row.id, row);
-  return Array.from(merged.values()).sort((left, right) => {
-    const leftTime = new Date(left.submitted_at || '').getTime();
-    const rightTime = new Date(right.submitted_at || '').getTime();
-    return rightTime - leftTime;
-  });
+  return sortFinanceQueueRows(Array.from(merged.values()));
 }
 
 function mapPreviousSubmissionSnapshot(snapshot: FinancePreviousSubmissionSnapshot | null | undefined): Partial<SubmissionRow> | null {
@@ -351,6 +349,7 @@ function mapFinanceSubmissionRow(item: FinanceApiRow): SubmissionRow {
     finance_comment: item.finance_comment || undefined,
     reviewed_at: item.reviewed_at || null,
     reviewed_by_name: item.reviewed_by_name || null,
+    accepted_at: item.accepted_at || null,
     intake_line_items: item.intake_line_items || [],
     product_reimbursement_attachment: pickProductReimbursementAttachment(item.submission_attachments),
     reference_po_attachment: pickReferencePoAttachment(item.submission_attachments),
@@ -493,7 +492,7 @@ export default function FinanceReviewPage() {
     const mapped = ((json.submissions ?? []) as FinanceApiRow[]).map(mapFinanceSubmissionRow);
 
     if (isMountedRef.current) {
-      setRows((current) => (append ? mergeSubmissionRows(current, mapped) : mapped));
+      setRows((current) => mergeSubmissionRows(append ? current : [], mapped));
       setHasMore(Boolean(json.has_more));
       setNextOffset(typeof json.next_offset === 'number' ? json.next_offset : null);
       if (!append && masterDataReviewMap) {

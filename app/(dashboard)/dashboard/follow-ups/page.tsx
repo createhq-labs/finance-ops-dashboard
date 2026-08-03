@@ -1,7 +1,8 @@
 "use client";
 
-import { AlertCircle, CheckCircle2, Clock3, Download, FileText, Upload } from 'lucide-react';
-import { Fragment, useCallback, useMemo, useState } from 'react';
+import { AlertCircle, CheckCircle2, Clock3, Download, FileText, History, Pencil, Upload, Users } from 'lucide-react';
+import { Fragment, useCallback, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { FinanceAuditCard, FinanceAuditPopover } from '../../../../components/dashboard/finance-audit-popover';
 import { KpiCard } from '../../../../components/dashboard/kpi-card';
 import { FilterBar } from '../../../../components/dashboard/filter-bar';
 import { PageHeader } from '../../../../components/dashboard/page-header';
@@ -43,7 +44,30 @@ type FollowUpRow = {
   gst_screenshot_attachment: SubmissionAttachmentSummary | null;
   gst_screenshot_uploaded_by_name: string | null;
   gst_screenshot_uploaded_at: string | null;
+  gst_screenshot_access_summary: { employee: GstAccessSummaryEntry | null; team_lead: GstAccessSummaryEntry | null } | null;
 };
+
+type GstAccessSummaryEntry = {
+  role: 'employee' | 'team_lead';
+  user_id: string;
+  name: string | null;
+  business_line: string | null;
+  viewed: boolean;
+  first_viewed_at: string | null;
+  last_viewed_at: string | null;
+  view_count: number;
+  downloaded: boolean;
+  first_downloaded_at: string | null;
+  last_downloaded_at: string | null;
+  download_count: number;
+};
+
+function formatAccessAuditSubtitle(entry: GstAccessSummaryEntry | null) {
+  if (!entry) return '';
+  const roleLabel = entry.role === 'employee' ? 'Employee' : 'Team Lead';
+  const name = entry.name || 'Unknown';
+  return entry.business_line ? `${name} · ${entry.business_line} ${roleLabel}` : `${name} · ${roleLabel}`;
+}
 
 function formatDate(value: string | null | undefined) {
   if (!value) return '-';
@@ -84,6 +108,20 @@ function getFollowUpDescription(row: FollowUpRow) {
 function canManageGstScreenshot(role: string | undefined) {
   return role === 'finance' || role === 'admin' || role === 'developer';
 }
+
+// Mirrors RefreshReason in lib/client/use-dashboard-refresh.ts, which does not
+// export the type. The hook emits 'initial' once, then 'interval' and 'focus';
+// 'manual' / 'realtime' / 'queued' are reachable through the same contract.
+type FollowUpRefreshReason = 'initial' | 'interval' | 'focus' | 'manual' | 'realtime' | 'queued';
+
+// The single reason that is allowed to replace the table with a loader or clear
+// it on error. Everything else - including reasons added to useDashboardRefresh
+// later, and callers that pass no reason - is classified as a background
+// refresh, which must leave the table and any open GST upload panel mounted.
+const INITIAL_LOAD_REFRESH_REASON: FollowUpRefreshReason = 'initial';
+
+// Reason used when a caller reloads outside the hook (the post-upload reload).
+const DEFAULT_REFRESH_REASON: FollowUpRefreshReason = 'manual';
 export default function FollowUpsPage() {
   const { user, loading } = useDashboardSession();
   const [rows, setRows] = useState<FollowUpRow[]>([]);
@@ -97,6 +135,9 @@ export default function FollowUpsPage() {
   const [gstUploadFile, setGstUploadFile] = useState<File | null>(null);
   const [gstUploadError, setGstUploadError] = useState('');
   const [gstUploadBusyId, setGstUploadBusyId] = useState<string | null>(null);
+  const [gstMetadataAudit, setGstMetadataAudit] = useState<{ rect: DOMRect; updatedBy: string; updatedAt: string } | null>(null);
+  const [gstAccessAudit, setGstAccessAudit] = useState<{ rect: DOMRect; summary: { employee: GstAccessSummaryEntry | null; team_lead: GstAccessSummaryEntry | null } } | null>(null);
+  const [gstAccessAuditTab, setGstAccessAuditTab] = useState<'employee' | 'team_lead'>('employee');
 
   function resetAllFilters() {
     setQuery('');
@@ -104,12 +145,16 @@ export default function FollowUpsPage() {
     setType('all');
   }
 
-  const loadFollowUps = useCallback(async () => {
+  const loadFollowUps = useCallback(async (reason: FollowUpRefreshReason = DEFAULT_REFRESH_REASON) => {
     if (!user) return;
 
+    // Only the first load may swap the table for a loader or wipe it for an
+    // error. A background refresh must leave the table mounted, otherwise the
+    // open GST upload panel (and the file input it owns) is destroyed mid-use.
+    const isInitialLoad = reason === INITIAL_LOAD_REFRESH_REASON;
+
     try {
-      setFetching(true);
-      setError('');
+      if (isInitialLoad) setFetching(true);
       const params = new URLSearchParams();
       if (query.trim()) params.set('q', query.trim());
       if (status !== 'all') params.set('status', status);
@@ -121,16 +166,21 @@ export default function FollowUpsPage() {
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || !body?.success) {
-        setRows([]);
-        setError(body?.error || 'Failed to load follow-ups.');
+        if (isInitialLoad) {
+          setRows([]);
+          setError(body?.error || 'Failed to load follow-ups.');
+        }
         return;
       }
+      setError('');
       setRows(Array.isArray(body.follow_ups) ? body.follow_ups : []);
     } catch (nextError) {
-      setRows([]);
-      setError(nextError instanceof Error ? nextError.message : 'Failed to load follow-ups.');
+      if (isInitialLoad) {
+        setRows([]);
+        setError(nextError instanceof Error ? nextError.message : 'Failed to load follow-ups.');
+      }
     } finally {
-      setFetching(false);
+      if (isInitialLoad) setFetching(false);
     }
   }, [query, status, type, user]);
 
@@ -157,6 +207,15 @@ export default function FollowUpsPage() {
   }, [rows]);
 
   const canManage = canManageGstScreenshot(user?.role);
+
+  // No fetch: the access summary is already preloaded on the row by the
+  // follow-ups list response, so opening the popover has no loading delay.
+  const openGstAccessAudit = useCallback((row: FollowUpRow, event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (!row.gst_screenshot_access_summary) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    setGstAccessAuditTab('employee');
+    setGstAccessAudit({ rect, summary: row.gst_screenshot_access_summary });
+  }, []);
 
   const openAttachment = useCallback(async (attachment: SubmissionAttachmentSummary | null, mode: 'view' | 'download') => {
     if (!attachment) return;
@@ -222,10 +281,8 @@ export default function FollowUpsPage() {
     <div className="grid gap-4">
       <PageHeader
         className="gap-3 border-b-0 pb-1"
-        eyebrow="Operations"
         title="Follow-ups"
         description="Track overdue bill due and GST follow-ups using the same dashboard workflow patterns."
-        secondaryDescription="Finance/Admin can upload or replace GST screenshots here while employees and team leads continue using the current notification and download flow."
       />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -237,7 +294,7 @@ export default function FollowUpsPage() {
 
       <SectionCard
         title="Follow-up Queue"
-        description="Follow-ups still close automatically from the existing workflow. Finance/Admin can manage GST screenshots here without changing the current page design."
+        description="Monitor outstanding actions and manage GST screenshot attachments."
         actions={(
           <span className="rounded-full border border-sky-300/55 bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/18 dark:text-sky-100">
             {rows.length} visible
@@ -291,7 +348,7 @@ export default function FollowUpsPage() {
             <div className="overflow-x-auto rounded-xl border border-border/50">
               <table className="min-w-full table-fixed border-collapse text-left">
                 <thead className="sticky top-0 z-10 bg-card">
-                  <tr className="border-b border-border/60 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  <tr className="border-b border-border/60 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground [&>th:not(:last-child)]:border-r [&>th:not(:last-child)]:border-border/40">
                     <th className="px-3 py-2">Follow-up</th>
                     <th className="px-3 py-2">Submission</th>
                     <th className="px-3 py-2">GST Screenshot</th>
@@ -318,9 +375,9 @@ export default function FollowUpsPage() {
 
                     return (
                       <Fragment key={row.id}>
-                        <tr className="border-b border-border/50 align-top text-sm text-foreground">
+                        <tr className="border-b border-border/50 align-top text-center text-sm text-foreground [&>td:not(:last-child)]:border-r [&>td:not(:last-child)]:border-border/40">
                           <td className="px-3 py-3">
-                            <div className="flex items-start gap-3">
+                            <div className="flex items-start justify-center gap-3">
                               {isCompleted ? (
                                 <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-500" />
                               ) : row.follow_up_type === 'payment_received_pending' ? (
@@ -328,7 +385,7 @@ export default function FollowUpsPage() {
                               ) : (
                                 <AlertCircle className="mt-0.5 h-4 w-4 text-sky-500" />
                               )}
-                              <div>
+                              <div className="text-left">
                                 <div className="font-medium text-foreground">{getFollowUpLabel(row.follow_up_type)}</div>
                                 <div className="mt-1 text-xs text-muted-foreground">{getFollowUpDescription(row)}</div>
                               </div>
@@ -342,53 +399,113 @@ export default function FollowUpsPage() {
                             {!isGstRow ? (
                               <span className="text-xs text-muted-foreground">-</span>
                             ) : attachment ? (
-                              <div className="grid gap-2">
-                                <div className="flex min-w-0 items-center gap-2 rounded-xl border border-sky-200/70 bg-card px-3 py-2 dark:border-sky-400/20">
-                                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-sky-200/80 bg-sky-50 text-sky-900 dark:border-sky-300/20 dark:bg-sky-400/12 dark:text-sky-100">
-                                    <FileText size={16} />
-                                  </span>
-                                  <div className="min-w-0 flex-1 overflow-hidden">
-                                    <div className="truncate text-[13px] font-medium text-foreground" title={attachment.file_name}>{attachment.file_name}</div>
-                                    <div className="text-[11px] text-muted-foreground">{formatAttachmentSize(attachment.file_size_bytes)}</div>
-                                  </div>
-                                  <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                                    <button
-                                      type="button"
-                                      disabled={attachmentBusy}
-                                      onClick={() => void openAttachment(attachment, 'view')}
-                                      className="inline-flex h-7 items-center rounded-md border border-border/70 bg-card px-2 text-[11px] font-medium text-foreground transition-none hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
-                                    >
-                                      {viewBusy ? 'Opening...' : 'View'}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={attachmentBusy}
-                                      onClick={() => void openAttachment(attachment, 'download')}
-                                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/70 bg-card text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                                      aria-label="Download GST screenshot"
-                                    >
-                                      {downloadBusy ? <Clock3 size={12} className="animate-spin" /> : <Download size={12} />}
-                                    </button>
-                                    {canManage && row.status === 'pending' ? (
-                                      <button
-                                        type="button"
-                                        disabled={isUploadingThisRow}
-                                        onClick={() => {
-                                          setGstUploadRowId(row.id);
-                                          setGstUploadFile(null);
-                                          setGstUploadError('');
-                                        }}
-                                        className="inline-flex h-7 items-center rounded-md border border-sky-300/60 bg-sky-100/90 px-2.5 text-[11px] font-medium text-sky-900 transition-none hover:bg-sky-200 dark:border-sky-300/25 dark:bg-sky-400/16 dark:text-sky-50 dark:hover:bg-sky-400/24 disabled:cursor-not-allowed disabled:opacity-60"
-                                      >
-                                        Replace
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                </div>
-                                <div className="text-[11px] text-muted-foreground">
-                                  Updated by {row.gst_screenshot_uploaded_by_name || 'Finance/Admin'} ? {formatDate(row.gst_screenshot_uploaded_at)}
-                                </div>
-                              </div>
+                              <div className="flex items-center justify-center gap-2">
+  <div className="w-fit min-w-0 flex-none rounded-xl border border-sky-200/70 bg-card px-3 py-2 dark:border-sky-400/20">
+    <div className="flex items-start gap-2">
+     <span className="inline-flex h-[54px] w-10 shrink-0 items-center justify-center rounded-lg border border-sky-200/80 bg-sky-50 text-sky-900 dark:border-sky-300/20 dark:bg-sky-400/12 dark:text-sky-100">
+  <FileText size={20} strokeWidth={1.8} />
+</span>
+
+      <div className="w-[120px] min-w-0 flex-none">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 overflow-hidden">
+  <div
+    className="min-w-0 truncate text-left text-[13px] font-medium text-foreground"
+    title={attachment.file_name}
+  >
+    {attachment.file_name}
+  </div>
+
+  <span className="shrink-0 text-right text-[11px] text-muted-foreground">
+    {formatAttachmentSize(attachment.file_size_bytes)}
+  </span>
+</div>
+
+       <div className="mt-2 flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={attachmentBusy}
+            onClick={() => void openAttachment(attachment, 'view')}
+            className="inline-flex h-7 w-fit items-center rounded-md border border-border/70 bg-card px-3 text-[11px] font-medium text-foreground transition-none hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {viewBusy ? 'Opening...' : 'View'}
+          </button>
+          
+          <button
+            type="button"
+            disabled={attachmentBusy}
+            onClick={() => void openAttachment(attachment, 'download')}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/70 bg-card text-muted-foreground transition-none hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label="Download GST screenshot"
+          >
+            {downloadBusy ? (
+              <Clock3 size={12} className="animate-spin" />
+            ) : (
+              <Download size={12} />
+            )}
+          </button>
+
+          {canManage && row.status === 'pending' ? (
+            <button
+              type="button"
+              disabled={isUploadingThisRow}
+              onClick={() => {
+                setGstUploadRowId(row.id);
+                setGstUploadFile(null);
+                setGstUploadError('');
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-sky-300/60 bg-sky-100/90 text-sky-900 transition-none hover:bg-sky-200 dark:border-sky-300/25 dark:bg-sky-400/16 dark:text-sky-50 dark:hover:bg-sky-400/24 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Replace GST screenshot"
+              title="Replace GST screenshot"
+            >
+              <Pencil size={13} />
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div className="flex shrink-0 items-center gap-1.5">
+    {row.gst_screenshot_uploaded_by_name || row.gst_screenshot_uploaded_at ? (
+      <button
+        type="button"
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          const rect = event.currentTarget.getBoundingClientRect();
+          setGstMetadataAudit({
+            rect,
+            updatedBy: row.gst_screenshot_uploaded_by_name || 'Finance/Admin',
+            updatedAt: formatDate(row.gst_screenshot_uploaded_at),
+          });
+        }}
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-foreground transition-none hover:bg-muted/40"
+        aria-label="Open attachment metadata audit"
+        title="Metadata audit"
+      >
+        <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-current text-[0.65rem] font-medium leading-none opacity-85">
+          i
+        </span>
+      </button>
+    ) : null}
+
+    {row.gst_screenshot_access_summary ? (
+      <button
+        type="button"
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          openGstAccessAudit(row, event);
+        }}
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-foreground transition-none hover:bg-muted/40"
+        aria-label="Open attachment access audit"
+        title="Access audit"
+      >
+        <History className="h-4 w-4" />
+      </button>
+    ) : null}
+  </div>
+</div>
                             ) : canManage && row.status === 'pending' ? (
                               <button
                                 type="button"
@@ -418,7 +535,7 @@ export default function FollowUpsPage() {
                               {isCompleted ? 'Completed' : 'Pending'}
                             </span>
                             {row.completion_reason ? (
-                              <div className="mt-1 text-xs text-muted-foreground">{row.completion_reason}</div>
+                              <div className="mt-1 text-left text-xs text-muted-foreground">{row.completion_reason}</div>
                             ) : null}
                             {isCompleted && row.completed_by_name ? (
                               <div className="mt-1 text-xs text-muted-foreground">Completed by {row.completed_by_name}</div>
@@ -432,21 +549,24 @@ export default function FollowUpsPage() {
                               <div className="grid gap-3 rounded-xl border border-border/60 bg-card p-3">
                                 <div className="flex items-start justify-between gap-3">
                                   <div>
-                                    <div className="text-sm font-semibold text-foreground">GST Screenshot</div>
+                                    <div className="text-[13px] font-semibold leading-5 text-foreground">GST Screenshot</div>
                                     <div className="text-xs text-muted-foreground">Upload or replace the GST screenshot using the existing attachment flow.</div>
                                   </div>
                                 </div>
-                                <AttachmentUploadField
-                                  fieldKey="gst-screenshot"
-                                  file={gstUploadFile}
-                                  error={gstUploadError}
-                                  onChange={(_, file) => {
-                                    setGstUploadFile(file);
-                                    setGstUploadError('');
-                                  }}
-                                  titleText="Attach GST screenshot"
-                                  helperText="PDF, PNG, JPG, or WEBP. Max 10 MB."
-                                />
+                                <div className="w-full max-w-[600px]">
+                                  <AttachmentUploadField
+                                    fieldKey="gst-screenshot"
+                                    file={gstUploadFile}
+                                    error={gstUploadError}
+                                    onChange={(_, file) => {
+                                      setGstUploadFile(file);
+                                      setGstUploadError('');
+                                    }}
+                                    titleText="Attach GST screenshot"
+                                    helperText="PDF, PNG, JPG, or WEBP. Max 10 MB."
+                                    compact
+                                  />
+                                </div>
                                 <div className="flex items-center gap-2">
                                   <button
                                     type="button"
@@ -482,6 +602,73 @@ export default function FollowUpsPage() {
           )}
         </div>
       </SectionCard>
+
+      {gstMetadataAudit ? (
+        <FinanceAuditPopover
+          rect={gstMetadataAudit.rect}
+          title="Attachment Metadata Audit"
+          subtitle={gstMetadataAudit.updatedBy}
+          onClose={() => setGstMetadataAudit(null)}
+        >
+          <FinanceAuditCard label="Updated By" value={gstMetadataAudit.updatedBy} />
+          <FinanceAuditCard label="Updated At" value={gstMetadataAudit.updatedAt} />
+        </FinanceAuditPopover>
+      ) : null}
+
+      {gstAccessAudit ? (
+        (() => {
+          const entry = gstAccessAuditTab === 'employee' ? gstAccessAudit.summary.employee : gstAccessAudit.summary.team_lead;
+          return (
+            <FinanceAuditPopover
+              rect={gstAccessAudit.rect}
+              title="Attachment Access Audit"
+              subtitle={formatAccessAuditSubtitle(entry)}
+              onClose={() => setGstAccessAudit(null)}
+              toggle={
+                gstAccessAudit.summary.team_lead
+                  ? {
+                      icon: <Users className="h-3.5 w-3.5" />,
+                      active: gstAccessAuditTab === 'team_lead',
+                      onClick: () => setGstAccessAuditTab((current) => (current === 'team_lead' ? 'employee' : 'team_lead')),
+                      ariaLabel: 'Toggle team lead access audit',
+                    }
+                  : undefined
+              }
+            >
+              {!entry ? (
+                <div className="text-xs text-muted-foreground">No access data available.</div>
+              ) : (
+                <>
+                  <div className="rounded-xl border border-border/60 bg-muted/4 px-3 py-2.5">
+                    <div className="text-[12px] font-bold uppercase tracking-[0.06em] text-muted-foreground dark:text-sky-300">View History</div>
+                    {entry.viewed ? (
+                      <div className="mt-1 grid gap-0.5">
+                        <div className="text-[12px]  leading-5 text-foreground">First viewed: {formatDate(entry.first_viewed_at)}</div>
+                        <div className="text-[12px] leading-5 text-foreground">Last viewed: {formatDate(entry.last_viewed_at)}</div>
+                        <div className="text-[12px] leading-5 text-foreground">Total views: {entry.view_count}</div>
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-[13px] font-semibold text-foreground">Not viewed</div>
+                    )}
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-muted/4 px-3 py-2.5">
+                    <div className="text-[12px] font-bold uppercase tracking-[0.06em] text-muted-foreground dark:text-sky-300">Download History</div>
+                    {entry.downloaded ? (
+                      <div className="mt-1 grid gap-0.5">
+                        <div className="text-[12px] leading-5 text-foreground">First downloaded: {formatDate(entry.first_downloaded_at)}</div>
+                        <div className="text-[12px] leading-5 text-foreground">Last downloaded: {formatDate(entry.last_downloaded_at)}</div>
+                        <div className="text-[12px] leading-5 text-foreground">Total downloads: {entry.download_count}</div>
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-[13px] font-semibold leading-5 text-foreground">Not downloaded</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </FinanceAuditPopover>
+          );
+        })()
+      ) : null}
     </div>
   );
 }

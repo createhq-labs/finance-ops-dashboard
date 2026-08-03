@@ -1,3 +1,5 @@
+import { CITY_ALIASES } from "./generated/city-aliases";
+
 const INDIAN_STATES: Array<{ name: string; aliases: string[] }> = [
   { name: "Delhi", aliases: ["delhi", "new delhi"] },
   { name: "Haryana", aliases: ["haryana"] },
@@ -13,18 +15,6 @@ const INDIAN_STATES: Array<{ name: string; aliases: string[] }> = [
   { name: "West Bengal", aliases: ["west bengal"] },
   { name: "Odisha", aliases: ["odisha", "orissa"] },
   { name: "Bihar", aliases: ["bihar"] },
-];
-
-const CITY_ALIASES: Array<{ name: string; aliases: string[]; state: string }> = [
-  { name: "Mumbai", aliases: ["mumbai"], state: "Maharashtra" },
-  { name: "Bengaluru", aliases: ["bengaluru", "bangalore"], state: "Karnataka" },
-  { name: "Delhi", aliases: ["new delhi", "delhi"], state: "Delhi" },
-  { name: "Gurugram", aliases: ["gurugram", "gurgaon"], state: "Haryana" },
-  { name: "Hyderabad", aliases: ["hyderabad"], state: "Telangana" },
-  { name: "Chennai", aliases: ["chennai"], state: "Tamil Nadu" },
-  { name: "Kolkata", aliases: ["kolkata", "calcutta"], state: "West Bengal" },
-  { name: "Pune", aliases: ["pune"], state: "Maharashtra" },
-  { name: "Ahmedabad", aliases: ["ahmedabad"], state: "Gujarat" },
 ];
 
 export const PINCODE_STATE_MAP: Record<string, string> = {
@@ -54,26 +44,7 @@ export const PINCODE_STATE_MAP: Record<string, string> = {
   "80": "Bihar",
 };
 
-export const PINCODE_CITY_HINTS: Record<string, string[]> = {
-  "11": ["Delhi"],
-  "12": ["Gurugram", "Gurgaon"],
-  "40": ["Mumbai", "Thane", "Navi Mumbai"],
-  "41": ["Pune", "Nashik"],
-  "42": ["Nashik", "Jalgaon"],
-  "43": ["Nagpur", "Amravati"],
-  "44": ["Pune", "Kolhapur", "Sangli"],
-  "50": ["Hyderabad", "Secunderabad"],
-  "56": ["Bengaluru", "Bangalore"],
-  "57": ["Mysuru", "Mysore"],
-  "60": ["Chennai"],
-  "70": ["Kolkata", "Calcutta"],
-};
-
 export function normalizeState(value: string) {
-  return value.toLowerCase().replace(/[^a-z]/g, "");
-}
-
-export function normalizeCity(value: string) {
   return value.toLowerCase().replace(/[^a-z]/g, "");
 }
 
@@ -240,14 +211,11 @@ export function inferAddressData(address: string, clientType: "Indian" | "Foreig
     state = PINCODE_STATE_MAP[pincode.slice(0, 2)] ?? "";
   }
 
-  if (!city && /^\d{6}$/.test(pincode)) {
-    city = (PINCODE_CITY_HINTS[pincode.slice(0, 2)] ?? [])[0] ?? "";
-  }
-
   return { city, state, country, pincode };
 }
 
 export function hasKnownPincodeLocationMismatch(pincodeRaw: string, cityRaw: string, stateRaw: string) {
+  void cityRaw;
   const pincode = pincodeRaw.trim();
   if (!/^\d{6}$/.test(pincode)) return false;
 
@@ -255,10 +223,6 @@ export function hasKnownPincodeLocationMismatch(pincodeRaw: string, cityRaw: str
   const mappedState = PINCODE_STATE_MAP[prefix];
   const normalizedState = normalizeState(stateRaw);
   if (mappedState && normalizedState && normalizedState !== normalizeState(mappedState)) return true;
-
-  const cityHints = PINCODE_CITY_HINTS[prefix] ?? [];
-  const normalizedCity = normalizeCity(cityRaw);
-  if (cityHints.length > 0 && normalizedCity && !cityHints.some((hint) => normalizedCity.includes(normalizeCity(hint)))) return true;
 
   return false;
 }

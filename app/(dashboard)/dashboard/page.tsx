@@ -9,13 +9,38 @@ import { PageHeader } from '../../../components/dashboard/page-header';
 import { SectionCard } from '../../../components/dashboard/section-card';
 import { StatePanel } from '../../../components/dashboard/state-panel';
 import { type SubmissionRow } from '../../../components/dashboard/submission-table';
-import { AnalyticsMetricCard, AnalyticsPanel, DonutChart, GaugeGrid, LineAreaChart, TimelineList, WorkflowBars } from '../../../components/dashboard/analytics-visuals';
+import {
+  AnalyticsPanel as BaseAnalyticsPanel,
+  LineAreaChart as BaseLineAreaChart,
+  OverviewKpiCard,
+  WorkflowStageCards,
+  BusinessLineSplit,
+  PendingWorkloadTable,
+  CompanyHealthCards,
+  ActivityFeed,
+} from '../../../components/dashboard/analytics-visuals';
+import {
+  PieChart,
+  Table2,
+  FileText,
+  Wrench,
+  Users,
+  UserPlus,
+  CheckCircle2,
+  Search,
+  Database,
+  Wallet,
+  Users2,
+} from 'lucide-react';
 import { useDashboardSession } from '../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../components/layout/workspace-loader';
 import { getLineRevenue, getRevenueSeries } from '../../../lib/client/admin-stats';
 import { getPiDisplayMeta } from '../../../lib/client/pi-display';
 import { formatInvoiceStatus } from '../../../lib/client/finance-status';
 import { canSubmitInvoice, getInvoiceIntakePath, getOverviewTitle, isEmployeeRole, isTeamLeadRole } from '../../../lib/client/dashboard-access';
+
+const AnalyticsPanel = (props: Parameters<typeof BaseAnalyticsPanel>[0]) => <BaseAnalyticsPanel {...props} density="compact" />;
+const LineAreaChart = (props: Parameters<typeof BaseLineAreaChart>[0]) => <BaseLineAreaChart {...props} density="compact" />;
 
 type MySubmissionApiRow = {
   id: string;
@@ -86,6 +111,14 @@ function formatDateTime(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function trendFromSeries(values: number[]): string | null {
+  const current = values[values.length - 1] ?? 0;
+  const previous = values[values.length - 2] ?? 0;
+  if (previous <= 0 || current <= 0) return null;
+  const pct = ((current - previous) / previous) * 100;
+  return `${current >= previous ? '+' : ''}${pct.toFixed(1)}%`;
 }
 
 function formatMoneyCompact(value: number) {
@@ -1401,10 +1434,22 @@ export default function DashboardHomePage() {
     const activeFinanceUsers = adminUsers.filter((entry) => entry.role === 'finance' && entry.status === 'active').length;
     const revenueSeries = getRevenueSeries(visibleRows);
     const revenuePoints = revenueSeries.map((point) => ({ label: point.label, values: { pi: point.pi, ti: point.ti } }));
-    const revenueSpark = revenueSeries.map((point) => point.pi + point.ti);
-    const currentRevenue = revenueSpark[revenueSpark.length - 1] ?? 0;
-    const previousRevenue = revenueSpark[revenueSpark.length - 2] ?? 0;
-    const revenueTrend = previousRevenue > 0 && currentRevenue > 0 ? `${currentRevenue >= previousRevenue ? '+' : ''}${(((currentRevenue - previousRevenue) / previousRevenue) * 100).toFixed(1)}% MoM` : null;
+    const totalPiSeries = revenueSeries.map((point) => point.pi);
+    const totalTiSeries = revenueSeries.map((point) => point.ti);
+    const imPiSeries = revenueSeries.map((point) => point.imPi);
+    const tmPiSeries = revenueSeries.map((point) => point.tmPi);
+    const imTiSeries = revenueSeries.map((point) => point.imTi);
+    const tmTiSeries = revenueSeries.map((point) => point.tmTi);
+    const submittedSeries = revenueSeries.map((point) => point.submitted);
+    const closedSeries = revenueSeries.map((point) => point.closed);
+    const totalPiTrend = trendFromSeries(totalPiSeries);
+    const totalTiTrend = trendFromSeries(totalTiSeries);
+    const imPiTrend = trendFromSeries(imPiSeries);
+    const tmPiTrend = trendFromSeries(tmPiSeries);
+    const imTiTrend = trendFromSeries(imTiSeries);
+    const tmTiTrend = trendFromSeries(tmTiSeries);
+    const submittedTrend = trendFromSeries(submittedSeries);
+    const closedTrend = trendFromSeries(closedSeries);
     const imRevenueTotal = imPiRevenue + imTiRevenue;
     const tmRevenueTotal = tmPiRevenue + tmTiRevenue;
     const totalSubmissions = visibleRows.length;
@@ -1416,39 +1461,46 @@ export default function DashboardHomePage() {
       return entry.intake_status === 'accepted' && closedStatus !== 'closed' && paymentMade !== 'paid' && paymentMade !== 'full';
     }).length;
     const rejectedCount = visibleRows.filter((entry) => entry.intake_status === 'rejected').length;
-    const workflowRows = [
-      { label: 'Submitted', value: totalSubmissions, tone: 'navy' as const, note: `${totalSubmissions > 0 ? Math.round((totalSubmissions / totalSubmissions) * 100) : 0}% of intake` },
-      { label: 'Finance review', value: reviewedCount, tone: 'violet' as const, note: `${totalSubmissions > 0 ? Math.round((reviewedCount / totalSubmissions) * 100) : 0}% reviewed` },
-      { label: 'Master data', value: masterDataSummary.total, tone: 'cyan' as const, note: `${masterDataSummary.pending} pending approval` },
-      { label: 'Closed', value: closedCount, tone: 'teal' as const, note: `${totalSubmissions > 0 ? Math.round((closedCount / totalSubmissions) * 100) : 0}% completed` },
+    const totalEmployeesCount = adminUsers.filter((entry) => entry.role === 'employee').length;
+    const paymentStageCount = closedCount + pendingPaymentsCount;
+    const workflowStages = [
+      { label: 'Submitted', count: totalSubmissions, percent: totalSubmissions > 0 ? Math.round((totalSubmissions / totalSubmissions) * 100) : 0, icon: <FileText className="h-[22px] w-[22px]" strokeWidth={1.75} />, tone: 'navy' as const },
+      { label: 'Finance Review', count: reviewedCount, percent: totalSubmissions > 0 ? Math.round((reviewedCount / totalSubmissions) * 100) : 0, icon: <Search className="h-[22px] w-[22px]" strokeWidth={1.75} />, tone: 'cyan' as const },
+      { label: 'Master Data', count: masterDataSummary.total, percent: masterDataSummary.total > 0 ? Math.round((masterDataSummary.approved / masterDataSummary.total) * 100) : 0, icon: <Database className="h-[22px] w-[22px]" strokeWidth={1.75} />, tone: 'green' as const },
+      { label: 'Payment', count: paymentStageCount, percent: totalSubmissions > 0 ? Math.round((paymentStageCount / totalSubmissions) * 100) : 0, icon: <Wallet className="h-[22px] w-[22px]" strokeWidth={1.75} />, tone: 'amber' as const },
+      { label: 'Closed', count: closedCount, percent: totalSubmissions > 0 ? Math.round((closedCount / totalSubmissions) * 100) : 0, icon: <CheckCircle2 className="h-[22px] w-[22px]" strokeWidth={1.75} />, tone: 'teal' as const },
     ];
-    const pendingWorkloadRows = [
-      { label: 'Finance', value: pendingFinanceCount, tone: 'amber' as const, note: 'needs review' },
-      { label: 'Master data', value: masterDataSummary.pending, tone: 'rose' as const, note: 'awaiting approval' },
-      { label: 'Payment', value: pendingPaymentsCount, tone: 'violet' as const, note: 'in progress' },
-      { label: 'Resubs', value: rejectedCount, tone: 'cyan' as const, note: 'needs employee action' },
+    const businessLineBlocks = [
+      { label: 'Talent Management', value: tmRevenueTotal, displayValue: formatMoneyCompact(tmRevenueTotal), percent: imRevenueTotal + tmRevenueTotal > 0 ? Math.round((tmRevenueTotal / (imRevenueTotal + tmRevenueTotal)) * 100) : 0, tone: 'navy' as const },
+      { label: 'Influencer Marketing', value: imRevenueTotal, displayValue: formatMoneyCompact(imRevenueTotal), percent: imRevenueTotal + tmRevenueTotal > 0 ? Math.round((imRevenueTotal / (imRevenueTotal + tmRevenueTotal)) * 100) : 0, tone: 'green' as const },
     ];
-    const companyHealthGauges = [
+    const pendingWorkloadRows: Array<{ label: string; count: number; status: 'High' | 'Medium' | 'Low'; icon: ReactNode }> = [
+      { label: 'Master Data', count: masterDataSummary.pending, status: 'High', icon: <Database className="h-3.5 w-3.5" /> },
+      { label: 'Finance Review', count: pendingFinanceCount, status: 'Medium', icon: <Search className="h-3.5 w-3.5" /> },
+      { label: 'Payment', count: pendingPaymentsCount, status: 'Medium', icon: <Wallet className="h-3.5 w-3.5" /> },
+      { label: 'Resubmissions', count: rejectedCount, status: 'Low', icon: <FileText className="h-3.5 w-3.5" /> },
+    ];
+    const companyHealthItems: Array<{ title: string; subtitle: string; icon: ReactNode; status: 'Healthy' | 'Attention'; footer: string }> = [
       {
-        label: 'Employees',
-        subtitle: `${activeEmployees} of ${Math.max(1, adminUsers.filter((entry) => entry.role === 'employee').length)} active`,
-        value: adminUsers.filter((entry) => entry.role === 'employee').length > 0 ? activeEmployees / adminUsers.filter((entry) => entry.role === 'employee').length : 0,
-        detail: 'Active access',
-        tone: 'green' as const,
+        title: 'Employees',
+        subtitle: `${activeEmployees} of ${totalEmployeesCount} active`,
+        icon: <Users2 className="h-4 w-4" />,
+        status: activeEmployees > 0 ? 'Healthy' : 'Attention',
+        footer: 'Active access',
       },
       {
-        label: 'Finance',
+        title: 'Finance',
         subtitle: `${activeFinanceUsers} active users`,
-        value: totalSubmissions > 0 ? reviewedCount / totalSubmissions : 0,
-        detail: 'Review coverage',
-        tone: 'amber' as const,
+        icon: <Users className="h-4 w-4" />,
+        status: activeFinanceUsers > 0 ? 'Healthy' : 'Attention',
+        footer: 'Review coverage',
       },
       {
-        label: 'Master data',
+        title: 'Master Data',
         subtitle: `${masterDataSummary.approved} approved`,
-        value: masterDataSummary.total > 0 ? masterDataSummary.approved / masterDataSummary.total : 0,
-        detail: `${masterDataSummary.pending} pending`,
-        tone: 'navy' as const,
+        icon: <Database className="h-4 w-4" />,
+        status: masterDataSummary.pending > 0 ? 'Attention' : 'Healthy',
+        footer: `${masterDataSummary.pending} pending`,
       },
     ];
     const recentActivityItems: Array<{ title: string; subtitle: string; meta: string; tone: 'rose' | 'green' | 'cyan'; action: ReactNode }> = financeRecentRows.map((entry) => ({
@@ -1474,35 +1526,23 @@ export default function DashboardHomePage() {
           }
         />
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <AnalyticsMetricCard title="Total PI revenue" value={formatMoneyCompact(totalPiRevenue)} trend={revenueTrend} tone="cyan" />
-          <AnalyticsMetricCard title="Total TI revenue" value={formatMoneyCompact(totalTiRevenue)} trend={revenueTrend} tone="cyan" />
-          <AnalyticsMetricCard title="IM PI revenue" value={formatMoneyCompact(imPiRevenue)} tone="cyan" />
-          <AnalyticsMetricCard title="TM PI revenue" value={formatMoneyCompact(tmPiRevenue)} tone="cyan" />
-          <AnalyticsMetricCard title="IM TI revenue" value={formatMoneyCompact(imTiRevenue)} tone="cyan" />
-          <AnalyticsMetricCard title="TM TI revenue" value={formatMoneyCompact(tmTiRevenue)} tone="cyan" />
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <OverviewKpiCard title="Total PI revenue" value={formatMoneyCompact(totalPiRevenue)} trend={totalPiTrend} icon={PieChart} iconTone="violet" sparkline={totalPiSeries} />
+          <OverviewKpiCard title="Total TI revenue" value={formatMoneyCompact(totalTiRevenue)} trend={totalTiTrend} icon={Table2} iconTone="cyan" sparkline={totalTiSeries} />
+          <OverviewKpiCard title="IM PI revenue" value={formatMoneyCompact(imPiRevenue)} trend={imPiTrend} icon={FileText} iconTone="violet" sparkline={imPiSeries} />
+          <OverviewKpiCard title="TM PI revenue" value={formatMoneyCompact(tmPiRevenue)} trend={tmPiTrend} icon={Wrench} iconTone="navy" sparkline={tmPiSeries} />
+          <OverviewKpiCard title="IM TI revenue" value={formatMoneyCompact(imTiRevenue)} trend={imTiTrend} icon={Users} iconTone="green" sparkline={imTiSeries} />
+          <OverviewKpiCard title="TM TI revenue" value={formatMoneyCompact(tmTiRevenue)} trend={tmTiTrend} icon={FileText} iconTone="amber" sparkline={tmTiSeries} />
+          <OverviewKpiCard title="Submissions this month" value={String(submissionsThisMonth)} hint="current intake" trend={submittedTrend} icon={UserPlus} iconTone="violet" sparkline={submittedSeries} />
+          <OverviewKpiCard title="Closed this month" value={String(closedThisMonthCount)} hint="workflow complete" trend={closedTrend} icon={CheckCircle2} iconTone="cyan" sparkline={closedSeries} />
         </section>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <AnalyticsMetricCard title="Pending Finance" value={String(pendingFinanceCount)} hint="needs review" tone="amber" />
-          <AnalyticsMetricCard title="Master Data Pending" value={String(masterDataSummary.pending)} hint="awaiting approval" tone="rose" />
-          <AnalyticsMetricCard title="Submissions This Month" value={String(submissionsThisMonth)} hint="current intake" tone="green" />
-          <AnalyticsMetricCard title="Closed This Month" value={String(closedThisMonthCount)} hint="workflow complete" tone="teal" />
-        </section>
-
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.95fr)]">
-          <AnalyticsPanel title="Workflow funnel" subtitle="Operational flow from intake to completion.">
-            <WorkflowBars rows={workflowRows} />
+        <section className="grid gap-5 xl:grid-cols-[60fr_40fr]">
+          <AnalyticsPanel dense title="Workflow pipeline" subtitle="End-to-end flow of submissions">
+            <WorkflowStageCards stages={workflowStages} />
           </AnalyticsPanel>
-          <AnalyticsPanel title="IM vs TM revenue split" subtitle="Combined PI and TI contribution by business line.">
-            <DonutChart
-              centerLabel="total"
-              centerValue={formatMoneyCompact(imRevenueTotal + tmRevenueTotal)}
-              segments={[
-                { label: 'IM', value: imRevenueTotal, color: '#6366f1', note: formatMoneyCompact(imRevenueTotal) },
-                { label: 'TM', value: tmRevenueTotal, color: '#06b6d4', note: formatMoneyCompact(tmRevenueTotal) },
-              ]}
-            />
+          <AnalyticsPanel dense title="Business line split" subtitle="Revenue split by business line">
+            <BusinessLineSplit blocks={businessLineBlocks} />
           </AnalyticsPanel>
         </section>
 
@@ -1518,18 +1558,19 @@ export default function DashboardHomePage() {
             />
           </AnalyticsPanel>
           <AnalyticsPanel title="Pending workload" subtitle="Queues that still need attention.">
-            <WorkflowBars rows={pendingWorkloadRows} />
+            <PendingWorkloadTable rows={pendingWorkloadRows} />
           </AnalyticsPanel>
         </section>
 
         <section className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)]">
-          <AnalyticsPanel title="Company health" subtitle={`Active employees, finance coverage, and master data readiness. ${activeTeamLeads} active team leads.`}>
-            <GaugeGrid items={companyHealthGauges} />
+          <AnalyticsPanel title="Company health" subtitle={`Key operational health indicators. ${activeTeamLeads} active team leads.`}>
+            <CompanyHealthCards items={companyHealthItems} />
           </AnalyticsPanel>
           <AnalyticsPanel title="Recent activity" subtitle="Latest company submissions and workflow movement.">
-            <TimelineList
+            <ActivityFeed
               items={recentActivityItems}
               emptyLabel="No recent activity yet. Submission, finance, master data, and user events will appear here once activity begins."
+              viewAllHref="/dashboard/finance"
             />
           </AnalyticsPanel>
         </section>
