@@ -5,7 +5,10 @@ import { getAccessTokenFromCookieHeader } from '../../../../../lib/server/servic
 import { reconcileFollowUpsForSubmission } from '../../../../../lib/server/services/followUps';
 import { deriveInvoiceStatusDbValue, normalizeInvoiceStatusMachine, toDbInvoiceStatus } from '../../../../../lib/shared/invoice-status';
 import { createEmployeeNotification, createSubmissionReopenedNotifications } from '../../../../../lib/server/services/notifications';
-import { allocateGapFreePiForSubmission, shouldSkipPiGeneration } from '../../../../../lib/server/services/submissions';
+import {
+  allocateOrReusePiForSubmissionChain,
+  shouldSkipPiGeneration,
+} from '../../../../../lib/server/services/submissions';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../../lib/server/supabase';
 
 type FinanceActionRequest = {
@@ -146,7 +149,7 @@ export async function POST(req: NextRequest) {
 
     const { data: submission, error: submissionError } = await userClient
       .from('intake_submissions')
-      .select('id, submitted_by, reviewed_by, proforma_invoice, agency_brand_name, business_line, financial_year, invoice_type, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closed, closure_status, rejection_note, reviewed_at')
+      .select('id, submitted_by, reviewed_by, previous_submission_id, proforma_invoice, agency_brand_name, business_line, financial_year, invoice_type, intake_status, invoice_status, invoice_number, debit_note_number, finance_notes, finance_external_notes, finance_comment, creator_invoice_status, payment_received_status, payment_made_status, closed, closure_status, rejection_note, reviewed_at, is_latest_version')
       .eq('id', body.submission_id)
       .single();
 
@@ -195,6 +198,9 @@ export async function POST(req: NextRequest) {
     if (body.action === 'approve') {
       if (currentSubmission.intake_status === 'accepted') {
         return noChange('Submission is already approved.');
+      }
+      if (currentSubmission.is_latest_version === false) {
+        throw new Error('Superseded submissions cannot be approved.');
       }
       patch.intake_status = 'accepted';
       patch.reviewed_by = appUser.id;
@@ -441,7 +447,7 @@ export async function POST(req: NextRequest) {
       try {
         piNotRequired = await shouldSkipPiForSubmission(adminClient, currentSubmission);
         if (!effectivePiNumber && !piNotRequired) {
-          effectivePiNumber = await allocateGapFreePiForSubmission(adminClient, currentSubmission.id);
+          effectivePiNumber = await allocateOrReusePiForSubmissionChain(adminClient, currentSubmission.id);
         }
       } catch (piError) {
         const revertPatch = {

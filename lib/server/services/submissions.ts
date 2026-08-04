@@ -18,6 +18,13 @@ export type ResolvedPreviousSubmissionForCreate = {
   proforma_invoice: string | null;
 };
 
+type SubmissionChainRow = {
+  id: string;
+  previous_submission_id: string | null;
+  proforma_invoice: string | null;
+  is_latest_version?: boolean | null;
+};
+
 function getFinancialYearLabel(sourceDate: string | Date | null | undefined) {
   const fallbackDate = new Date();
   const parsedDate = sourceDate ? new Date(sourceDate) : fallbackDate;
@@ -86,7 +93,8 @@ export async function createSubmissionWithLineItems(params: {
         is_latest_version: false,
         superseded_at: new Date().toISOString(),
       })
-      .eq('id', previousSubmissionId);
+      .eq('id', previousSubmissionId)
+      .eq('is_latest_version', true);
 
     if (supersedeError) {
       return {
@@ -164,6 +172,63 @@ export async function createSubmissionWithLineItems(params: {
     pi_allocation_pending: !submissionPayload.previous_submission_id && !shouldSkipPi,
     submission,
   };
+}
+
+export async function getSubmissionChainRows(adminClient: SupabaseClient, submissionId: string) {
+  const { data, error } = await adminClient.rpc('resolve_submission_chain', {
+    p_submission_id: submissionId,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const chainRows = (data ?? []) as SubmissionChainRow[];
+  if (chainRows.length === 0) {
+    throw new Error('Submission not found for chain resolution.');
+  }
+
+  const dedupedRows = new Map(chainRows.map((row) => [String(row.id), row]));
+  if (!dedupedRows.has(submissionId)) {
+    throw new Error('Submission not found in resolved chain.');
+  }
+
+  return Array.from(dedupedRows.values());
+}
+
+export async function findExistingPiInSubmissionChain(adminClient: SupabaseClient, submissionId: string) {
+  const chainRows = await getSubmissionChainRows(adminClient, submissionId);
+  const distinctPis = Array.from(
+    new Set(
+      chainRows
+        .map((row) => String(row.proforma_invoice ?? '').trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (distinctPis.length === 0) return null;
+  if (distinctPis.length === 1) return distinctPis[0];
+
+  throw new Error(
+    'Conflicting PI values found in submission chain: ' + distinctPis.join(', ')
+  );
+}
+
+export async function allocateOrReusePiForSubmissionChain(adminClient: SupabaseClient, submissionId: string) {
+  const { data, error } = await adminClient.rpc('allocate_or_reuse_chain_pi', {
+    p_submission_id: submissionId,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const piNumber = String(data ?? '').trim();
+  if (!piNumber) {
+    throw new Error('Failed to allocate or reuse PI number.');
+  }
+
+  return piNumber;
 }
 
 export async function allocateGapFreePiForSubmission(adminClient: SupabaseClient, submissionId: string) {

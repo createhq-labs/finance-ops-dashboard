@@ -124,6 +124,17 @@ type FinanceApiRow = {
   previous_submission_snapshot?: FinancePreviousSubmissionSnapshot | null;
 };
 
+type FinanceAggregates = {
+  pending_review: number;
+  accepted: number;
+  resubmission_requested: number;
+};
+
+type FinanceEmployeeDirectoryEntry = {
+  email: string;
+  full_name: string | null;
+};
+
 type FinanceAction =
   | 'approve'
   | 'reject'
@@ -410,6 +421,12 @@ export default function FinanceReviewPage() {
   const loadingMoreRef = useRef(false);
   const [rows, setRows] = useState<SubmissionRow[]>([]);
   const [masterDataReviewsBySubmission, setMasterDataReviewsBySubmission] = useState<MasterDataReviewMap>({});
+  const [employeeDirectoryEntries, setEmployeeDirectoryEntries] = useState<FinanceEmployeeDirectoryEntry[]>([]);
+  const [aggregates, setAggregates] = useState<FinanceAggregates>({
+    pending_review: 0,
+    accepted: 0,
+    resubmission_requested: 0,
+  });
   const [rowsLoading, setRowsLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -484,7 +501,15 @@ export default function FinanceReviewPage() {
       fetch('/api/submissions/finance?' + params.toString(), { method: 'GET', cache: 'no-store' }),
       append ? Promise.resolve(null) : loadMasterDataReviews().catch(() => ({} as MasterDataReviewMap)),
     ]);
-    const json = await res.json().catch(() => ({}));
+    const json = await res.json().catch(() => ({})) as {
+      success?: boolean;
+      error?: string;
+      submissions?: FinanceApiRow[];
+      aggregates?: Partial<FinanceAggregates>;
+      employee_directory?: FinanceEmployeeDirectoryEntry[];
+      has_more?: boolean;
+      next_offset?: number | null;
+    };
     if (!res.ok || !json?.success) {
       throw new Error(json?.error || 'Failed to load finance submissions.');
     }
@@ -493,6 +518,16 @@ export default function FinanceReviewPage() {
 
     if (isMountedRef.current) {
       setRows((current) => mergeSubmissionRows(append ? current : [], mapped));
+      setAggregates({
+        pending_review: Number(json.aggregates?.pending_review ?? 0),
+        accepted: Number(json.aggregates?.accepted ?? 0),
+        resubmission_requested: Number(json.aggregates?.resubmission_requested ?? 0),
+      });
+      if (Array.isArray(json.employee_directory) && json.employee_directory.length > 0) {
+        setEmployeeDirectoryEntries(json.employee_directory);
+      } else if (!append) {
+        setEmployeeDirectoryEntries([]);
+      }
       setHasMore(Boolean(json.has_more));
       setNextOffset(typeof json.next_offset === 'number' ? json.next_offset : null);
       if (!append && masterDataReviewMap) {
@@ -527,6 +562,12 @@ export default function FinanceReviewPage() {
     if (!user) return;
     if (!canViewFinanceDashboard(user.role)) return;
     setRows([]);
+    setEmployeeDirectoryEntries([]);
+    setAggregates({
+      pending_review: 0,
+      accepted: 0,
+      resubmission_requested: 0,
+    });
     setHasMore(false);
     setNextOffset(null);
     void loadFinanceSubmissions(0, false).catch((error) => {
@@ -645,6 +686,11 @@ export default function FinanceReviewPage() {
   }, [rows, searchParams, user, highlightedSubmissionId]);
 
   const employeeDirectory = useMemo(() => {
+    if (employeeDirectoryEntries.length > 0) {
+      return Object.fromEntries(
+        employeeDirectoryEntries.map((entry) => [entry.email, String(entry.full_name || '').trim()])
+      );
+    }
     const next: Record<string, string> = {};
     rows.forEach((entry) => {
       const email = String(entry.submitter_email || '').trim();
@@ -653,7 +699,7 @@ export default function FinanceReviewPage() {
       next[email] = ownerName;
     });
     return next;
-  }, [rows]);
+  }, [employeeDirectoryEntries, rows]);
 
   const employeeOptions = useMemo(
     () => Object.keys(employeeDirectory).sort((left, right) => left.localeCompare(right)),
@@ -861,9 +907,9 @@ export default function FinanceReviewPage() {
     };
   }
 
-  const pendingCount = rows.filter((entry) => entry.intake_status === 'submitted').length;
-  const acceptedCount = rows.filter((entry) => entry.intake_status === 'accepted').length;
-  const rejectedCount = rows.filter((entry) => entry.intake_status === 'rejected').length;
+  const pendingCount = aggregates.pending_review;
+  const acceptedCount = aggregates.accepted;
+  const rejectedCount = aggregates.resubmission_requested;
 
   function resetAllFilters() {
     setQuery('');
