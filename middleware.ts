@@ -4,7 +4,7 @@ import { clearAuthCookies, getAccessTokenFromCookieHeader, getRefreshTokenFromCo
 
 const PROTECTED_PREFIXES = ['/dashboard'];
 const AUTH_PAGES = ['/login'];
-const PUBLIC_API_PATHS = new Set(['/api/auth/login', '/api/auth/logout', '/api/auth/signup']);
+const PUBLIC_API_PATHS = new Set(['/api/auth/login', '/api/auth/logout', '/api/auth/signup', '/api/auth/oauth/callback']);
 
 function isProtectedPath(pathname: string) {
   return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix + '/'));

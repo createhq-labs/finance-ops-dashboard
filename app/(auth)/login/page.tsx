@@ -4,6 +4,14 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
 import { LoginExperience } from '@/components/auth/login-experience';
+import { getBrowserSupabaseClient } from '@/lib/client/supabase';
+import { GOOGLE_LOGIN_ENABLED } from '@/lib/shared/feature-flags';
+
+function getSafeNextParam() {
+  if (typeof window === 'undefined') return null;
+  const next = new URLSearchParams(window.location.search).get('next');
+  return next && next.startsWith('/dashboard') ? next : null;
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,6 +20,34 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  async function handleGoogleSignIn() {
+    if (!GOOGLE_LOGIN_ENABLED) return;
+
+    setError('');
+    setGoogleLoading(true);
+
+    try {
+      const supabase = getBrowserSupabaseClient();
+      const safeNext = getSafeNextParam();
+      const callbackUrl = new URL('/auth/callback', window.location.origin);
+      if (safeNext) callbackUrl.searchParams.set('next', safeNext);
+
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: callbackUrl.toString() },
+      });
+
+      if (oauthError) {
+        throw new Error(oauthError.message || 'Unable to start Google sign-in');
+      }
+      // On success the browser is redirected to Google; this component unmounts.
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Unable to start Google sign-in');
+      setGoogleLoading(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -105,6 +141,26 @@ export default function LoginPage() {
         <button type="submit" disabled={loading} className="login-submit">
           {loading ? <span className="login-spinner" aria-label="Signing in" /> : 'Sign in'}
         </button>
+
+        {GOOGLE_LOGIN_ENABLED ? (
+          <>
+            <div className="login-divider">
+              <span>or</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleGoogleSignIn()}
+              disabled={googleLoading}
+              className="login-google-button"
+            >
+              {googleLoading ? (
+                <span className="login-spinner" aria-label="Redirecting to Google" />
+              ) : (
+                'Continue with Google'
+              )}
+            </button>
+          </>
+        ) : null}
 
         <style jsx>{`
           @property --login-button-border-angle {
@@ -257,6 +313,52 @@ export default function LoginPage() {
           }
 
           .login-submit:disabled {
+            cursor: not-allowed;
+            opacity: 0.75;
+          }
+
+          .login-divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 16px 0;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.48);
+          }
+
+          .login-divider::before,
+          .login-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: rgba(255, 255, 255, 0.14);
+          }
+
+          .login-google-button {
+            box-sizing: border-box;
+            height: 48px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 10px;
+            background: #000000;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.2s ease, background 0.2s ease;
+          }
+
+          .login-google-button:hover:not(:disabled) {
+            border-color: rgba(6, 182, 212, 0.4);
+            background: rgba(6, 182, 212, 0.06);
+          }
+
+          .login-google-button:disabled {
             cursor: not-allowed;
             opacity: 0.75;
           }
