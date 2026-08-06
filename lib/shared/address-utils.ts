@@ -48,13 +48,36 @@ export function normalizeState(value: string) {
   return value.toLowerCase().replace(/[^a-z]/g, "");
 }
 
-function findLastAlias(text: string, aliases: string[]) {
-  let bestIndex = -1;
+export type AliasMatch = { index: number; length: number };
+
+/**
+ * Compares two alias matches by position first (later occurrence in the
+ * address wins), then by matched alias length (a longer, more specific
+ * alias wins over a shorter one that starts at the same position, e.g.
+ * "south goa" over "south"). Equal on both counts: keep the current match.
+ *
+ * Exported for focused testing: the real INDIAN_STATES/CITY_ALIASES datasets
+ * have no naturally occurring case where a state alias and a city alias tie
+ * at the same index, so the equal-index tie between a city and state match
+ * (see inferAddressData's state-override step) can only be regression-tested
+ * at this helper level.
+ */
+export function isMoreSpecificAliasMatch(candidate: AliasMatch, current: AliasMatch) {
+  if (candidate.index > current.index) return true;
+  if (candidate.index === current.index) return candidate.length > current.length;
+  return false;
+}
+
+function findBestAliasMatch(text: string, aliases: string[]): AliasMatch | null {
+  let best: AliasMatch | null = null;
   for (const alias of aliases) {
-    const idx = text.lastIndexOf(alias.toLowerCase());
-    if (idx > bestIndex) bestIndex = idx;
+    const normalizedAlias = alias.toLowerCase();
+    const index = text.lastIndexOf(normalizedAlias);
+    if (index === -1) continue;
+    const candidate: AliasMatch = { index, length: normalizedAlias.length };
+    if (!best || isMoreSpecificAliasMatch(candidate, best)) best = candidate;
   }
-  return bestIndex;
+  return best;
 }
 
 function extractLastPincode(text: string) {
@@ -187,23 +210,23 @@ export function inferAddressData(address: string, clientType: "Indian" | "Foreig
   const country = clientType === "Indian" || /\bindia\b/i.test(text) || Boolean(pincode) ? "India" : "";
 
   let state = "";
-  let stateIndex = -1;
+  let stateMatch: AliasMatch | null = null;
   for (const entry of INDIAN_STATES) {
-    const idx = findLastAlias(normalized, entry.aliases);
-    if (idx > stateIndex) {
-      stateIndex = idx;
+    const match = findBestAliasMatch(normalized, entry.aliases);
+    if (match && (!stateMatch || isMoreSpecificAliasMatch(match, stateMatch))) {
+      stateMatch = match;
       state = entry.name;
     }
   }
 
   let city = "";
-  let cityIndex = -1;
+  let cityMatch: AliasMatch | null = null;
   for (const entry of CITY_ALIASES) {
-    const idx = findLastAlias(normalized, entry.aliases);
-    if (idx > cityIndex) {
-      cityIndex = idx;
+    const match = findBestAliasMatch(normalized, entry.aliases);
+    if (match && (!cityMatch || isMoreSpecificAliasMatch(match, cityMatch))) {
+      cityMatch = match;
       city = entry.name;
-      if (!state || idx > stateIndex) state = entry.state;
+      if (!stateMatch || isMoreSpecificAliasMatch(match, stateMatch)) state = entry.state;
     }
   }
 
@@ -214,15 +237,28 @@ export function inferAddressData(address: string, clientType: "Indian" | "Foreig
   return { city, state, country, pincode };
 }
 
-export function hasKnownPincodeLocationMismatch(pincodeRaw: string, cityRaw: string, stateRaw: string) {
-  void cityRaw;
+export type VerifiedPincodeLookup = { pincode: string; state: string } | null;
+
+/**
+ * Blocking pincode/state mismatch check backed only by a verified lookup
+ * (a successful /api/pincode response), never the coarse 2-digit
+ * PINCODE_STATE_MAP — a 2-digit prefix cannot uniquely identify every
+ * Indian state/UT, so it must never be authoritative for blocking
+ * validation. No verified lookup, a lookup for a different pincode, or an
+ * empty selected state are all treated as unverified, not a mismatch.
+ */
+export function hasVerifiedPincodeStateMismatch(
+  verified: VerifiedPincodeLookup,
+  pincodeRaw: string,
+  stateRaw: string
+) {
+  if (!verified) return false;
+
   const pincode = pincodeRaw.trim();
-  if (!/^\d{6}$/.test(pincode)) return false;
+  if (verified.pincode !== pincode) return false;
 
-  const prefix = pincode.slice(0, 2);
-  const mappedState = PINCODE_STATE_MAP[prefix];
-  const normalizedState = normalizeState(stateRaw);
-  if (mappedState && normalizedState && normalizedState !== normalizeState(mappedState)) return true;
+  const state = stateRaw.trim();
+  if (!state) return false;
 
-  return false;
+  return normalizeState(verified.state) !== normalizeState(state);
 }

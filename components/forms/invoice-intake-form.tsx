@@ -17,7 +17,7 @@ import { FormActions } from "./sections/FormActions";
 import { InvoiceDetailsSection } from "./sections/InvoiceDetailsSection";
 import type { BusinessLine, EntryType, ExistingInvoiceAttachment, GstMappingOption, InvoiceIntakeFormSubmitInput, InvoiceIntakeFormValues, InvoiceIntakeSubmissionPayload, MultiCreatorRow } from "./types";
 import { PRODUCT_REIMBURSEMENT_ALLOWED_MIME_TYPES, PRODUCT_REIMBURSEMENT_MAX_FILE_SIZE_BYTES, REFERENCE_PO_ALLOWED_MIME_TYPES, REFERENCE_PO_MAX_FILE_SIZE_BYTES } from "../../lib/shared/submission-attachments";
-import { hasKnownPincodeLocationMismatch, inferAddressData, normalizeState, serializeBillingAddress } from "../../lib/shared/address-utils";
+import { hasVerifiedPincodeStateMismatch, inferAddressData, normalizeState, serializeBillingAddress } from "../../lib/shared/address-utils";
 
 type Props = {
   submitterName?: string;
@@ -216,6 +216,10 @@ export function InvoiceIntakeForm({
   const restoredStorageKeyRef = useRef("");
   const suppressHistoryRef = useRef(false);
   const lastRequestedPincodeRef = useRef("");
+  // Only a successful /api/pincode lookup (source: "postal-api") counts as
+  // verified for blocking mismatch validation. Keyed by pincode so a stale
+  // entry for a different pincode is naturally ignored at comparison time.
+  const verifiedPincodeStateRef = useRef<{ pincode: string; state: string } | null>(null);
   const [values, setValues] = useState<InvoiceIntakeFormValues>({
     ...INITIAL_VALUES,
     submitterName,
@@ -732,6 +736,7 @@ export function InvoiceIntakeForm({
       .then(async (response) => {
         if (!response.ok) return null;
         return response.json().catch(() => null) as Promise<{
+          success?: boolean;
           city?: string;
           state?: string;
           country?: string;
@@ -743,8 +748,11 @@ export function InvoiceIntakeForm({
         if (!lookup || controller.signal.aborted) return;
         const lookupPincode = String(lookup.pincode || "").trim();
         if (lookupPincode !== pincode) return;
-        completed = true;
-        lastRequestedPincodeRef.current = pincode;
+
+        // A "success: false" (local-fallback) response must not consume this
+        // pincode's retry eligibility — only a genuinely verified lookup can.
+        const isVerifiedSuccess = lookup.success === true;
+        const verifiedState = String(lookup.state || "").trim();
 
         setValues((prev) => {
           if (viewOnly) return prev;
@@ -753,6 +761,19 @@ export function InvoiceIntakeForm({
 
           const currentInferred = inferAddressData(prev.addressLine, prev.clientType);
           if (currentInferred.pincode !== pincode) return prev;
+
+          // Only mark this pincode as handled (and only record the verified
+          // state) once the response is verified AND the current address
+          // still resolves to it, in lockstep — a stale/discarded or
+          // fallback response (guarded above) must leave both refs
+          // untouched and the pincode eligible for retry.
+          if (isVerifiedSuccess) {
+            completed = true;
+            lastRequestedPincodeRef.current = pincode;
+            if (verifiedState) {
+              verifiedPincodeStateRef.current = { pincode, state: verifiedState };
+            }
+          }
 
           const next = { ...prev };
           let changed = false;
@@ -1504,7 +1525,12 @@ export function InvoiceIntakeForm({
       else if (!isValidGstin(nextValues.gstNumber)) errors.gstNumber = "Enter a valid 15-character GST number or NA. Example: 07AAIFI5054J1Z7";
 
       if (!/^\d{6}$/.test(nextValues.pincode.trim())) errors.pincode = "Enter a valid 6-digit Indian pincode.";
-      if (hasKnownPincodeLocationMismatch(nextValues.pincode, nextValues.city, nextValues.state)) {
+
+      // Blocking mismatch validation relies only on a verified /api/pincode
+      // response (source: "postal-api"), never the coarse local prefix map.
+      // Timeout, error, missing result, or an unverified lookup must never
+      // block submission.
+      if (hasVerifiedPincodeStateMismatch(verifiedPincodeStateRef.current, nextValues.pincode, nextValues.state)) {
         if (!errors.state) errors.state = "State may not match the pincode.";
       }
 
