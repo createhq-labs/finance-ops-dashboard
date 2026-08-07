@@ -1,2 +1,5 @@
 export const ENABLE_TRANSFERRED_SUBMISSIONS =
   process.env.NEXT_PUBLIC_ENABLE_TRANSFERRED_SUBMISSIONS === 'true';
+
+export const GOOGLE_LOGIN_ENABLED =
+  process.env.NEXT_PUBLIC_GOOGLE_LOGIN_ENABLED === 'true';

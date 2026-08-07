@@ -5,7 +5,12 @@ import { logActivityEvent, logSubmissionCreated } from '../../../../lib/server/s
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
 import { createPendingMasterDataReviews } from '../../../../lib/server/services/masterDataReviews';
 import { createFinanceAndAdminSubmissionNotifications, createPendingMasterReviewNotifications } from '../../../../lib/server/services/notifications';
-import { createSubmissionWithLineItems, shouldSkipPiGeneration, type ResolvedPreviousSubmissionForCreate } from '../../../../lib/server/services/submissions';
+import {
+  createSubmissionWithLineItems,
+  findExistingPiInSubmissionChain,
+  shouldSkipPiGeneration,
+  type ResolvedPreviousSubmissionForCreate,
+} from '../../../../lib/server/services/submissions';
 import {
   carryForwardReferencePoAttachment,
   carryForwardProductReimbursementAttachment,
@@ -219,6 +224,14 @@ export async function POST(req: NextRequest) {
       appUser,
       submissionPayload: persistedSubmissionPayload,
     });
+    const resolvedPreviousSubmissionWithChainPi = resolvedPreviousSubmission
+      ? {
+          ...resolvedPreviousSubmission,
+          proforma_invoice:
+            resolvedPreviousSubmission.proforma_invoice ??
+            (await findExistingPiInSubmissionChain(adminClient, resolvedPreviousSubmission.id)),
+        }
+      : null;
     let carriedProductReimbursementSource: Awaited<ReturnType<typeof getProductReimbursementAttachmentForSubmission>> = null;
     let carriedReferencePoSource: Awaited<ReturnType<typeof getReferencePoAttachmentForSubmission>> = null;
 
@@ -256,7 +269,7 @@ export async function POST(req: NextRequest) {
       appUser,
       submissionPayload: persistedSubmissionPayload,
       lineItemsPayload,
-      resolvedPreviousSubmission,
+      resolvedPreviousSubmission: resolvedPreviousSubmissionWithChainPi,
     });
 
     if (!result.success) {

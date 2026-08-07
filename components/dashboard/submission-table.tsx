@@ -3166,6 +3166,10 @@ export function SubmissionTable({
     if (rowIndex == null) return;
     const column = activeColumns[columnIndex];
     const row = visibleDataRows[rowIndex];
+    const isActiveIntakeStatusEditor =
+      column === 'intake_status' &&
+      activeEditor?.rowId === rowId &&
+      activeEditor.columnIndex === columnIndex;
     const isEditableStatusCell =
       isFinanceViewer &&
       (
@@ -3181,6 +3185,21 @@ export function SubmissionTable({
         column === 'invoice_number' ||
         column === 'debit_note_number'
       );
+
+    if (isActiveIntakeStatusEditor && (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter')) {
+      return;
+    }
+
+    if (
+      column === 'intake_status' &&
+      isFinanceViewer &&
+      !isClosedRow(row) &&
+      (event.key === 'ArrowDown' || event.key === 'ArrowUp')
+    ) {
+      event.preventDefault();
+      requestEditorOpen(row, columnIndex);
+      return;
+    }
 
     if (event.key === 'ArrowRight') {
       event.preventDefault();
@@ -3216,7 +3235,7 @@ export function SubmissionTable({
       setActiveEditor(null);
       focusCell(rowIndex, columnIndex);
     }
-  }, [activeColumns, focusCell, isFinanceViewer, visibleDataRows, visibleRowIndexById]);
+  }, [activeColumns, activeEditor, focusCell, isFinanceViewer, requestEditorOpen, visibleDataRows, visibleRowIndexById]);
 
   const toggleColumnCollapse = useCallback((column: 'invoice_number' | 'debit_note_number' | 'campaign_code' | 'campaign_name' | 'city' | 'state' | 'country' | 'pincode') => {
     if ((column === 'campaign_code' || column === 'campaign_name') && !canToggleCampaignColumns) {

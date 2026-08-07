@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../lib/server/auth';
-import { assertSupabaseEnv, createUserScopedClient } from '../../../../lib/server/supabase';
+import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../lib/server/supabase';
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
 import { deriveInvoiceStatusDbValue, normalizeInvoiceStatusMachine } from '../../../../lib/shared/invoice-status';
 import { sortFinanceQueueRows, type FinanceQueueLineItem } from '../../../../lib/client/finance-queue-sort';
@@ -22,6 +22,17 @@ type FilterQuery = {
   order: (column: string, options: { ascending: boolean }) => FilterQuery;
 };
 
+type FinanceAggregateCounts = {
+  pending_review: number;
+  accepted: number;
+  resubmission_requested: number;
+};
+
+type EmployeeDirectoryEntry = {
+  email: string;
+  full_name: string | null;
+};
+
 function clampLimit(value: string | null, fallback = 50) {
   const parsed = Number.parseInt(value || '', 10);
   if (Number.isNaN(parsed)) return fallback;
@@ -40,7 +51,12 @@ function mapVersionStatus(previousSubmissionId: string | null, isLatestVersion: 
   return 'original';
 }
 
-function applyFinanceFilters(query: FilterQuery, params: URLSearchParams, employeeIds: string[] | null) {
+function applyFinanceFilters(
+  query: FilterQuery,
+  params: URLSearchParams,
+  employeeIds: string[] | null,
+  searchSubmittedByIds: string[] | null
+) {
   const submissionId = params.get('submission_id')?.trim();
   const businessLine = params.get('business_line');
   const intakeStatus = params.get('intake_status');
@@ -92,22 +108,24 @@ function applyFinanceFilters(query: FilterQuery, params: URLSearchParams, employ
 
   if (search) {
     const escaped = search.replace(/,/g, ' ');
-    query = query.or(
-      [
-        'proforma_invoice.ilike.%' + escaped + '%',
-        'agency_brand_name.ilike.%' + escaped + '%',
-        'agency_brand_trade_name.ilike.%' + escaped + '%',
-        'email_address.ilike.%' + escaped + '%',
-        'creator_creators_name.ilike.%' + escaped + '%',
-        'brand_name.ilike.%' + escaped + '%',
-        'agency_name.ilike.%' + escaped + '%',
-        'agency_trade_name.ilike.%' + escaped + '%',
-        'brand_trade_name.ilike.%' + escaped + '%',
-        'campaign_code.ilike.%' + escaped + '%',
-        'campaign_name.ilike.%' + escaped + '%',
-        'campaign_brand.ilike.%' + escaped + '%',
-      ].join(',')
-    );
+    const filters = [
+      'proforma_invoice.ilike.%' + escaped + '%',
+      'agency_brand_name.ilike.%' + escaped + '%',
+      'agency_brand_trade_name.ilike.%' + escaped + '%',
+      'email_address.ilike.%' + escaped + '%',
+      'creator_creators_name.ilike.%' + escaped + '%',
+      'brand_name.ilike.%' + escaped + '%',
+      'agency_name.ilike.%' + escaped + '%',
+      'agency_trade_name.ilike.%' + escaped + '%',
+      'brand_trade_name.ilike.%' + escaped + '%',
+      'campaign_code.ilike.%' + escaped + '%',
+      'campaign_name.ilike.%' + escaped + '%',
+      'campaign_brand.ilike.%' + escaped + '%',
+    ];
+    if (searchSubmittedByIds && searchSubmittedByIds.length > 0) {
+      filters.push('submitted_by.in.(' + searchSubmittedByIds.join(',') + ')');
+    }
+    query = query.or(filters.join(','));
   }
 
   return query;
@@ -135,6 +153,7 @@ export async function GET(req: NextRequest) {
     const limit = clampLimit(params.get('limit'), 50);
     const offset = parseOffset(params.get('offset'));
     const employeeFilter = params.get('employee');
+    const search = params.get('query')?.trim() || '';
 
     let employeeIds: string[] | null = null;
     if (employeeFilter && employeeFilter !== 'all') {
@@ -153,22 +172,24 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    let searchSubmittedByIds: string[] | null = null;
+    if (search) {
+      const { data: searchUsers, error: searchUsersError } = await userClient
+        .from('users')
+        .select('id')
+        .or('full_name.ilike.%' + search + '%,email.ilike.%' + search + '%');
+
+      if (searchUsersError) throw new Error(searchUsersError.message);
+      searchSubmittedByIds = (searchUsers ?? []).map((user) => String(user.id ?? '')).filter(Boolean);
+    }
+
     const baseSelect =
       'id, submitted_by, reviewed_by, reviewed_at, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, finance_notes, finance_external_notes, finance_comment, payment_received, payment_received_status, creator_invoice_status, invoice_via_creators_received, payment_made, payment_made_status, closed, closure_status, invoice_number, debit_note_number, sync_status, is_latest_version, submission_attachments(id,document_type,file_name,file_size_bytes,mime_type,uploaded_at), intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
     const legacySelect =
       'id, submitted_by, reviewed_by, reviewed_at, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, finance_notes, payment_received, payment_made, closed, invoice_number, debit_note_number, sync_status, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
 
-    const runBaseQuery = async (selectClause: string) => {
-      let query = userClient.from('intake_submissions').select(selectClause).order('submitted_at', { ascending: false }) as unknown as FilterQuery;
-      query = applyFinanceFilters(query, params, employeeIds);
-      return query.range(0, MAX_QUEUE_ROWS - 1);
-    };
-
-    let { data, error } = await runBaseQuery(baseSelect);
-
-    if (error) {
-      const fallback = await runBaseQuery(legacySelect);
-      data = (fallback.data ?? []).map((row: Record<string, unknown>) => ({
+    const normalizeLegacyRows = (rows: Record<string, unknown>[] | null | undefined) =>
+      (rows ?? []).map((row: Record<string, unknown>) => ({
         ...row,
         business_line: null,
         entry_type: null,
@@ -193,6 +214,92 @@ export async function GET(req: NextRequest) {
         is_latest_version: true,
         submission_attachments: [],
       }));
+
+    const runBaseQuery = async (selectClause: string) => {
+      let query = userClient.from('intake_submissions').select(selectClause).order('submitted_at', { ascending: false }) as unknown as FilterQuery;
+      query = applyFinanceFilters(query, params, employeeIds, searchSubmittedByIds);
+      return query.range(0, MAX_QUEUE_ROWS - 1);
+    };
+
+    const runLatestTopLevelQuery = async (selectClause: string) => {
+      let query = userClient.from('intake_submissions').select(selectClause).order('submitted_at', { ascending: false }) as unknown as FilterQuery;
+      query = applyFinanceFilters(query, params, employeeIds, searchSubmittedByIds);
+      query = query.eq('is_latest_version', true);
+      return query.range(0, MAX_QUEUE_ROWS - 1);
+    };
+
+    const fetchRowsByIds = async (ids: string[]) => {
+      if (ids.length === 0) return [] as Array<Record<string, unknown>>;
+
+      let selectedRows: Record<string, unknown>[] | null = null;
+      let selectedError: { message: string } | null = null;
+
+      {
+        const result = await serviceClient
+          .from('intake_submissions')
+          .select(baseSelect)
+          .in('id', ids)
+          .order('submitted_at', { ascending: false });
+        selectedRows = (result.data ?? null) as Record<string, unknown>[] | null;
+        selectedError = result.error;
+      }
+
+      if (selectedError) {
+        const fallback = await serviceClient
+          .from('intake_submissions')
+          .select(legacySelect)
+          .in('id', ids)
+          .order('submitted_at', { ascending: false });
+
+        selectedRows = normalizeLegacyRows(fallback.data as Record<string, unknown>[] | null | undefined);
+        selectedError = fallback.error;
+      }
+
+      if (selectedError) {
+        throw new Error(selectedError.message);
+      }
+
+      return (selectedRows ?? []) as Array<Record<string, unknown>>;
+    };
+
+    const serviceClient = createServiceClient();
+    const chainCache = new Map<string, { latestId: string; ids: string[] }>();
+
+    const resolveChainBucket = async (submissionId: string) => {
+      const cached = chainCache.get(submissionId);
+      if (cached) return cached;
+
+      const { data: chainRows, error: chainError } = await serviceClient.rpc('resolve_submission_chain', {
+        p_submission_id: submissionId,
+      });
+
+      if (chainError) {
+        throw new Error(chainError.message);
+      }
+
+      const ids = Array.from(
+        new Set(
+          ((chainRows ?? []) as Array<{ id: string | null; is_latest_version?: boolean | null }>)
+            .map((entry) => String(entry.id ?? '').trim())
+            .filter(Boolean)
+        )
+      );
+      const latestId =
+        ((chainRows ?? []) as Array<{ id: string | null; is_latest_version?: boolean | null }>)
+          .find((entry) => entry.is_latest_version === true)?.id
+          ?.toString() ??
+        submissionId;
+
+      const bucket = { latestId, ids };
+      ids.forEach((id) => chainCache.set(id, bucket));
+      return bucket;
+    };
+
+    let { data, error } = await runBaseQuery(baseSelect);
+
+    if (error) {
+      const fallback = await runBaseQuery(legacySelect);
+      data = normalizeLegacyRows(fallback.data as Record<string, unknown>[] | null | undefined);
       error = fallback.error;
     }
 
@@ -201,6 +308,11 @@ export async function GET(req: NextRequest) {
     }
 
     const allRows = (data ?? []) as Array<Record<string, unknown>>;
+    const aggregates: FinanceAggregateCounts = {
+      pending_review: allRows.filter((row) => row.intake_status === 'submitted').length,
+      accepted: allRows.filter((row) => row.intake_status === 'accepted').length,
+      resubmission_requested: allRows.filter((row) => row.intake_status === 'rejected').length,
+    };
 
     const acceptedIds = Array.from(new Set(allRows.filter((row) => row.intake_status === 'accepted').map((row) => String(row.id))));
 
@@ -222,7 +334,43 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const sortableRows = allRows.map((row) => ({
+    let latestRows: Array<Record<string, unknown>> = [];
+    if (search) {
+      const matchedLatestIds: string[] = [];
+      const seenLatestIds = new Set<string>();
+      const coveredChainMemberIds = new Set<string>();
+
+      for (const row of allRows) {
+        const rowId = String(row.id ?? '').trim();
+        if (!rowId || coveredChainMemberIds.has(rowId)) continue;
+
+        const bucket = await resolveChainBucket(rowId);
+        bucket.ids.forEach((id) => coveredChainMemberIds.add(id));
+
+        if (!seenLatestIds.has(bucket.latestId)) {
+          seenLatestIds.add(bucket.latestId);
+          matchedLatestIds.push(bucket.latestId);
+        }
+      }
+
+      latestRows = await fetchRowsByIds(matchedLatestIds);
+    } else {
+      let { data: latestData, error: latestError } = await runLatestTopLevelQuery(baseSelect);
+
+      if (latestError) {
+        const fallback = await runLatestTopLevelQuery(legacySelect);
+        latestData = normalizeLegacyRows(fallback.data as Record<string, unknown>[] | null | undefined);
+        latestError = fallback.error;
+      }
+
+      if (latestError) {
+        return NextResponse.json({ success: false, error: latestError.message }, { status: 400 });
+      }
+
+      latestRows = (latestData ?? []) as Array<Record<string, unknown>>;
+    }
+
+    const sortableRows = latestRows.map((row) => ({
       id: String(row.id),
       intake_status: String(row.intake_status ?? ''),
       pi: (row.proforma_invoice as string | null) ?? null,
@@ -231,23 +379,97 @@ export async function GET(req: NextRequest) {
       invoice_type: (row.invoice_type as string | null) ?? null,
       intake_line_items: (row.intake_line_items as FinanceQueueLineItem[] | null) ?? null,
     }));
-    const rowsById = new Map(allRows.map((row) => [String(row.id), row]));
-    const sortedRows = sortFinanceQueueRows(sortableRows).map((sortableRow) => rowsById.get(sortableRow.id)!);
+    const latestRowsById = new Map(latestRows.map((row) => [String(row.id), row]));
+    const sortedLatestRows = sortFinanceQueueRows(sortableRows).map((sortableRow) => latestRowsById.get(sortableRow.id)!);
+    const pageLatestRows = sortedLatestRows.slice(offset, offset + limit) as Array<Record<string, unknown>>;
+    const hasMore = sortedLatestRows.length > offset + limit;
 
-    const pageRows = sortedRows.slice(offset, offset + limit) as Array<Record<string, unknown>>;
-    const hasMore = sortedRows.length > offset + limit;
+    const chainIdBuckets = await Promise.all(
+      pageLatestRows.map(async (row) => {
+        const latestId = String(row.id);
+        return resolveChainBucket(latestId);
+      })
+    );
 
-    const submittedByIds = Array.from(new Set(pageRows.map((row) => String(row.submitted_by ?? '')).filter(Boolean)));
+    const historyIds = Array.from(
+      new Set(
+        chainIdBuckets.flatMap((bucket) => bucket.ids.filter((id) => id !== bucket.latestId))
+      )
+    );
+    const historyRows = await fetchRowsByIds(historyIds);
+    const historyRowsById = new Map(historyRows.map((row) => [String(row.id), row]));
+    const pageRows = pageLatestRows.flatMap((row) => {
+      const latestId = String(row.id);
+      const chain = chainIdBuckets.find((bucket) => bucket.latestId === latestId);
+      const history = (chain?.ids ?? [])
+        .filter((id) => id !== latestId)
+        .map((id) => historyRowsById.get(id))
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+        .sort(
+          (left, right) =>
+            new Date(String(right.submitted_at ?? 0)).getTime() - new Date(String(left.submitted_at ?? 0)).getTime()
+        );
+
+      return [row, ...history];
+    });
+
+    const pageAcceptedIds = Array.from(
+      new Set(
+        pageRows
+          .filter((row) => row.intake_status === 'accepted' && !acceptedAtMap.has(String(row.id)))
+          .map((row) => String(row.id))
+      )
+    );
+    if (pageAcceptedIds.length > 0) {
+      const { data: pageApprovalRows, error: pageApprovalError } = await userClient
+        .from('activity_log')
+        .select('submission_id, created_at')
+        .in('submission_id', pageAcceptedIds)
+        .eq('action_type', 'submission_approved')
+        .order('created_at', { ascending: true });
+      if (pageApprovalError) {
+        return NextResponse.json({ success: false, error: pageApprovalError.message }, { status: 400 });
+      }
+      for (const logRow of pageApprovalRows ?? []) {
+        const submissionId = String(logRow.submission_id ?? '');
+        if (!submissionId || acceptedAtMap.has(submissionId)) continue;
+        acceptedAtMap.set(submissionId, String(logRow.created_at));
+      }
+    }
+
+    const allSubmittedByIds = Array.from(new Set(allRows.map((row) => String(row.submitted_by ?? '')).filter(Boolean)));
+    const pageSubmittedByIds = Array.from(new Set(pageRows.map((row) => String(row.submitted_by ?? '')).filter(Boolean)));
+    const reviewedByIds = Array.from(new Set(pageRows.map((row) => String(row.reviewed_by ?? '')).filter(Boolean)));
     const previousSubmissionIds = Array.from(new Set(pageRows.map((row) => String(row.previous_submission_id ?? '')).filter(Boolean)));
 
     let userMap = new Map<string, { full_name: string; email: string }>();
-    if (submittedByIds.length > 0) {
-      const { data: users, error: usersError } = await userClient.from('users').select('id, full_name, email').in('id', submittedByIds);
+    if (allSubmittedByIds.length > 0 || pageSubmittedByIds.length > 0 || reviewedByIds.length > 0) {
+      const requestedUserIds = Array.from(new Set([...allSubmittedByIds, ...pageSubmittedByIds, ...reviewedByIds]));
+      const { data: users, error: usersError } = await userClient.from('users').select('id, full_name, email').in('id', requestedUserIds);
       if (usersError) {
         return NextResponse.json({ success: false, error: usersError.message }, { status: 400 });
       }
       userMap = new Map((users ?? []).map((user) => [String(user.id), { full_name: String(user.full_name ?? ''), email: String(user.email ?? '') }]));
     }
+
+    const employeeDirectory = Array.from(
+      new Map(
+        allRows
+          .map((row) => {
+            const owner = userMap.get(String(row.submitted_by ?? ''));
+            const email = String(owner?.email ?? row.email_address ?? '').trim();
+            if (!email) return null;
+            return [
+              email,
+              {
+                email,
+                full_name: owner?.full_name?.trim() || null,
+              } satisfies EmployeeDirectoryEntry,
+            ] as const;
+          })
+          .filter((entry): entry is readonly [string, EmployeeDirectoryEntry] => Boolean(entry))
+      ).values()
+    );
 
     let previousPiMap = new Map<string, string | null>();
     if (previousSubmissionIds.length > 0) {
@@ -280,6 +502,7 @@ export async function GET(req: NextRequest) {
         invoice_status: deriveInvoiceStatusDbValue(row),
         submitted_by_name: owner?.full_name ?? null,
         submitted_by_email: owner?.email ?? null,
+        reviewed_by_name: row.reviewed_by ? userMap.get(String(row.reviewed_by ?? ''))?.full_name ?? null : null,
         previous_submission_pi: row.previous_submission_id ? previousPiMap.get(String(row.previous_submission_id)) ?? null : null,
         previous_submission_snapshot: row.previous_submission_id ? previousSubmissionMap.get(String(row.previous_submission_id)) ?? null : null,
         version_status: mapVersionStatus(row.previous_submission_id ? String(row.previous_submission_id) : null, row.is_latest_version as boolean | null | undefined),
@@ -291,6 +514,8 @@ export async function GET(req: NextRequest) {
       {
         success: true,
         submissions,
+        aggregates,
+        employee_directory: employeeDirectory,
         has_more: hasMore,
         next_offset: hasMore ? offset + limit : null,
         offset,
