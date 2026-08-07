@@ -354,6 +354,18 @@ export async function GET(req: NextRequest) {
       }
 
       latestRows = await fetchRowsByIds(matchedLatestIds);
+    } else if (allRows.length < MAX_QUEUE_ROWS) {
+      // allRows already ran through applyFinanceFilters with the exact same
+      // params/employeeIds/searchSubmittedByIds as runLatestTopLevelQuery
+      // would use, and is ordered/bounded identically - the only extra
+      // predicate runLatestTopLevelQuery adds is is_latest_version = true.
+      // As long as allRows was not truncated by the MAX_QUEUE_ROWS safety
+      // cap, filtering it in memory is exactly equivalent to re-running the
+      // same filtered query against Postgres a second time, so the second
+      // round trip can be skipped. If the cap was hit, fall through to the
+      // original dedicated query so truncation can't silently drop rows
+      // that a direct is_latest_version-filtered query would still reach.
+      latestRows = allRows.filter((row) => row.is_latest_version === true);
     } else {
       let { data: latestData, error: latestError } = await runLatestTopLevelQuery(baseSelect);
 
@@ -472,19 +484,11 @@ export async function GET(req: NextRequest) {
     );
 
     let previousPiMap = new Map<string, string | null>();
-    if (previousSubmissionIds.length > 0) {
-      const { data: previousRows, error: previousRowsError } = await userClient
-        .from('intake_submissions')
-        .select('id, proforma_invoice')
-        .in('id', previousSubmissionIds);
-      if (previousRowsError) {
-        return NextResponse.json({ success: false, error: previousRowsError.message }, { status: 400 });
-      }
-      previousPiMap = new Map((previousRows ?? []).map((row) => [String(row.id), row.proforma_invoice ? String(row.proforma_invoice) : null]));
-    }
-
     let previousSubmissionMap = new Map<string, Record<string, unknown>>();
     if (previousSubmissionIds.length > 0) {
+      // previousPiMap only needs `proforma_invoice`, which this select
+      // already includes - deriving it from the same rows avoids running an
+      // identical `.in(id)` lookup against intake_submissions twice.
       const { data: previousSubmissionRows, error: previousSubmissionError } = await userClient
         .from('intake_submissions')
         .select('id, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)')
@@ -493,6 +497,9 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ success: false, error: previousSubmissionError.message }, { status: 400 });
       }
       previousSubmissionMap = new Map((previousSubmissionRows ?? []).map((row) => [String(row.id), row as Record<string, unknown>]));
+      previousPiMap = new Map(
+        (previousSubmissionRows ?? []).map((row) => [String(row.id), row.proforma_invoice ? String(row.proforma_invoice) : null])
+      );
     }
 
     const submissions = pageRows.map((row) => {

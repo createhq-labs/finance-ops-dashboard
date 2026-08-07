@@ -97,14 +97,25 @@ export async function GET(req: NextRequest) {
     const limit = clampLimit(req.nextUrl.searchParams.get('limit'), 40);
     const offset = parseOffset(req.nextUrl.searchParams.get('offset'));
 
-    const { data, error } = await userClient
-      .from('notifications')
-      .select('id, role_target, type, title, message, related_submission_id, related_review_id, target_path, is_read, created_at')
-      .eq('user_id', appUser.id)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit);
+    // The unread count is independent of the page of notifications being
+    // returned (same user_id, different filter/no range), so it can run
+    // concurrently with the list query instead of after it.
+    const [{ data, error }, { count, error: countError }] = await Promise.all([
+      userClient
+        .from('notifications')
+        .select('id, role_target, type, title, message, related_submission_id, related_review_id, target_path, is_read, created_at')
+        .eq('user_id', appUser.id)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit),
+      userClient
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', appUser.id)
+        .eq('is_read', false),
+    ]);
 
     if (error) throw new Error(error.message);
+    if (countError) throw new Error(countError.message);
 
     const items = (data ?? []).slice(0, limit);
     const submissionIds = Array.from(new Set(items.flatMap((item) => (item.related_submission_id ? [String(item.related_submission_id)] : []))));
@@ -128,14 +139,6 @@ export async function GET(req: NextRequest) {
     });
 
     const hasMore = (data ?? []).length > limit;
-
-    const { count, error: countError } = await userClient
-      .from('notifications')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', appUser.id)
-      .eq('is_read', false);
-
-    if (countError) throw new Error(countError.message);
 
     return NextResponse.json({
       success: true,
