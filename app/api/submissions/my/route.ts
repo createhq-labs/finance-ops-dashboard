@@ -141,31 +141,28 @@ export async function GET(req: NextRequest) {
     const previousSubmissionIds = Array.from(new Set(pageRows.map((row) => String(row.previous_submission_id ?? '')).filter(Boolean)));
     const reviewedByIds = Array.from(new Set(pageRows.map((row) => String(row.reviewed_by ?? '')).filter(Boolean)));
 
-    let previousPiMap = new Map<string, string | null>();
-    if (previousSubmissionIds.length > 0) {
-      const { data: previousRows, error: previousRowsError } = await userClient
-        .from('intake_submissions')
-        .select('id, proforma_invoice')
-        .in('id', previousSubmissionIds);
-      if (previousRowsError) {
-        return NextResponse.json({ success: false, error: previousRowsError.message }, { status: 400 });
-      }
-      previousPiMap = new Map((previousRows ?? []).map((row) => [String(row.id), row.proforma_invoice ? String(row.proforma_invoice) : null]));
-    }
-
-    let reviewerNameMap = new Map<string, string>();
-    if (reviewedByIds.length > 0) {
-      const { data: reviewers, error: reviewersError } = await userClient
-        .from('users')
-        .select('id, full_name')
-        .in('id', reviewedByIds);
-      if (reviewersError) {
-        return NextResponse.json({ success: false, error: reviewersError.message }, { status: 400 });
-      }
-      reviewerNameMap = new Map(
-        (reviewers ?? []).map((reviewer) => [String(reviewer.id), String(reviewer.full_name ?? '').trim()])
-      );
-    }
+    // Neither lookup depends on the other's result, so run them concurrently
+    // instead of two sequential round trips.
+    const [previousPiMap, reviewerNameMap] = await Promise.all([
+      (async () => {
+        if (previousSubmissionIds.length === 0) return new Map<string, string | null>();
+        const { data: previousRows, error: previousRowsError } = await userClient
+          .from('intake_submissions')
+          .select('id, proforma_invoice')
+          .in('id', previousSubmissionIds);
+        if (previousRowsError) throw new Error(previousRowsError.message);
+        return new Map((previousRows ?? []).map((row) => [String(row.id), row.proforma_invoice ? String(row.proforma_invoice) : null]));
+      })(),
+      (async () => {
+        if (reviewedByIds.length === 0) return new Map<string, string>();
+        const { data: reviewers, error: reviewersError } = await userClient
+          .from('users')
+          .select('id, full_name')
+          .in('id', reviewedByIds);
+        if (reviewersError) throw new Error(reviewersError.message);
+        return new Map((reviewers ?? []).map((reviewer) => [String(reviewer.id), String(reviewer.full_name ?? '').trim()]));
+      })(),
+    ]);
 
     const submissions = pageRows.map((row) => ({
       ...row,
