@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '@/lib/server/supabase';
-import { setAuthCookies } from '@/lib/server/services/authCookies';
+import { issueAppSessionResponse, resolveActiveAppUserBySupabaseAuthId } from '@/lib/server/services/authSession';
 
 function isCreateDomainEmail(email: string) {
   return email.toLowerCase().endsWith('@create.wtf');
@@ -47,27 +47,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: error?.message || 'Login failed' }, { status: 401 });
     }
 
-    // Ensure authenticated identity matches provisioned identity.
-    if (appUser.supabase_auth_id !== data.user.id) {
-      return NextResponse.json({ success: false, error: 'Account mismatch. Contact admin/finance.' }, { status: 403 });
+    // Ensure authenticated identity matches provisioned identity, then issue the session.
+    const resolved = await resolveActiveAppUserBySupabaseAuthId(svc, data.user.id);
+    if (!resolved.ok) {
+      const message =
+        resolved.reason === 'inactive'
+          ? 'Account is inactive. Contact admin/finance.'
+          : 'Account mismatch. Contact admin/finance.';
+      return NextResponse.json({ success: false, error: message }, { status: 403 });
     }
 
-    const res = NextResponse.json(
-      {
-        success: true,
-        user: {
-          id: appUser.id,
-          email: appUser.email,
-          role: appUser.role,
-          status: appUser.status,
-          business_line: appUser.business_line,
-        },
-      },
-      { status: 200 }
-    );
-
-    setAuthCookies(res, data.session.access_token, data.session.refresh_token);
-    return res;
+    return issueAppSessionResponse(resolved.user, data.session.access_token, data.session.refresh_token);
   } catch (e) {
     return NextResponse.json({ success: false, error: e instanceof Error ? e.message : 'Unexpected error' }, { status: 500 });
   }
