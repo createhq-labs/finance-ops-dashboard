@@ -957,7 +957,7 @@ export function LoginExperience({ children }: { children: ReactNode }) {
               position: relative;
               width: 100%;
               max-width: 440px;
-              padding: 40px;
+              padding: 28px 40px 32px;
               border-radius: 28px;
               background: linear-gradient(160deg, #0a0e14 0%, #05070b 100%);
               isolation: isolate;
@@ -1031,7 +1031,7 @@ export function LoginExperience({ children }: { children: ReactNode }) {
             }
 
             .login-card-title {
-              margin: 0 0 10px;
+              margin: 0 0 6px;
               font-size: 38px;
               font-weight: 700;
               color: #ffffff;
@@ -1039,7 +1039,7 @@ export function LoginExperience({ children }: { children: ReactNode }) {
             }
 
             .login-card-subtitle {
-              margin: 0 0 32px;
+              margin: 0 0 20px;
               font-size: 14px;
               color: rgba(255, 255, 255, 0.92);
               text-align: center;
@@ -1052,7 +1052,7 @@ export function LoginExperience({ children }: { children: ReactNode }) {
             }
 
             .login-card-footer {
-              margin: 22px 0 0;
+              margin: 14px 0 0;
               font-size: 12px;
               color: rgba(255, 255, 255, 0.85);
               text-align: center;

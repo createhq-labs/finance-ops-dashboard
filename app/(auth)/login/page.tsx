@@ -154,9 +154,29 @@ export default function LoginPage() {
               className="login-google-button"
             >
               {googleLoading ? (
-                <span className="login-spinner" aria-label="Redirecting to Google" />
+                <span className="login-spinner login-spinner-dark" aria-label="Redirecting to Google" />
               ) : (
-                'Continue with Google'
+                <>
+                  <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false">
+                    <path
+                      fill="#4285F4"
+                      d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.259h2.908c1.702-1.567 2.684-3.874 2.684-6.617z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
+                    />
+                  </svg>
+                  <span>Continue with Google</span>
+                </>
               )}
             </button>
           </>
@@ -172,11 +192,11 @@ export default function LoginPage() {
           .login-form {
             display: flex;
             flex-direction: column;
-            margin-top: 24px;
+            margin-top: 14px;
           }
 
           .login-field {
-            margin-bottom: 16px;
+            margin-bottom: 10px;
           }
 
           .login-field-label {
@@ -204,7 +224,7 @@ export default function LoginPage() {
 
           .login-input {
             width: 100%;
-            height: 48px;
+            height: 38px;
             padding: 0 14px 0 42px;
             border-radius: 10px;
             border: 1px solid rgba(255, 255, 255, 0.18);
@@ -264,8 +284,8 @@ export default function LoginPage() {
           .login-submit {
             --login-button-border-angle: 100deg;
             box-sizing: border-box;
-            height: 48px;
-            margin-top: 8px;
+            height: 38px;
+            margin-top: 34px;
             border: 2px solid transparent;
             border-radius: 10px;
             background:
@@ -321,7 +341,7 @@ export default function LoginPage() {
             display: flex;
             align-items: center;
             gap: 12px;
-            margin: 16px 0;
+            margin: 10px 0;
             font-size: 11px;
             font-weight: 600;
             letter-spacing: 0.08em;
@@ -339,23 +359,30 @@ export default function LoginPage() {
 
           .login-google-button {
             box-sizing: border-box;
-            height: 48px;
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            height: 38px;
+            border: 1px solid #dadce0;
             border-radius: 10px;
-            background: #000000;
-            color: #ffffff;
+            background: #ffffff;
+            color: #1f1f1f;
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: border-color 0.2s ease, background 0.2s ease;
+            gap: 10px;
+            transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
           }
 
           .login-google-button:hover:not(:disabled) {
-            border-color: rgba(6, 182, 212, 0.4);
-            background: rgba(6, 182, 212, 0.06);
+            background: #f1f3f4;
+            border-color: #c4c7cc;
+            box-shadow: 0 8px 20px rgba(255, 255, 255, 0.15);
+            transform: translateY(-1px);
+          }
+
+          .login-google-button:active:not(:disabled) {
+            transform: translateY(0);
           }
 
           .login-google-button:disabled {
@@ -370,6 +397,11 @@ export default function LoginPage() {
             border-top-color: #ffffff;
             border-radius: 50%;
             animation: login-spin 600ms linear infinite;
+          }
+
+          .login-spinner.login-spinner-dark {
+            border-color: rgba(0, 0, 0, 0.15);
+            border-top-color: #1f1f1f;
           }
 
           @keyframes login-spin {
