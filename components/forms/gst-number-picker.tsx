@@ -45,8 +45,10 @@ function getGstChecksumCharacter(value: string) {
   return GST_CHARSET[(GST_CHARSET.length - remainder) % GST_CHARSET.length] ?? "";
 }
 
-function validateGstinProgressive(value: string): GstValidationResult {
+export function validateGstinProgressive(value: string): GstValidationResult {
   if (!value) return { error: null, isCompleteValid: false };
+
+  if (normalizeGstInput(value) === "NA") return { error: null, isCompleteValid: true };
 
   const stateCode = value.slice(0, Math.min(2, value.length));
   if (stateCode && !/^\d+$/.test(stateCode)) {
@@ -210,12 +212,15 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
   const [invalidHintPosition, setInvalidHintPosition] = useState<{ left: number; top: number } | null>(null);
 
   const normalizedValue = normalizeGstInput(value);
+  const isNaValue = normalizedValue === "NA";
   const selectedEntry = useMemo(
     () => options.find((option) => normalizeGstInput(option.gstNumber) === normalizedValue) ?? null,
     [normalizedValue, options]
   );
-  const pendingSelection = Boolean(normalizedValue) && !selectedEntry && mode === "new";
+  const pendingSelection = Boolean(normalizedValue) && !selectedEntry && !isNaValue && mode === "new";
   const normalizedQuery = normalizeGstInput(query);
+  const isNaQuery = normalizedQuery === "NA";
+  const showNaOption = normalizedQuery.length === 0 || "NA".startsWith(normalizedQuery);
   const gstValidation = useMemo(() => validateGstinProgressive(normalizedQuery), [normalizedQuery]);
   const canAddNew = gstValidation.isCompleteValid;
 
@@ -231,7 +236,7 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
     });
   }, [options, query]);
 
-  const showAddState = normalizedQuery.length > 0 && filteredOptions.length === 0;
+  const showAddState = normalizedQuery.length > 0 && filteredOptions.length === 0 && !isNaQuery;
   const remainingCharacters = Math.max(15 - normalizedQuery.length, 0);
   const gstValidationError = gstValidation.error;
 
@@ -281,8 +286,22 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [open]);
 
+  function handleSelectNa() {
+    if (isNaValue) {
+      onClear();
+    } else {
+      onSelect("NA");
+    }
+    setOpen(false);
+    setQuery("");
+  }
+
   function handleAddNew() {
     if (!canAddNew) return;
+    if (normalizedQuery === "NA") {
+      handleSelectNa();
+      return;
+    }
     onStartAddNew();
     onSelect(normalizedQuery);
     setOpen(false);
@@ -324,6 +343,10 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
             <span className="flex min-w-0 items-center gap-2">
               <span className="truncate font-mono text-[13px]">{formatGstForDisplay(selectedEntry.gstNumber)}</span>
               <StatusPill pending={false} />
+            </span>
+          ) : isNaValue ? (
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate font-mono text-[13px]">NA</span>
             </span>
           ) : pendingSelection ? (
             <span className="flex min-w-0 items-center gap-2">
@@ -391,6 +414,11 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
               setOpen(false);
               return;
             }
+            if (event.key === "Enter" && isNaQuery) {
+              event.preventDefault();
+              handleSelectNa();
+              return;
+            }
             if (event.key === "Enter" && showAddState && canAddNew) {
               event.preventDefault();
               handleAddNew();
@@ -413,6 +441,27 @@ export function GstNumberPicker({ value, mode, options, onSelect, onStartAddNew,
               />
             </div>
           </div>
+
+          {showNaOption ? (
+            <div className="gst-picker-entry-list">
+              <button
+                type="button"
+                className={`gst-picker-entry ${isNaValue ? "gst-picker-entry-selected" : ""}`}
+                onClick={handleSelectNa}
+              >
+                <span className={`gst-picker-radio ${isNaValue ? "gst-picker-radio-selected" : ""}`}>
+                  <span
+                    className="gst-picker-radio-dot"
+                    style={{ height: 5, width: 5, borderRadius: 999, background: "#fff", opacity: isNaValue ? 1 : 0 }}
+                  />
+                </span>
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block truncate font-mono gst-picker-gst-text">NA</span>
+                  <span className="block truncate gst-picker-meta-text">No GST applicable</span>
+                </span>
+              </button>
+            </div>
+          ) : null}
 
           {filteredOptions.length > 0 ? <div className="gst-picker-section-label">Saved entries</div> : null}
 
