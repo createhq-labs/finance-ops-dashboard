@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BusinessLine } from '../types/submissions';
 import { deriveInvoiceStatusDbValue } from '../../shared/invoice-status';
+import type { PerfTimer } from '../perf-timing';
 
 type TeamLeadMemberRow = {
   id: string;
@@ -291,7 +292,8 @@ export async function listTeamLeadSubmissions(
     status?: string | null;
     memberQuery?: string | null;
     submissionId?: string | null;
-  }
+  },
+  perf?: PerfTimer
 ): Promise<TeamLeadSubmissionListResult> {
   const { teamLeadId, limit, offset, query, status, memberQuery, submissionId } = params;
 
@@ -301,6 +303,7 @@ export async function listTeamLeadSubmissions(
     .eq('team_lead_id', teamLeadId);
 
   if (mappingsError) throw new Error(mappingsError.message);
+  perf?.log('team_membership_lookup');
 
   let employeeIds = Array.from(new Set((mappings ?? []).map((item) => String(item.employee_id)).filter(Boolean)));
   if (employeeIds.length === 0) {
@@ -321,6 +324,7 @@ export async function listTeamLeadSubmissions(
     if (employeeIds.length === 0) {
       return { submissions: [], has_more: false, next_offset: null, offset, limit };
     }
+    perf?.log('member_query_filter_lookup');
   }
 
   let submissionsQuery = client
@@ -358,6 +362,7 @@ export async function listTeamLeadSubmissions(
   const { data, error } = await submissionsQuery.range(offset, offset + limit);
 
   if (error) throw new Error(error.message);
+  perf?.log('main_intake_submissions_query');
 
   const pageRows = ((data ?? []) as Array<Record<string, unknown>>).slice(0, limit);
   const hasMore = ((data ?? []) as Array<Record<string, unknown>>).length > limit;
@@ -392,6 +397,7 @@ export async function listTeamLeadSubmissions(
       normalizedUsers.map((user) => [user.id, String(user.full_name ?? '').trim()])
     );
   }
+  perf?.log('user_enrichment_lookup');
 
   let previousPiMap = new Map<string, string | null>();
   if (previousSubmissionIds.length > 0) {
@@ -407,6 +413,7 @@ export async function listTeamLeadSubmissions(
       ])
     );
   }
+  perf?.log('previous_submission_enrichment');
 
   const submissions = pageRows.map((row) => {
     const owner = userMap.get(String(row.submitted_by ?? ''));
@@ -421,6 +428,7 @@ export async function listTeamLeadSubmissions(
       version_status: mapVersionStatus(previousSubmissionId, row.is_latest_version as boolean | null | undefined),
     };
   });
+  perf?.log('response_row_mapping');
 
   return {
     submissions,

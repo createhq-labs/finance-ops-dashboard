@@ -5,6 +5,7 @@ import { AlertTriangle, Bell, Check, CheckCircle2, ExternalLink, X } from 'lucid
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDashboardSession } from '../layout/dashboard-session';
 import { isEmployeeRole } from '../../lib/client/dashboard-access';
+import { getPollingIntervalMs } from '../../lib/client/polling-interval';
 import { useDashboardRefresh } from '../../lib/client/use-dashboard-refresh';
 import {
   getNotificationDisplayType,
@@ -13,12 +14,17 @@ import {
   getCompletedNotificationTitle,
   getNotificationCategory,
   getNotificationCategoryLabel,
+  getNotificationSyncWatermark,
+  mergeNotifications,
   sortNotificationsLatestFirst,
+  trimNotificationsToWindow,
   isClosedSubmissionReopenedNotification,
   isNotificationCompleted,
   type NotificationCategory,
   type NotificationRow,
 } from '../../lib/client/notification-utils';
+
+const BELL_NOTIFICATION_LIMIT = 100;
 
 type Props = {
   onUnreadCountChange?: (count: number) => void;
@@ -88,31 +94,60 @@ export function NotificationBellIcon({ onUnreadCountChange, variant = 'default' 
     [visibleNotifications]
   );
 
-  const loadNotifications = useCallback(async () => {
+  const notificationsRef = useRef<NotificationRow[]>([]);
+  useEffect(() => {
+    notificationsRef.current = notifications;
+  }, [notifications]);
+
+  const loadNotifications = useCallback(async (reason: string) => {
     if (!user) return;
-    setLoading(true);
+    const isBackground = reason === 'interval' || reason === 'focus';
+
+    // Background ticks ask only for what changed since the window already
+    // held (see getNotificationSyncWatermark) - if nothing is held yet
+    // (e.g. the initial fetch hasn't populated the list), watermark is null
+    // and the request below falls back to a full fetch automatically, since
+    // the API only enters delta mode when both bounds are present.
+    const watermark = isBackground ? getNotificationSyncWatermark(notificationsRef.current) : null;
+
+    if (!isBackground) setLoading(true);
     try {
-      const res = await fetch('/api/notifications/my?limit=100', {
+      const params = new URLSearchParams({ limit: String(BELL_NOTIFICATION_LIMIT) });
+      if (watermark) {
+        params.set('updated_after', watermark.updatedAfter);
+        params.set('since_created_at', watermark.sinceCreatedAt);
+      }
+
+      const res = await fetch('/api/notifications/my?' + params.toString(), {
         method: 'GET',
         cache: 'no-store',
       });
       const json = await res.json().catch(() => ({}));
-      if (res.ok && json?.success && Array.isArray(json.notifications)) {
-        const next = sortNotificationsLatestFirst(json.notifications as NotificationRow[]);
-        setNotifications(next);
-        const nextUnreadCount = Number(json.unread_count ?? 0);
-        setApiUnreadCount(nextUnreadCount);
-        onUnreadCountChange?.(nextUnreadCount);
+      if (!res.ok || !json?.success) return;
+
+      const nextUnreadCount = Number(json.unread_count ?? 0);
+      setApiUnreadCount(nextUnreadCount);
+      onUnreadCountChange?.(nextUnreadCount);
+
+      const incoming = Array.isArray(json.notifications) ? (json.notifications as NotificationRow[]) : [];
+
+      if (json.mode === 'delta') {
+        // Nothing changed since the last poll - leave the current list as-is
+        // rather than replacing it with an empty response.
+        if (incoming.length === 0) return;
+        setNotifications((current) => trimNotificationsToWindow(mergeNotifications(current, incoming), BELL_NOTIFICATION_LIMIT));
+      } else {
+        setNotifications(sortNotificationsLatestFirst(incoming));
       }
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   }, [onUnreadCountChange, user]);
 
   useDashboardRefresh({
     enabled: Boolean(user),
     refresh: loadNotifications,
-    intervalMs: 30000,
+    intervalMs: getPollingIntervalMs(user?.role),
     refreshOnFocus: true,
   });
 

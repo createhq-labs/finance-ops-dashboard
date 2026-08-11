@@ -3,6 +3,7 @@ import { getBearerToken, getCurrentAppUser } from '../../../../lib/server/auth';
 import { assertSupabaseEnv, createUserScopedClient } from '../../../../lib/server/supabase';
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
 import { deriveInvoiceStatusDbValue } from '../../../../lib/shared/invoice-status';
+import { createPerfTimer } from '../../../../lib/server/perf-timing';
 
 type FilterQuery = {
   eq: (column: string, value: unknown) => FilterQuery;
@@ -69,6 +70,8 @@ function applyMyFilters(query: FilterQuery, params: URLSearchParams) {
 }
 
 export async function GET(req: NextRequest) {
+  const perf = createPerfTimer('submissions-my');
+  perf.mark('START');
   try {
     assertSupabaseEnv();
 
@@ -79,9 +82,11 @@ export async function GET(req: NextRequest) {
       token = getAccessTokenFromCookieHeader(req.cookies) ?? '';
     }
     if (!token) throw new Error('Missing auth token');
+    perf.log('request_parse_and_token');
 
     const userClient = createUserScopedClient(token);
     const appUser = await getCurrentAppUser(userClient, token);
+    perf.log('auth_app_user_resolve');
     const params = req.nextUrl.searchParams;
     const limit = clampLimit(params.get('limit'), 50);
     const offset = parseOffset(params.get('offset'));
@@ -135,6 +140,7 @@ export async function GET(req: NextRequest) {
     if (error) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }
+    perf.log('main_intake_submissions_query');
 
     const pageRows = (data ?? []).slice(0, limit) as Array<Record<string, unknown>>;
     const hasMore = (data ?? []).length > limit;
@@ -163,6 +169,7 @@ export async function GET(req: NextRequest) {
         return new Map((reviewers ?? []).map((reviewer) => [String(reviewer.id), String(reviewer.full_name ?? '').trim()]));
       })(),
     ]);
+    perf.log('previous_submission_and_reviewer_enrichment');
 
     const submissions = pageRows.map((row) => ({
       ...row,
@@ -171,8 +178,9 @@ export async function GET(req: NextRequest) {
       previous_submission_pi: row.previous_submission_id ? previousPiMap.get(String(row.previous_submission_id)) ?? null : null,
       version_status: mapVersionStatus(row.previous_submission_id ? String(row.previous_submission_id) : null, row.is_latest_version as boolean | null | undefined),
     }));
+    perf.log('response_row_mapping');
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         success: true,
         submissions,
@@ -183,6 +191,9 @@ export async function GET(req: NextRequest) {
       },
       { status: 200 }
     );
+    perf.log('json_response_prepare');
+    perf.total();
+    return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected error';
     return NextResponse.json({ success: false, error: message }, { status: 400 });

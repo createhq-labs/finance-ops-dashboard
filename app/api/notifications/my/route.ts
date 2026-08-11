@@ -16,6 +16,16 @@ function parseOffset(value: string | null) {
   return parsed;
 }
 
+function parseSyncTimestamp(value: string | null) {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return null;
+  return value;
+}
+
+const NOTIFICATIONS_SELECT =
+  'id, role_target, type, title, message, related_submission_id, related_review_id, target_path, is_read, created_at, updated_at';
+
 type SubmissionStatusRow = {
   id: string;
   intake_status: string | null;
@@ -97,16 +107,41 @@ export async function GET(req: NextRequest) {
     const limit = clampLimit(req.nextUrl.searchParams.get('limit'), 40);
     const offset = parseOffset(req.nextUrl.searchParams.get('offset'));
 
-    // The unread count is independent of the page of notifications being
-    // returned (same user_id, different filter/no range), so it can run
-    // concurrently with the list query instead of after it.
+    // Incremental sync mode: only active when BOTH bounds are present and
+    // valid. Absent/invalid -> falls straight through to the existing full
+    // paginated fetch below, unchanged. `updated_after` is a watermark the
+    // caller can only have gotten from a previous response's own rows, so a
+    // delta query can never miss a row it hasn't already shown the caller.
+    // `since_created_at` bounds results to the recency window the caller
+    // already holds, so a change to a notification the caller has never
+    // fetched (e.g. one older than everything currently loaded) is not
+    // incorrectly reintroduced - matching what a fresh full fetch of that
+    // window would show.
+    const updatedAfter = parseSyncTimestamp(req.nextUrl.searchParams.get('updated_after'));
+    const sinceCreatedAt = parseSyncTimestamp(req.nextUrl.searchParams.get('since_created_at'));
+    const isDeltaMode = Boolean(updatedAfter && sinceCreatedAt);
+
+    const listQuery = isDeltaMode
+      ? userClient
+          .from('notifications')
+          .select(NOTIFICATIONS_SELECT)
+          .eq('user_id', appUser.id)
+          .gt('updated_at', updatedAfter as string)
+          .gte('created_at', sinceCreatedAt as string)
+          .order('created_at', { ascending: false })
+      : userClient
+          .from('notifications')
+          .select(NOTIFICATIONS_SELECT)
+          .eq('user_id', appUser.id)
+          .order('created_at', { ascending: false })
+          .range(offset, offset + limit);
+
+    // The unread count is independent of the page/delta of notifications
+    // being returned (same user_id, different filter/no range), so it can
+    // run concurrently with the list query instead of after it. It is always
+    // computed fresh and authoritative, in both modes.
     const [{ data, error }, { count, error: countError }] = await Promise.all([
-      userClient
-        .from('notifications')
-        .select('id, role_target, type, title, message, related_submission_id, related_review_id, target_path, is_read, created_at')
-        .eq('user_id', appUser.id)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + limit),
+      listQuery,
       userClient
         .from('notifications')
         .select('id', { count: 'exact', head: true })
@@ -117,7 +152,7 @@ export async function GET(req: NextRequest) {
     if (error) throw new Error(error.message);
     if (countError) throw new Error(countError.message);
 
-    const items = (data ?? []).slice(0, limit);
+    const items = isDeltaMode ? (data ?? []) : (data ?? []).slice(0, limit);
     const submissionIds = Array.from(new Set(items.flatMap((item) => (item.related_submission_id ? [String(item.related_submission_id)] : []))));
     const reviewIds = Array.from(new Set(items.flatMap((item) => (item.related_review_id ? [String(item.related_review_id)] : []))));
     const [{ submissionMap, successorSet }, reviewMap] = await Promise.all([
@@ -138,8 +173,20 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    if (isDeltaMode) {
+      return NextResponse.json({
+        success: true,
+        mode: 'delta',
+        notifications: enrichedItems,
+        unread_count: count ?? 0,
+      });
+    }
+
     const hasMore = (data ?? []).length > limit;
 
+    // No `mode` field here - no consumer branches on it for the legacy path
+    // (only the delta path's `mode: 'delta'` is checked), so the full-fetch
+    // response shape is kept byte-for-byte identical to before Task 3.
     return NextResponse.json({
       success: true,
       notifications: enrichedItems,

@@ -4,6 +4,7 @@ import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
 import { deriveInvoiceStatusDbValue, normalizeInvoiceStatusMachine } from '../../../../lib/shared/invoice-status';
 import { sortFinanceQueueRows, type FinanceQueueLineItem } from '../../../../lib/client/finance-queue-sort';
+import { createPerfTimer } from '../../../../lib/server/perf-timing';
 
 const EMPTY_UUID = '00000000-0000-0000-0000-000000000000';
 // Safety bound so the full filtered queue can be fetched and sorted before
@@ -132,6 +133,9 @@ function applyFinanceFilters(
 }
 
 export async function GET(req: NextRequest) {
+  const perf = createPerfTimer('submissions-finance');
+  perf.mark('START');
+  let chainRpcCalls = 0;
   try {
     assertSupabaseEnv();
 
@@ -142,28 +146,46 @@ export async function GET(req: NextRequest) {
       token = getAccessTokenFromCookieHeader(req.cookies) ?? '';
     }
     if (!token) throw new Error('Missing auth token');
+    perf.log('request_parse_and_token');
 
     const userClient = createUserScopedClient(token);
     const appUser = await getCurrentAppUser(userClient, token);
     if (!(appUser.role === 'finance' || appUser.role === 'admin')) {
       throw new Error('Unauthorized');
     }
+    perf.log('auth_app_user_resolve');
 
     const params = req.nextUrl.searchParams;
     const limit = clampLimit(params.get('limit'), 50);
     const offset = parseOffset(params.get('offset'));
     const employeeFilter = params.get('employee');
     const search = params.get('query')?.trim() || '';
+    // Opt-in lightweight mode for callers (currently only the Finance/Admin
+    // Overview page) that render summary/list data derived from the exact
+    // same rows, ordering, pagination, chain resolution and aggregates as
+    // the default response, but never read attachment metadata or
+    // previous-submission snapshots. Absent -> byte-for-byte the existing
+    // behavior below; every row-selection/sort/chain code path is shared
+    // and unconditional, only the SELECT projection and one enrichment step
+    // change when this is set.
+    const isOverviewMode = params.get('view') === 'overview';
+    perf.mark(isOverviewMode ? 'mode=overview' : 'mode=full');
+
+    // Neither lookup depends on the other's result (different search terms
+    // against the same users table), so run them concurrently.
+    const [employeeFilterResult, searchUsersResult] = await Promise.all([
+      employeeFilter && employeeFilter !== 'all'
+        ? userClient.from('users').select('id').or('full_name.ilike.%' + employeeFilter + '%,email.ilike.%' + employeeFilter + '%')
+        : Promise.resolve(null),
+      search
+        ? userClient.from('users').select('id').or('full_name.ilike.%' + search + '%,email.ilike.%' + search + '%')
+        : Promise.resolve(null),
+    ]);
 
     let employeeIds: string[] | null = null;
-    if (employeeFilter && employeeFilter !== 'all') {
-      const { data: users, error: usersError } = await userClient
-        .from('users')
-        .select('id')
-        .or('full_name.ilike.%' + employeeFilter + '%,email.ilike.%' + employeeFilter + '%');
-
-      if (usersError) throw new Error(usersError.message);
-      employeeIds = (users ?? []).map((user) => String(user.id ?? '')).filter(Boolean);
+    if (employeeFilterResult) {
+      if (employeeFilterResult.error) throw new Error(employeeFilterResult.error.message);
+      employeeIds = (employeeFilterResult.data ?? []).map((user) => String(user.id ?? '')).filter(Boolean);
       if (employeeIds.length === 0) {
         return NextResponse.json(
           { success: true, submissions: [], has_more: false, next_offset: null, offset, limit },
@@ -173,18 +195,24 @@ export async function GET(req: NextRequest) {
     }
 
     let searchSubmittedByIds: string[] | null = null;
-    if (search) {
-      const { data: searchUsers, error: searchUsersError } = await userClient
-        .from('users')
-        .select('id')
-        .or('full_name.ilike.%' + search + '%,email.ilike.%' + search + '%');
-
-      if (searchUsersError) throw new Error(searchUsersError.message);
-      searchSubmittedByIds = (searchUsers ?? []).map((user) => String(user.id ?? '')).filter(Boolean);
+    if (searchUsersResult) {
+      if (searchUsersResult.error) throw new Error(searchUsersResult.error.message);
+      searchSubmittedByIds = (searchUsersResult.data ?? []).map((user) => String(user.id ?? '')).filter(Boolean);
     }
+    perf.log('employee_filter_search_user_lookup');
+
+    // Never used by Overview (see app/(dashboard)/dashboard/page.tsx - the
+    // mapped FinanceOverviewApiRow/SubmissionRow never reads
+    // submission_attachments or the product/reference-PO attachments
+    // derived from it); Finance Review still gets this embed unconditionally
+    // via the default (non-overview) request every one of its call sites
+    // already makes.
+    const submissionAttachmentsSelect = isOverviewMode
+      ? ''
+      : ', submission_attachments(id,document_type,file_name,file_size_bytes,mime_type,uploaded_at)';
 
     const baseSelect =
-      'id, submitted_by, reviewed_by, reviewed_at, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, finance_notes, finance_external_notes, finance_comment, payment_received, payment_received_status, creator_invoice_status, invoice_via_creators_received, payment_made, payment_made_status, closed, closure_status, invoice_number, debit_note_number, sync_status, is_latest_version, submission_attachments(id,document_type,file_name,file_size_bytes,mime_type,uploaded_at), intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
+      'id, submitted_by, reviewed_by, reviewed_at, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, finance_notes, finance_external_notes, finance_comment, payment_received, payment_received_status, creator_invoice_status, invoice_via_creators_received, payment_made, payment_made_status, closed, closure_status, invoice_number, debit_note_number, sync_status, is_latest_version' + submissionAttachmentsSelect + ', intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
     const legacySelect =
       'id, submitted_by, reviewed_by, reviewed_at, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, finance_notes, payment_received, payment_made, closed, invoice_number, debit_note_number, sync_status, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
 
@@ -269,6 +297,7 @@ export async function GET(req: NextRequest) {
       const cached = chainCache.get(submissionId);
       if (cached) return cached;
 
+      chainRpcCalls += 1;
       const { data: chainRows, error: chainError } = await serviceClient.rpc('resolve_submission_chain', {
         p_submission_id: submissionId,
       });
@@ -306,6 +335,7 @@ export async function GET(req: NextRequest) {
     if (error) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }
+    perf.log('main_intake_submissions_query');
 
     const allRows = (data ?? []) as Array<Record<string, unknown>>;
     const aggregates: FinanceAggregateCounts = {
@@ -313,6 +343,7 @@ export async function GET(req: NextRequest) {
       accepted: allRows.filter((row) => row.intake_status === 'accepted').length,
       resubmission_requested: allRows.filter((row) => row.intake_status === 'rejected').length,
     };
+    perf.log('aggregate_counts_compute');
 
     const acceptedIds = Array.from(new Set(allRows.filter((row) => row.intake_status === 'accepted').map((row) => String(row.id))));
 
@@ -333,6 +364,7 @@ export async function GET(req: NextRequest) {
         acceptedAtMap.set(submissionId, String(logRow.created_at));
       }
     }
+    perf.log('accepted_at_activity_log_query');
 
     let latestRows: Array<Record<string, unknown>> = [];
     if (search) {
@@ -381,6 +413,8 @@ export async function GET(req: NextRequest) {
 
       latestRows = (latestData ?? []) as Array<Record<string, unknown>>;
     }
+    perf.log('latest_version_rows_resolve');
+    perf.mark(`chain_rpc_calls_so_far=${chainRpcCalls}`);
 
     const sortableRows = latestRows.map((row) => ({
       id: String(row.id),
@@ -395,6 +429,7 @@ export async function GET(req: NextRequest) {
     const sortedLatestRows = sortFinanceQueueRows(sortableRows).map((sortableRow) => latestRowsById.get(sortableRow.id)!);
     const pageLatestRows = sortedLatestRows.slice(offset, offset + limit) as Array<Record<string, unknown>>;
     const hasMore = sortedLatestRows.length > offset + limit;
+    perf.log('sort_and_paginate');
 
     const chainIdBuckets = await Promise.all(
       pageLatestRows.map(async (row) => {
@@ -402,6 +437,8 @@ export async function GET(req: NextRequest) {
         return resolveChainBucket(latestId);
       })
     );
+    perf.log('page_chain_resolve');
+    perf.mark(`chain_rpc_calls_total=${chainRpcCalls}`);
 
     const historyIds = Array.from(
       new Set(
@@ -410,6 +447,7 @@ export async function GET(req: NextRequest) {
     );
     const historyRows = await fetchRowsByIds(historyIds);
     const historyRowsById = new Map(historyRows.map((row) => [String(row.id), row]));
+    perf.log('history_rows_fetch');
     const pageRows = pageLatestRows.flatMap((row) => {
       const latestId = String(row.id);
       const chain = chainIdBuckets.find((bucket) => bucket.latestId === latestId);
@@ -448,6 +486,7 @@ export async function GET(req: NextRequest) {
         acceptedAtMap.set(submissionId, String(logRow.created_at));
       }
     }
+    perf.log('page_accepted_at_activity_log_query');
 
     const allSubmittedByIds = Array.from(new Set(allRows.map((row) => String(row.submitted_by ?? '')).filter(Boolean)));
     const pageSubmittedByIds = Array.from(new Set(pageRows.map((row) => String(row.submitted_by ?? '')).filter(Boolean)));
@@ -463,29 +502,39 @@ export async function GET(req: NextRequest) {
       }
       userMap = new Map((users ?? []).map((user) => [String(user.id), { full_name: String(user.full_name ?? ''), email: String(user.email ?? '') }]));
     }
+    perf.log('user_enrichment_lookup');
 
-    const employeeDirectory = Array.from(
-      new Map(
-        allRows
-          .map((row) => {
-            const owner = userMap.get(String(row.submitted_by ?? ''));
-            const email = String(owner?.email ?? row.email_address ?? '').trim();
-            if (!email) return null;
-            return [
-              email,
-              {
-                email,
-                full_name: owner?.full_name?.trim() || null,
-              } satisfies EmployeeDirectoryEntry,
-            ] as const;
-          })
-          .filter((entry): entry is readonly [string, EmployeeDirectoryEntry] => Boolean(entry))
-      ).values()
-    );
+    // Only used by Finance Review's employee-filter dropdown; the Overview
+    // fetch never reads `employee_directory`, so skip building it in
+    // overview mode.
+    const employeeDirectory = isOverviewMode
+      ? []
+      : Array.from(
+          new Map(
+            allRows
+              .map((row) => {
+                const owner = userMap.get(String(row.submitted_by ?? ''));
+                const email = String(owner?.email ?? row.email_address ?? '').trim();
+                if (!email) return null;
+                return [
+                  email,
+                  {
+                    email,
+                    full_name: owner?.full_name?.trim() || null,
+                  } satisfies EmployeeDirectoryEntry,
+                ] as const;
+              })
+              .filter((entry): entry is readonly [string, EmployeeDirectoryEntry] => Boolean(entry))
+          ).values()
+        );
+    perf.log('employee_directory_build');
 
     let previousPiMap = new Map<string, string | null>();
     let previousSubmissionMap = new Map<string, Record<string, unknown>>();
-    if (previousSubmissionIds.length > 0) {
+    // Neither previous_submission_pi nor previous_submission_snapshot is
+    // read by Overview (see app/(dashboard)/dashboard/page.tsx) - skip the
+    // extra query (and its own nested intake_line_items join) entirely.
+    if (!isOverviewMode && previousSubmissionIds.length > 0) {
       // previousPiMap only needs `proforma_invoice`, which this select
       // already includes - deriving it from the same rows avoids running an
       // identical `.in(id)` lookup against intake_submissions twice.
@@ -501,7 +550,13 @@ export async function GET(req: NextRequest) {
         (previousSubmissionRows ?? []).map((row) => [String(row.id), row.proforma_invoice ? String(row.proforma_invoice) : null])
       );
     }
+    perf.log('previous_submission_enrichment');
 
+    // previous_submission_pi/previous_submission_snapshot are only ever
+    // computed when !isOverviewMode (see previousPiMap/previousSubmissionMap
+    // above) - omit the keys entirely in overview mode rather than
+    // serializing a fabricated `null` in place of data that was
+    // intentionally not fetched.
     const submissions = pageRows.map((row) => {
       const owner = userMap.get(String(row.submitted_by ?? ''));
       return {
@@ -510,19 +565,28 @@ export async function GET(req: NextRequest) {
         submitted_by_name: owner?.full_name ?? null,
         submitted_by_email: owner?.email ?? null,
         reviewed_by_name: row.reviewed_by ? userMap.get(String(row.reviewed_by ?? ''))?.full_name ?? null : null,
-        previous_submission_pi: row.previous_submission_id ? previousPiMap.get(String(row.previous_submission_id)) ?? null : null,
-        previous_submission_snapshot: row.previous_submission_id ? previousSubmissionMap.get(String(row.previous_submission_id)) ?? null : null,
+        ...(isOverviewMode
+          ? {}
+          : {
+              previous_submission_pi: row.previous_submission_id ? previousPiMap.get(String(row.previous_submission_id)) ?? null : null,
+              previous_submission_snapshot: row.previous_submission_id ? previousSubmissionMap.get(String(row.previous_submission_id)) ?? null : null,
+            }),
         version_status: mapVersionStatus(row.previous_submission_id ? String(row.previous_submission_id) : null, row.is_latest_version as boolean | null | undefined),
         accepted_at: acceptedAtMap.get(String(row.id)) ?? null,
       };
     });
+    perf.log('response_row_mapping');
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         success: true,
         submissions,
         aggregates,
-        employee_directory: employeeDirectory,
+        // employee_directory is only ever built when !isOverviewMode (see
+        // employeeDirectory above) - omit the key entirely in overview mode
+        // rather than serializing a fabricated `[]` in place of data that
+        // was intentionally not fetched.
+        ...(isOverviewMode ? {} : { employee_directory: employeeDirectory }),
         has_more: hasMore,
         next_offset: hasMore ? offset + limit : null,
         offset,
@@ -530,6 +594,9 @@ export async function GET(req: NextRequest) {
       },
       { status: 200 }
     );
+    perf.log('json_response_prepare');
+    perf.total();
+    return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected error';
     return NextResponse.json({ success: false, error: message }, { status: 400 });
