@@ -1135,8 +1135,13 @@ export function InvoiceIntakeForm({
       return;
     }
 
-    setManualLocationEdits({ city: false, state: false, country: false, pincode: false });
-    setAutoFilledLocation({ city: true, state: true, country: true, pincode: true });
+    // Approved mapping-derived values are authoritative Master Data, not
+    // parser output: mark them the same way a manual employee correction is
+    // marked so the address-reparse effect (which already skips
+    // manualLocationEdits fields) leaves them alone instead of re-deriving
+    // or clearing them from `mapped.address`.
+    setManualLocationEdits({ city: true, state: true, country: true, pincode: true });
+    setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
     const inferredMappedAddress = inferAddressData(mapped.address, values.clientType);
     const nextAddress = {
       addressLine: mapped.address,
