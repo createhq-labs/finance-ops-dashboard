@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AppRole, AppUser } from '../types/submissions';
 import type { GstAddressReviewPayload } from './masterDataReviews';
 import { logActivityEvent } from './activityLog';
+import type { PerfTimer } from '../perf-timing';
 
 export type MasterDataReviewType = 'agency' | 'brand' | 'creator' | 'agency_gst_address' | 'brand_gst_address';
 export type MasterDataReviewStatus = 'pending' | 'approved' | 'rejected';
@@ -161,15 +162,32 @@ async function fetchReviewRecord(adminClient: SupabaseClient, reviewId: string) 
   return data as MasterDataReviewRecord;
 }
 
-export async function listMasterDataReviews(userClient: SupabaseClient): Promise<MasterDataReviewListItem[]> {
-  const { data, error } = await userClient
+export async function listMasterDataReviews(
+  userClient: SupabaseClient,
+  options: { updatedAfter?: string } = {},
+  perf?: PerfTimer
+): Promise<MasterDataReviewListItem[]> {
+  let query = userClient
     .from('master_data_reviews')
     .select('id, type, submitted_value, normalized_value, submitted_trade_name, payload, status, created_from_submission_id, submitted_by, reviewed_by, reviewed_at, rejection_reason, last_edited_by, last_edited_at, edit_reason, created_at, updated_at')
     .order('created_at', { ascending: false });
 
+  // Delta mode intentionally ignores status/type filtering - callers that
+  // use `updatedAfter` are expected to already hold the full unfiltered set
+  // (see /api/master-data/reviews) and merge every changed row into it,
+  // relying on their own client-side status/type filtering to reclassify
+  // rows whose status changed, rather than the server silently dropping a
+  // row that just left a status filter.
+  if (options.updatedAfter) {
+    query = query.gt('updated_at', options.updatedAfter);
+  }
+
+  const { data, error } = await query;
+
   if (error) {
     throw new Error(error.message);
   }
+  perf?.log('main_master_data_reviews_query');
 
   const rows = (data ?? []) as MasterDataReviewRecord[];
   const userIds = Array.from(new Set(rows.flatMap((row) => [row.submitted_by, row.reviewed_by, row.last_edited_by]).filter(Boolean))) as string[];
@@ -186,13 +204,39 @@ export async function listMasterDataReviews(userClient: SupabaseClient): Promise
 
   if (usersRes.error) throw new Error(usersRes.error.message);
   if (submissionsRes.error) throw new Error(submissionsRes.error.message);
+  perf?.log('related_user_and_submission_enrichment');
 
   const userMap = asUserMap((usersRes.data ?? []) as UserSummary[]);
   const submissionMap = new Map(
     ((submissionsRes.data ?? []) as Array<{ id: string; proforma_invoice: string | null }>).map((row) => [String(row.id), row.proforma_invoice ?? null])
   );
 
-  return rows.map((row) => mapReviewRow(row, userMap, submissionMap));
+  const mapped = rows.map((row) => mapReviewRow(row, userMap, submissionMap));
+  perf?.log('response_row_mapping');
+  return mapped;
+}
+
+/**
+ * Cheap, authoritative status counts across every review the user can see -
+ * no per-row user/submission enrichment. Used to keep summary counters
+ * correct in delta mode without re-fetching (and re-enriching) the full
+ * review set on every poll just to derive three numbers.
+ */
+export async function getMasterDataReviewSummary(userClient: SupabaseClient) {
+  const { data, error } = await userClient.from('master_data_reviews').select('status');
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rows = (data ?? []) as Array<{ status: MasterDataReviewStatus }>;
+
+  return {
+    total: rows.length,
+    pending: rows.filter((row) => row.status === 'pending').length,
+    approved: rows.filter((row) => row.status === 'approved').length,
+    rejected: rows.filter((row) => row.status === 'rejected').length,
+  };
 }
 
 async function loadActiveBrandRows(adminClient: SupabaseClient) {

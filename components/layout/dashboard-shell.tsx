@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { ReactNode, useEffect, useMemo, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { BarChart3, Bell, BookOpen, BriefcaseBusiness, ClipboardList, Database, FilePlus, Home, ListChecks, LogOut, Settings, Users } from 'lucide-react';
 import {
   canAccessDashboardPath,
@@ -16,6 +16,8 @@ import {
   getInvoiceIntakePath,
   getSubmissionsLabel,
 } from '../../lib/client/dashboard-access';
+import { getPollingIntervalMs } from '../../lib/client/polling-interval';
+import { useDashboardRefresh } from '../../lib/client/use-dashboard-refresh';
 import { DashboardNavbar } from './dashboard-navbar';
 import { DashboardSessionProvider, useDashboardSession } from './dashboard-session';
 import { WorkspaceLoader } from './workspace-loader';
@@ -43,32 +45,35 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
     }
   }, [loading, pathname, router, user]);
 
+  const canSeeFollowUpCount = Boolean(user) && !loading && canViewFollowUps(user?.role ?? 'employee');
+
   useEffect(() => {
-    if (loading || !user || !canViewFollowUps(user.role)) {
-      setFollowUpCount(0);
-      return;
-    }
+    if (!canSeeFollowUpCount) setFollowUpCount(0);
+  }, [canSeeFollowUpCount]);
 
-    let active = true;
-    const loadFollowUpCount = async () => {
-      try {
-        const response = await fetch('/api/follow-ups/count', { method: 'GET', cache: 'no-store' });
-        const body = await response.json().catch(() => ({}));
-        if (active && response.ok && body?.success) {
-          setFollowUpCount(Number(body.count) > 0 ? Number(body.count) : 0);
-        }
-      } catch {
-        if (active) setFollowUpCount(0);
+  const loadFollowUpCount = useCallback(async () => {
+    try {
+      const response = await fetch('/api/follow-ups/count', { method: 'GET', cache: 'no-store' });
+      const body = await response.json().catch(() => ({}));
+      if (response.ok && body?.success) {
+        setFollowUpCount(Number(body.count) > 0 ? Number(body.count) : 0);
       }
-    };
+    } catch {
+      setFollowUpCount(0);
+    }
+  }, []);
 
-    void loadFollowUpCount();
-    const timer = window.setInterval(loadFollowUpCount, 60000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [loading, user]);
+  // Sidebar follow-up badge: same read-only endpoint the Follow-ups page
+  // polls for its list, but this is a distinct, unfiltered pending+overdue
+  // count needed on every dashboard page (the list/full-queue endpoint isn't
+  // fetched outside the Follow-ups page itself), so it keeps its own polling
+  // owner rather than being merged into that page's polling.
+  useDashboardRefresh({
+    enabled: canSeeFollowUpCount,
+    refresh: loadFollowUpCount,
+    intervalMs: getPollingIntervalMs(user?.role),
+    refreshOnFocus: true,
+  });
 
   const items = useMemo(() => {
     const role = user?.role;
