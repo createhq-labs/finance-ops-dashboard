@@ -2,7 +2,7 @@
 
 Internal finance operations platform for managing invoice intake, finance review workflows, master data approvals, notifications, and user management.
 
-## Features
+## Features 
 
 - Role-based access control
 - Invoice intake workflow
