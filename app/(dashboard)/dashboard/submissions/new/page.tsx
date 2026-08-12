@@ -13,7 +13,7 @@ import { getPiDisplayMeta } from '../../../../../lib/client/pi-display';
 import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../../lib/shared/submission-attachments';
 import { handleAuthTokenRecoveryMessage } from '../../../../../lib/client/auth-recovery';
 import { canSubmitInvoice, getDefaultDashboardPath } from '../../../../../lib/client/dashboard-access';
-import { parseBillingAddress } from '../../../../../lib/shared/address-utils';
+import { inferAddressData, parseBillingAddress, type BillingAddressParts } from '../../../../../lib/shared/address-utils';
 
 export default function NewSubmissionPage() {
   const router = useRouter();
@@ -146,7 +146,17 @@ export default function NewSubmissionPage() {
       setExistingReferencePoAttachment(toExistingInvoiceAttachment(pickReferencePoAttachment(foundRecord.submission_attachments)));
 
       const lineItems = Array.isArray(foundRecord.intake_line_items) ? foundRecord.intake_line_items : [];
-      const parsedAddress = parseBillingAddress(String(foundRecord.address ?? ''), foundRecord.client_type === 'Foreign' ? 'Foreign' : 'Indian');
+      const rawSubmissionAddress = String(foundRecord.address ?? '');
+      const isForeignResubmission = foundRecord.client_type === 'Foreign';
+      // Foreign resubmissions keep the existing parseBillingAddress derivation
+      // unchanged. For Indian resubmissions, derive structured fields with the
+      // same inference used by the live employee form (inferAddressData) instead
+      // of parseBillingAddress's positional comma-group split, which can shift
+      // address fragments into the wrong field when the pincode isn't its own
+      // standalone comma segment (e.g. "... Bangalore - 560004").
+      const parsedAddress: BillingAddressParts = isForeignResubmission
+        ? parseBillingAddress(rawSubmissionAddress, 'Foreign')
+        : { addressLine: rawSubmissionAddress, ...inferAddressData(rawSubmissionAddress, 'Indian') };
 
       const businessLine = (foundRecord.business_line === 'IM' ? 'IM' : 'TM') as InvoiceIntakeFormValues['businessLine'];
       const entryType = (

@@ -209,6 +209,12 @@ export function InvoiceIntakeForm({
   const formRef = useRef<HTMLFormElement | null>(null);
   const previousBillingBrandRef = useRef("");
   const gstAddressSnapshotRef = useRef<Pick<InvoiceIntakeFormValues, "addressLine" | "city" | "state" | "country" | "pincode"> | null>(null);
+  // Armed on resubmission prefill (see the initialValues effect below) and
+  // consumed by the approved-mapping hydration effect once masters finish
+  // loading and the prefilled GST/entity resolves to an active approved
+  // gst_address_mappings row. Prevents re-hydrating after the employee has
+  // started editing, and prevents repeated hydration on every render.
+  const resubmissionApprovedMappingPendingRef = useRef(false);
   const undoStackRef = useRef<InvoiceIntakeFormValues[]>([]);
   const redoStackRef = useRef<InvoiceIntakeFormValues[]>([]);
   const lastHistoryValuesRef = useRef<InvoiceIntakeFormValues | null>(null);
@@ -455,11 +461,16 @@ export function InvoiceIntakeForm({
     setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
     lastRequestedPincodeRef.current = "";
     gstAddressSnapshotRef.current = null;
+    // Resubmission (not plain view-only) prefill: give the approved-mapping
+    // hydration effect a chance to replace the raw-address-derived structured
+    // fields with the current active gst_address_mappings row, once masters
+    // are available, as long as the employee hasn't started editing yet.
+    resubmissionApprovedMappingPendingRef.current = Boolean(previousSubmissionId) && !viewOnly;
     setFieldErrors({});
     setHasInteracted(false);
     setProductReimbursementAttachmentRemoved(false);
     setReferencePoAttachmentRemoved(false);
-  }, [initialValues, submitterEmail, submitterName]);
+  }, [initialValues, previousSubmissionId, submitterEmail, submitterName, viewOnly]);
 
   useEffect(() => {
     if (viewOnly) return;
@@ -719,6 +730,26 @@ export function InvoiceIntakeForm({
       }, {}),
     [gstMappingsForEntity]
   );
+
+  // Resubmission approved-mapping hydration: a prefilled draft's GST number
+  // may resolve to an active approved gst_address_mappings row for the same
+  // entity that didn't exist (or wasn't matched) when the original submission
+  // was made. Runs once per resubmission load, only until the employee starts
+  // interacting with the form, and only if the prefilled GST/entity actually
+  // resolves to an approved mapping using the same matching semantics as
+  // handleGstSelect (gstMappingByNumber, built from entityType + entityName).
+  useEffect(() => {
+    if (!resubmissionApprovedMappingPendingRef.current) return;
+    if (hasInteracted) return;
+    if (values.clientType !== "Indian") return;
+    const gstKey = values.gstNumber.trim().toUpperCase();
+    if (!gstKey) return;
+    const mapped = gstMappingByNumber[gstKey];
+    if (!mapped) return;
+
+    resubmissionApprovedMappingPendingRef.current = false;
+    applyApprovedGstAddress(mapped);
+  }, [gstMappingByNumber, hasInteracted, values.clientType, values.gstNumber]);
 
   useEffect(() => {
     if (viewOnly) return;
@@ -1118,6 +1149,34 @@ export function InvoiceIntakeForm({
     setError("");
   }
 
+  // Approved mapping-derived values are authoritative Master Data, not
+  // parser output: mark them the same way a manual employee correction is
+  // marked so the address-reparse effect (which already skips
+  // manualLocationEdits fields) leaves them alone instead of re-deriving
+  // or clearing them from `mapped.address`. Shared by the GST picker
+  // (handleGstSelect) and the resubmission approved-mapping hydration effect
+  // so both paths apply an approved mapping identically.
+  function applyApprovedGstAddress(mapped: GstMappingOption) {
+    setManualLocationEdits({ city: true, state: true, country: true, pincode: true });
+    setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
+    const nextAddress = {
+      addressLine: mapped.address,
+      city: mapped.city,
+      state: mapped.state,
+      country: mapped.country || 'India',
+      pincode: mapped.pincode,
+    };
+    gstAddressSnapshotRef.current = nextAddress;
+    setValues((prev) => ({
+      ...prev,
+      gstSelectionMode: "existing",
+      gstNumber: mapped.gstNumber,
+      ...nextAddress,
+    }));
+    clearErrors(["gstNumber", "addressLine", "city", "state", "country", "pincode"]);
+    setError("");
+  }
+
   function handleGstSelect(next: string) {
     const normalizedGst = next.toUpperCase();
     const mapped = gstMappingByNumber[next.trim().toUpperCase()];
@@ -1135,30 +1194,7 @@ export function InvoiceIntakeForm({
       return;
     }
 
-    // Approved mapping-derived values are authoritative Master Data, not
-    // parser output: mark them the same way a manual employee correction is
-    // marked so the address-reparse effect (which already skips
-    // manualLocationEdits fields) leaves them alone instead of re-deriving
-    // or clearing them from `mapped.address`.
-    setManualLocationEdits({ city: true, state: true, country: true, pincode: true });
-    setAutoFilledLocation({ city: false, state: false, country: false, pincode: false });
-    const inferredMappedAddress = inferAddressData(mapped.address, values.clientType);
-    const nextAddress = {
-      addressLine: mapped.address,
-      city: mapped.city || inferredMappedAddress.city,
-      state: mapped.state || inferredMappedAddress.state,
-      country: mapped.country || inferredMappedAddress.country || 'India',
-      pincode: mapped.pincode || inferredMappedAddress.pincode,
-    };
-    gstAddressSnapshotRef.current = nextAddress;
-    setValues((prev) => ({
-      ...prev,
-      gstSelectionMode: "existing",
-      gstNumber: mapped.gstNumber,
-      ...nextAddress,
-    }));
-    clearErrors(["gstNumber", "addressLine", "city", "state", "country", "pincode"]);
-    setError("");
+    applyApprovedGstAddress(mapped);
   }
 
   function handleGstClear() {
