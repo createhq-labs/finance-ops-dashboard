@@ -34,6 +34,36 @@ type EmployeeDirectoryEntry = {
   full_name: string | null;
 };
 
+type SubmissionChainRow = {
+  id: string | null;
+  previous_submission_id: string | null;
+  proforma_invoice?: string | null;
+  is_latest_version?: boolean | null;
+};
+
+type BulkSubmissionChainRow = SubmissionChainRow & {
+  input_submission_id: string | null;
+};
+
+type SubmissionLineItemRow = {
+  submission_id: string | null;
+  creator_name?: string | null;
+  brand_name?: string | null;
+  deliverable_name?: string | null;
+  amount?: number | null;
+  line_order?: number | null;
+};
+
+type SubmissionAttachmentRow = {
+  submission_id: string | null;
+  id: string | null;
+  document_type: string | null;
+  file_name: string | null;
+  file_size_bytes: number | null;
+  mime_type: string | null;
+  uploaded_at?: string | null;
+};
+
 function clampLimit(value: string | null, fallback = 50) {
   const parsed = Number.parseInt(value || '', 10);
   if (Number.isNaN(parsed)) return fallback;
@@ -201,20 +231,10 @@ export async function GET(req: NextRequest) {
     }
     perf.log('employee_filter_search_user_lookup');
 
-    // Never used by Overview (see app/(dashboard)/dashboard/page.tsx - the
-    // mapped FinanceOverviewApiRow/SubmissionRow never reads
-    // submission_attachments or the product/reference-PO attachments
-    // derived from it); Finance Review still gets this embed unconditionally
-    // via the default (non-overview) request every one of its call sites
-    // already makes.
-    const submissionAttachmentsSelect = isOverviewMode
-      ? ''
-      : ', submission_attachments(id,document_type,file_name,file_size_bytes,mime_type,uploaded_at)';
-
     const baseSelect =
-      'id, submitted_by, reviewed_by, reviewed_at, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, finance_notes, finance_external_notes, finance_comment, payment_received, payment_received_status, creator_invoice_status, invoice_via_creators_received, payment_made, payment_made_status, closed, closure_status, invoice_number, debit_note_number, sync_status, is_latest_version' + submissionAttachmentsSelect + ', intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
+      'id, submitted_by, reviewed_by, reviewed_at, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, campaign_code, campaign_name, campaign_brand, campaign_notes, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, business_line, entry_type, entity_type, client_type, agency_name, agency_trade_name, brand_trade_name, finance_notes, finance_external_notes, finance_comment, payment_received, payment_received_status, creator_invoice_status, invoice_via_creators_received, payment_made, payment_made_status, closed, closure_status, invoice_number, debit_note_number, sync_status, is_latest_version';
     const legacySelect =
-      'id, submitted_by, reviewed_by, reviewed_at, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, finance_notes, payment_received, payment_made, closed, invoice_number, debit_note_number, sync_status, intake_line_items(creator_name,brand_name,deliverable_name,amount,line_order)';
+      'id, submitted_by, reviewed_by, reviewed_at, proforma_invoice, currency, agency_brand_name, agency_brand_trade_name, email_address, gst_number, address, bill_due, invoice_type, deliverables, creator_creators_name, brand_name, commercials, additional_agency_commission, reimbursement_amount, reimbursement_receipts, additional_information, intake_status, invoice_status, submitted_at, rejection_note, previous_submission_id, finance_notes, payment_received, payment_made, closed, invoice_number, debit_note_number, sync_status';
 
     const normalizeLegacyRows = (rows: Record<string, unknown>[] | null | undefined) =>
       (rows ?? []).map((row: Record<string, unknown>) => ({
@@ -240,6 +260,7 @@ export async function GET(req: NextRequest) {
         payment_made_status: null,
         closure_status: null,
         is_latest_version: true,
+        intake_line_items: [],
         submission_attachments: [],
       }));
 
@@ -290,6 +311,79 @@ export async function GET(req: NextRequest) {
       return (selectedRows ?? []) as Array<Record<string, unknown>>;
     };
 
+    const fetchLineItemsBySubmissionIds = async (submissionIds: string[]) => {
+      const uniqueSubmissionIds = Array.from(new Set(submissionIds.filter(Boolean)));
+      if (uniqueSubmissionIds.length === 0) return new Map<string, SubmissionLineItemRow[]>();
+
+      const { data: lineItemRows, error: lineItemError } = await userClient
+        .from('intake_line_items')
+        .select('submission_id, creator_name, brand_name, deliverable_name, amount, line_order')
+        .in('submission_id', uniqueSubmissionIds);
+
+      if (lineItemError) {
+        throw new Error(lineItemError.message);
+      }
+
+      const lineItemsBySubmissionId = new Map<string, SubmissionLineItemRow[]>();
+      for (const row of (lineItemRows ?? []) as SubmissionLineItemRow[]) {
+        const submissionId = String(row.submission_id ?? '').trim();
+        if (!submissionId) continue;
+        const entries = lineItemsBySubmissionId.get(submissionId) ?? [];
+        entries.push(row);
+        lineItemsBySubmissionId.set(submissionId, entries);
+      }
+
+      for (const [submissionId, entries] of lineItemsBySubmissionId.entries()) {
+        entries.sort((left, right) => (left.line_order ?? 0) - (right.line_order ?? 0));
+        lineItemsBySubmissionId.set(submissionId, entries);
+      }
+
+      return lineItemsBySubmissionId;
+    };
+
+    const fetchAttachmentsBySubmissionIds = async (submissionIds: string[]) => {
+      const uniqueSubmissionIds = Array.from(new Set(submissionIds.filter(Boolean)));
+      if (uniqueSubmissionIds.length === 0) return new Map<string, SubmissionAttachmentRow[]>();
+
+      const { data: attachmentRows, error: attachmentError } = await userClient
+        .from('submission_attachments')
+        .select('submission_id, id, document_type, file_name, file_size_bytes, mime_type, uploaded_at')
+        .in('submission_id', uniqueSubmissionIds);
+
+      if (attachmentError) {
+        throw new Error(attachmentError.message);
+      }
+
+      const attachmentsBySubmissionId = new Map<string, SubmissionAttachmentRow[]>();
+      for (const row of (attachmentRows ?? []) as SubmissionAttachmentRow[]) {
+        const submissionId = String(row.submission_id ?? '').trim();
+        if (!submissionId) continue;
+        const entries = attachmentsBySubmissionId.get(submissionId) ?? [];
+        entries.push(row);
+        attachmentsBySubmissionId.set(submissionId, entries);
+      }
+
+      return attachmentsBySubmissionId;
+    };
+
+    const attachLineItemsToRows = (
+      rows: Array<Record<string, unknown>>,
+      lineItemsBySubmissionId: Map<string, SubmissionLineItemRow[]>
+    ) =>
+      rows.map((row) => ({
+        ...row,
+        intake_line_items: lineItemsBySubmissionId.get(String(row.id ?? '').trim()) ?? [],
+      }));
+
+    const attachAttachmentsToRows = (
+      rows: Array<Record<string, unknown>>,
+      attachmentsBySubmissionId: Map<string, SubmissionAttachmentRow[]>
+    ) =>
+      rows.map((row) => ({
+        ...row,
+        submission_attachments: attachmentsBySubmissionId.get(String(row.id ?? '').trim()) ?? [],
+      }));
+
     const serviceClient = createServiceClient();
     const chainCache = new Map<string, { latestId: string; ids: string[] }>();
 
@@ -322,6 +416,57 @@ export async function GET(req: NextRequest) {
       const bucket = { latestId, ids };
       ids.forEach((id) => chainCache.set(id, bucket));
       return bucket;
+    };
+
+    const resolveChainBucketsBulk = async (submissionIds: string[]) => {
+      const uniqueSubmissionIds = Array.from(new Set(submissionIds.filter(Boolean)));
+      const missingSubmissionIds = uniqueSubmissionIds.filter((submissionId) => !chainCache.has(submissionId));
+
+      if (missingSubmissionIds.length > 0) {
+        chainRpcCalls += 1;
+        const { data: bulkChainRows, error: bulkChainError } = await serviceClient.rpc('resolve_submission_chains_bulk', {
+          p_submission_ids: missingSubmissionIds,
+        });
+
+        if (bulkChainError) {
+          throw new Error(bulkChainError.message);
+        }
+
+        const rowsByInputId = new Map<string, BulkSubmissionChainRow[]>();
+        for (const row of (bulkChainRows ?? []) as BulkSubmissionChainRow[]) {
+          const inputSubmissionId = String(row.input_submission_id ?? '').trim();
+          if (!inputSubmissionId) continue;
+          const entries = rowsByInputId.get(inputSubmissionId) ?? [];
+          entries.push(row);
+          rowsByInputId.set(inputSubmissionId, entries);
+        }
+
+        for (const inputSubmissionId of missingSubmissionIds) {
+          const chainRows = rowsByInputId.get(inputSubmissionId) ?? [];
+          const ids = Array.from(
+            new Set(
+              chainRows
+                .map((entry) => String(entry.id ?? '').trim())
+                .filter(Boolean)
+            )
+          );
+          const latestId =
+            chainRows.find((entry) => entry.is_latest_version === true)?.id?.toString() ??
+            inputSubmissionId;
+
+          const bucket = { latestId, ids };
+          ids.forEach((id) => chainCache.set(id, bucket));
+          chainCache.set(inputSubmissionId, bucket);
+        }
+      }
+
+      return uniqueSubmissionIds.map((submissionId) => {
+        const bucket = chainCache.get(submissionId);
+        if (!bucket) {
+          throw new Error('Submission not found for bulk chain resolution.');
+        }
+        return bucket;
+      });
     };
 
     let { data, error } = await runBaseQuery(baseSelect);
@@ -413,6 +558,11 @@ export async function GET(req: NextRequest) {
 
       latestRows = (latestData ?? []) as Array<Record<string, unknown>>;
     }
+    const latestLineItemsBySubmissionId = await fetchLineItemsBySubmissionIds(
+      latestRows.map((row) => String(row.id ?? '').trim())
+    );
+    latestRows = attachLineItemsToRows(latestRows, latestLineItemsBySubmissionId);
+    perf.log('latest_line_items_fetch');
     perf.log('latest_version_rows_resolve');
     perf.mark(`chain_rpc_calls_so_far=${chainRpcCalls}`);
 
@@ -431,11 +581,8 @@ export async function GET(req: NextRequest) {
     const hasMore = sortedLatestRows.length > offset + limit;
     perf.log('sort_and_paginate');
 
-    const chainIdBuckets = await Promise.all(
-      pageLatestRows.map(async (row) => {
-        const latestId = String(row.id);
-        return resolveChainBucket(latestId);
-      })
+    const chainIdBuckets = await resolveChainBucketsBulk(
+      pageLatestRows.map((row) => String(row.id))
     );
     perf.log('page_chain_resolve');
     perf.mark(`chain_rpc_calls_total=${chainRpcCalls}`);
@@ -448,7 +595,7 @@ export async function GET(req: NextRequest) {
     const historyRows = await fetchRowsByIds(historyIds);
     const historyRowsById = new Map(historyRows.map((row) => [String(row.id), row]));
     perf.log('history_rows_fetch');
-    const pageRows = pageLatestRows.flatMap((row) => {
+    let pageRows = pageLatestRows.flatMap((row) => {
       const latestId = String(row.id);
       const chain = chainIdBuckets.find((bucket) => bucket.latestId === latestId);
       const history = (chain?.ids ?? [])
@@ -462,6 +609,15 @@ export async function GET(req: NextRequest) {
 
       return [row, ...history];
     });
+    const pageSubmissionIds = pageRows.map((row) => String(row.id ?? '').trim());
+    const pageLineItemsBySubmissionId = await fetchLineItemsBySubmissionIds(pageSubmissionIds);
+    pageRows = attachLineItemsToRows(pageRows, pageLineItemsBySubmissionId);
+    perf.log('page_line_items_fetch');
+    if (!isOverviewMode) {
+      const pageAttachmentsBySubmissionId = await fetchAttachmentsBySubmissionIds(pageSubmissionIds);
+      pageRows = attachAttachmentsToRows(pageRows, pageAttachmentsBySubmissionId);
+    }
+    perf.log('page_attachments_fetch');
 
     const pageAcceptedIds = Array.from(
       new Set(
