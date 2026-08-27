@@ -206,8 +206,8 @@ export function inferAddressData(address: string, clientType: "Indian" | "Foreig
   if (!text) return { city: "", state: "", country: clientType === "Indian" ? "India" : "", pincode: "" };
 
   const normalized = text.toLowerCase();
-  const pincode = extractLastPincode(text);
-  const country = clientType === "Indian" || /\bindia\b/i.test(text) || Boolean(pincode) ? "India" : "";
+  const pincode = clientType === "Indian" ? extractLastPincode(text) : "";
+  const country = clientType === "Indian" || /\bindia\b/i.test(text) ? "India" : "";
 
   let state = "";
   let stateMatch: AliasMatch | null = null;
