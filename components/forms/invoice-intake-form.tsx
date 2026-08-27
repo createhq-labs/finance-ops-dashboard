@@ -187,8 +187,6 @@ function isObviouslyIndianAddress(values: Pick<InvoiceIntakeFormValues, "address
   const haystack = `${values.addressLine} ${values.city} ${values.state} ${values.country}`.toLowerCase();
   if (/\bindia\b/.test(haystack)) return true;
   if (INDIAN_ADDRESS_ALIASES.some((alias) => haystack.includes(alias))) return true;
-  if (/^\d{6}$/.test(values.pincode.trim())) return true;
-  if (/\b\d{6}\b/.test(values.addressLine)) return true;
   return false;
 }
 
