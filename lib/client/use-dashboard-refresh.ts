@@ -79,65 +79,28 @@ export function useDashboardRefresh({
     void runRefresh('initial');
   }, [enabled, runRefresh]);
 
-  // Recurring polling. Suspended while the tab is hidden so a backgrounded
-  // tab doesn't keep polling on schedule; resumes with one immediate refresh
-  // (not the stale leftover countdown) as soon as the tab becomes visible
-  // again, then continues on a fresh interval window. This owns all
-  // visibility-driven refreshing; the window-focus effect below only covers
-  // the separate case of the OS window regaining focus without the tab's
-  // visibility ever changing.
   useEffect(() => {
     if (!enabled || !intervalMs || intervalMs <= 0) return;
-
-    let timer: number | null = null;
-
-    const clearTimer = () => {
-      if (timer !== null) {
-        window.clearInterval(timer);
-        timer = null;
-      }
-    };
-
-    const startTimer = () => {
-      clearTimer();
-      timer = window.setInterval(() => {
-        void runRefresh('interval');
-      }, intervalMs);
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        clearTimer();
-        return;
-      }
-      void runRefresh('focus');
-      startTimer();
-    };
-
-    if (document.visibilityState !== 'hidden') {
-      startTimer();
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      clearTimer();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
+    const timer = window.setInterval(() => {
+      void runRefresh('interval');
+    }, intervalMs);
+    return () => window.clearInterval(timer);
   }, [enabled, intervalMs, runRefresh]);
 
   useEffect(() => {
     if (!enabled || !refreshOnFocus) return;
 
-    const handleWindowFocus = () => {
+    const handleFocus = () => {
       if (document.visibilityState === 'hidden') return;
       void runRefresh('focus');
     };
 
-    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
 
     return () => {
-      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
     };
   }, [enabled, refreshOnFocus, runRefresh]);
 

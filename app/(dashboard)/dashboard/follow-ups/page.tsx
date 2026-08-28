@@ -12,7 +12,6 @@ import { AttachmentUploadField } from '../../../../components/forms/invoice-line
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
 import { downloadXlsx } from '../../../../lib/client/xlsx-export';
-import { getPollingIntervalMs } from '../../../../lib/client/polling-interval';
 import { useDashboardRefresh } from '../../../../lib/client/use-dashboard-refresh';
 import { formatAttachmentSize, type SubmissionAttachmentSummary } from '../../../../lib/shared/submission-attachments';
 
@@ -229,7 +228,7 @@ export default function FollowUpsPage() {
   const { triggerRefresh } = useDashboardRefresh({
     enabled: Boolean(user) && !loading,
     refresh: loadFollowUps,
-    intervalMs: getPollingIntervalMs(user?.role),
+    intervalMs: user?.role === 'team_lead' ? 30000 : 60000,
     refreshOnFocus: true,
   });
 

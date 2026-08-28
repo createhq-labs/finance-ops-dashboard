@@ -4,7 +4,6 @@ import { Check, CheckCircle2, ChevronRight, Inbox } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
-import { getPollingIntervalMs } from '../../../../lib/client/polling-interval';
 import { useDashboardRefresh } from '../../../../lib/client/use-dashboard-refresh';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
@@ -16,12 +15,9 @@ import {
   getNotificationCategory,
   getNotificationCategoryLabel,
   getNotificationTone,
-  getNotificationSyncWatermark,
   isClosedSubmissionReopenedNotification,
   isNotificationCompleted,
-  mergeNotifications,
   sortNotificationsLatestFirst,
-  trimNotificationsToWindow,
   type NotificationCategory,
   type NotificationRow,
 } from '../../../../lib/client/notification-utils';
@@ -64,6 +60,13 @@ function isThisWeek(value: string) {
 
   const diff = Date.now() - date.getTime();
   return diff >= 0 && diff <= 7 * 24 * 60 * 60 * 1000;
+}
+
+function mergeNotifications(current: NotificationRow[], incoming: NotificationRow[]) {
+  const merged = new Map<string, NotificationRow>();
+  for (const item of current) merged.set(item.id, item);
+  for (const item of incoming) merged.set(item.id, item);
+  return sortNotificationsLatestFirst(Array.from(merged.values()));
 }
 
 function getTypeBadgeClass(type: NotificationRow['type'], role?: string | null) {
@@ -172,79 +175,15 @@ export default function NotificationsPage() {
     void loadNotificationsPage(nextOffset, true);
   }, [hasMore, loadNotificationsPage, loadingMore, nextOffset, pageLoading]);
 
-  const notificationsRef = useRef<NotificationRow[]>([]);
-  useEffect(() => {
-    notificationsRef.current = notifications;
-  }, [notifications]);
-
-  // Background refresh (interval/focus): ask only for notifications changed
-  // since the window already loaded (see getNotificationSyncWatermark) and
-  // merge them in, instead of re-fetching and replacing page 1 - preserves
-  // everything the user has paginated through and avoids the full-page
-  // loader, same as the "only 'initial' may replace/blank the view" rule
-  // used elsewhere in the dashboard's polling. Falls back to fetching page 1
-  // (the previous behavior) if no window is established yet.
-  //
-  // After merging, the result is trimmed back to exactly the amount of
-  // history the user intentionally loaded (via initial load + Load More) so
-  // it stays equivalent to a fresh full fetch of that same depth - it must
-  // not silently grow every time new notifications arrive. `nextOffset`
-  // already IS that loaded count (see loadNotificationsPage: it is always
-  // `offset + limit` of the pages consumed so far); when `hasMore` is false
-  // the user has loaded the complete history, so there is no window to cap.
-  // This is safe because `created_at` (the sort key) never changes after a
-  // notification is created - only `updated_at` does - so a merged+sorted+
-  // trimmed set is always exactly the top-N of the full server ordering,
-  // and `nextOffset` remains a valid continuation point for Load More
-  // afterward (it still means "skip the top N of the current full order",
-  // which is exactly what the trimmed local state holds).
-  const refreshLatestNotifications = useCallback(async () => {
-    if (!user) return;
-    const watermark = getNotificationSyncWatermark(notificationsRef.current);
-    const loadedWindowSize = hasMore && nextOffset !== null ? nextOffset : null;
-
-    try {
-      const params = new URLSearchParams();
-      if (watermark) {
-        params.set('updated_after', watermark.updatedAfter);
-        params.set('since_created_at', watermark.sinceCreatedAt);
-      } else {
-        params.set('limit', String(PAGE_SIZE));
-        params.set('offset', '0');
-      }
-
-      const res = await fetch('/api/notifications/my?' + params.toString(), {
-        method: 'GET',
-        cache: 'no-store',
-      });
-      const json = (await res.json().catch(() => ({}))) as NotificationsResponse;
-      if (!res.ok || !json?.success) return;
-
-      const nextItems = Array.isArray(json.notifications) ? json.notifications : [];
-      // Nothing changed since the last poll - leave the current list as-is.
-      if (nextItems.length === 0) return;
-      setNotifications((current) => {
-        const merged = mergeNotifications(current, nextItems);
-        return loadedWindowSize !== null ? trimNotificationsToWindow(merged, loadedWindowSize) : merged;
-      });
-    } catch {
-      // Silent - background refresh failures leave the existing list as-is.
-    }
-  }, [hasMore, nextOffset, user]);
-
   useDashboardRefresh({
     enabled: Boolean(user),
-    refresh: async (reason) => {
-      if (reason === 'initial') {
-        setNotifications([]);
-        setHasMore(false);
-        setNextOffset(null);
-        await loadNotificationsPage(0, false);
-        return;
-      }
-      await refreshLatestNotifications();
+    refresh: async () => {
+      setNotifications([]);
+      setHasMore(false);
+      setNextOffset(null);
+      await loadNotificationsPage(0, false);
     },
-    intervalMs: getPollingIntervalMs(user?.role),
+    intervalMs: 60000,
     refreshOnFocus: true,
   });
 

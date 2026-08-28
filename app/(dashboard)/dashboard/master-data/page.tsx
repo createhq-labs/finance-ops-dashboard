@@ -9,7 +9,6 @@ import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
-import { getPollingIntervalMs } from '../../../../lib/client/polling-interval';
 import { useDashboardRefresh } from '../../../../lib/client/use-dashboard-refresh';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
 import { canViewMasterData, getDefaultDashboardPath } from '../../../../lib/client/dashboard-access';
@@ -68,32 +67,6 @@ type ApiResponse = {
   };
   error?: string;
 };
-
-// Newest `updated_at` seen among the items currently held - a delta request
-// for rows changed after it can never miss an update, since the boundary
-// only ever advances to a value already observed in a prior response.
-function getMasterDataReviewsWatermark(items: MasterDataReviewItem[]): string | null {
-  let maxMs = Number.NEGATIVE_INFINITY;
-  let maxIso: string | null = null;
-  for (const item of items) {
-    const ms = new Date(item.updated_at).getTime();
-    if (!Number.isNaN(ms) && ms > maxMs) {
-      maxMs = ms;
-      maxIso = item.updated_at;
-    }
-  }
-  return maxIso;
-}
-
-// Idempotent upsert-by-id merge, re-sorted by created_at desc (the server's
-// own ordering) so a delta merge produces the same order a fresh full fetch
-// would - not array-append/insertion order.
-function mergeMasterDataReviewItems(current: MasterDataReviewItem[], incoming: MasterDataReviewItem[]): MasterDataReviewItem[] {
-  const merged = new Map<string, MasterDataReviewItem>();
-  for (const item of current) merged.set(item.id, item);
-  for (const item of incoming) merged.set(item.id, item);
-  return Array.from(merged.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-}
 
 
 type EditFormState = {
@@ -307,32 +280,13 @@ export default function MasterDataPage() {
     }
   }, [loading, router, user]);
 
-  const itemsRef = useRef<MasterDataReviewItem[]>([]);
-  useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
-
-  const loadReviews = useCallback(async (showRefresh = false, options: { silentOnError?: boolean; delta?: boolean } = {}) => {
-    const { silentOnError = false, delta = false } = options;
+  const loadReviews = useCallback(async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
     else setPageLoading(true);
-    // Background polling/focus refreshes must never promote a failure into
-    // the page-level error state (that would replace the last-good table
-    // with an error panel) - only initial load and the manual Refresh button
-    // clear/set `error`.
-    if (!silentOnError) setError('');
-
-    // Delta mode only activates when a watermark can be established from
-    // what's already loaded; otherwise this falls back to a normal full
-    // fetch (the previous behavior), which also covers the very first
-    // background tick racing ahead of the initial load.
-    const watermark = delta ? getMasterDataReviewsWatermark(itemsRef.current) : null;
+    setError('');
 
     try {
-      const url = watermark
-        ? '/api/master-data/reviews?updated_after=' + encodeURIComponent(watermark)
-        : '/api/master-data/reviews';
-      const res = await fetch(url, { cache: 'no-store' });
+      const res = await fetch('/api/master-data/reviews', { cache: 'no-store' });
       const json = (await res.json().catch(() => ({}))) as ApiResponse;
 
       if (!res.ok || !json.success) {
@@ -340,23 +294,12 @@ export default function MasterDataPage() {
       }
 
       const nextItems = Array.isArray(json.items) ? json.items : [];
-
-      if (watermark) {
-        // Nothing changed since the last poll - keep the current rows as-is,
-        // but the summary is still refreshed since it's always authoritative.
-        if (nextItems.length > 0) {
-          setItems((current) => mergeMasterDataReviewItems(current, nextItems));
-        }
-        setSummary(json.summary ?? summarizeItems(itemsRef.current));
-      } else {
-        setItems(nextItems);
-        setSummary(json.summary ?? summarizeItems(nextItems));
-      }
-      setError('');
+      setItems(nextItems);
+      setSummary(json.summary ?? summarizeItems(nextItems));
     } catch (nextError) {
       const nextMessage = nextError instanceof Error ? nextError.message : 'Failed to load master data reviews.';
       if (handleAuthTokenRecoveryMessage(nextMessage)) return;
-      if (!silentOnError) setError(nextMessage);
+      setError(nextMessage);
     } finally {
       if (showRefresh) setRefreshing(false);
       else setPageLoading(false);
@@ -366,18 +309,10 @@ export default function MasterDataPage() {
 
   useDashboardRefresh({
     enabled: Boolean(user && canViewMasterData(user.role)),
-    refresh: async (reason) => {
-      // 'initial' uses the full-page loader (showRefresh=false); every
-      // background tick reuses the same invisible path the manual Refresh
-      // button already uses (showRefresh=true) so the table stays mounted.
-      // Only 'interval'/'focus' (background) ticks are silenced on failure
-      // and use incremental delta fetching - 'initial' and the manual button
-      // (called directly, not through this callback) keep fetching the full
-      // set and showing errors exactly as before.
-      const isBackgroundReason = reason === 'interval' || reason === 'focus';
-      await loadReviews(reason !== 'initial', { silentOnError: isBackgroundReason, delta: isBackgroundReason });
+    refresh: async () => {
+      await loadReviews(false);
     },
-    intervalMs: getPollingIntervalMs(user?.role),
+    intervalMs: 60000,
     refreshOnFocus: true,
   });
 
