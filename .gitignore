@@ -14,4 +14,3 @@ dist/
 tsconfig.tsbuildinfo
 scripts/input/*.csv
 docs/
-.tmp/

@@ -9,7 +9,6 @@ export type NotificationRow = {
   target_path: string;
   is_read: boolean;
   created_at: string;
-  updated_at?: string;
   related_submission_status?: string | null;
   related_submission_closed_status?: string | null;
   related_review_status?: string | null;
@@ -141,71 +140,6 @@ export function sortNotificationsLatestFirst<T extends Pick<NotificationRow, 'cr
 
     return rightTime - leftTime;
   });
-}
-
-export type NotificationSyncWatermark = {
-  updatedAfter: string;
-  sinceCreatedAt: string;
-};
-
-/**
- * Derives the incremental-sync bounds from notifications already held on the
- * client. `updatedAfter` is the newest `updated_at` actually observed, so a
- * delta query for rows changed after it can never miss an update - the
- * boundary only ever advances to a value the client has already seen.
- * `sinceCreatedAt` is the oldest `created_at` currently held, which bounds
- * delta results to the same recency window already loaded so a change to a
- * notification outside that window (never fetched) isn't incorrectly
- * reintroduced - matching what a fresh full fetch of that window would show.
- * Returns null when there is nothing loaded yet (no window established).
- */
-export function getNotificationSyncWatermark(items: NotificationRow[]): NotificationSyncWatermark | null {
-  let maxUpdatedAtMs = Number.NEGATIVE_INFINITY;
-  let maxUpdatedAtIso = '';
-  let minCreatedAtMs = Number.POSITIVE_INFINITY;
-  let minCreatedAtIso = '';
-
-  for (const item of items) {
-    const updatedIso = item.updated_at ?? item.created_at;
-    const updatedMs = new Date(updatedIso).getTime();
-    if (!Number.isNaN(updatedMs) && updatedMs > maxUpdatedAtMs) {
-      maxUpdatedAtMs = updatedMs;
-      maxUpdatedAtIso = updatedIso;
-    }
-
-    const createdMs = new Date(item.created_at).getTime();
-    if (!Number.isNaN(createdMs) && createdMs < minCreatedAtMs) {
-      minCreatedAtMs = createdMs;
-      minCreatedAtIso = item.created_at;
-    }
-  }
-
-  if (!maxUpdatedAtIso || !minCreatedAtIso) return null;
-
-  return { updatedAfter: maxUpdatedAtIso, sinceCreatedAt: minCreatedAtIso };
-}
-
-/**
- * Keeps a fixed-size (non-paginated) notification list, such as the navbar
- * bell's top-N preview, equivalent to what a fresh full fetch of the same
- * limit would return after a burst of new notifications arrives via delta
- * merge - trims back down to the N most recent by `created_at`.
- */
-export function trimNotificationsToWindow(items: NotificationRow[], limit: number): NotificationRow[] {
-  if (items.length <= limit) return items;
-  return sortNotificationsLatestFirst(items).slice(0, limit);
-}
-
-/**
- * Idempotent upsert-by-id merge: receiving the same delta twice (or a delta
- * that overlaps previously-merged rows) never creates duplicates, since each
- * incoming row simply overwrites any existing row with the same id.
- */
-export function mergeNotifications(current: NotificationRow[], incoming: NotificationRow[]): NotificationRow[] {
-  const merged = new Map<string, NotificationRow>();
-  for (const item of current) merged.set(item.id, item);
-  for (const item of incoming) merged.set(item.id, item);
-  return sortNotificationsLatestFirst(Array.from(merged.values()));
 }
 
 export function formatNotificationType(type: string) {
