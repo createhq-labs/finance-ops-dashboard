@@ -431,7 +431,21 @@ export async function listFollowUpsForUser(params: {
   if (rows.length === 0) return [] as FollowUpListItem[];
 
   const submissionIds = Array.from(new Set(rows.map((row) => row.submission_id)));
-  const gstScreenshotMap = await getLatestGstScreenshotMap(adminClient, submissionIds);
+
+  // gstScreenshotMap and submissionsRes both depend only on submissionIds
+  // (not on each other), so run them concurrently. userMap still has to wait
+  // for gstScreenshotMap because its uploader ids feed into the requested
+  // user id set below.
+  const [gstScreenshotMap, submissionsRes] = await Promise.all([
+    getLatestGstScreenshotMap(adminClient, submissionIds),
+    adminClient
+      .from('intake_submissions')
+      .select('id, proforma_invoice, agency_brand_name, bill_due, intake_status, invoice_status, payment_received_status, creator_invoice_status, payment_made_status, closure_status, submitted_at')
+      .in('id', submissionIds),
+  ]);
+
+  if (submissionsRes.error) throw new Error(submissionsRes.error.message);
+
   const userIds = Array.from(
     new Set(
       rows
@@ -440,15 +454,7 @@ export async function listFollowUpsForUser(params: {
     )
   ) as string[];
 
-  const [submissionsRes, userMap] = await Promise.all([
-    adminClient
-      .from('intake_submissions')
-      .select('id, proforma_invoice, agency_brand_name, bill_due, intake_status, invoice_status, payment_received_status, creator_invoice_status, payment_made_status, closure_status, submitted_at')
-      .in('id', submissionIds),
-    getActiveUserMap(adminClient, userIds),
-  ]);
-
-  if (submissionsRes.error) throw new Error(submissionsRes.error.message);
+  const userMap = await getActiveUserMap(adminClient, userIds);
 
   const submissionMap = new Map((submissionsRes.data ?? []).map((row) => [String(row.id), row]));
   const normalizedQuery = query.trim().toLowerCase();

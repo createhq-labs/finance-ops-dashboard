@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import { getPollingIntervalMs } from '../../../lib/client/polling-interval';
 import { useDashboardRefresh } from '../../../lib/client/use-dashboard-refresh';
 import { KpiCard } from '../../../components/dashboard/kpi-card';
 import { PageHeader } from '../../../components/dashboard/page-header';
@@ -948,15 +949,27 @@ export default function DashboardHomePage() {
 
   useDashboardRefresh({
     enabled: Boolean(user),
-    refresh: async () => {
+    refresh: async (reason) => {
       if (!user) return;
+      const isInitialLoad = reason === 'initial';
 
-      setRowsLoading(true);
-      setRowsError('');
+      // Only the initial load may blank the page with a loader or replace it
+      // with an error panel (see the render gates below) - a background poll
+      // must update the already-visible overview data invisibly and leave
+      // any prior error/loading state untouched if it fails.
+      if (isInitialLoad) {
+        setRowsLoading(true);
+        setRowsError('');
+      }
       const isOperationalRole = user.role === 'finance' || user.role === 'admin';
 
       try {
-        const res = await fetch(isOperationalRole ? '/api/submissions/finance' : '/api/submissions/my', { method: 'GET', cache: 'no-store' });
+        // `view=overview` opts into the lightweight response mode: identical
+        // rows/ordering/pagination/aggregates, but skips attachment and
+        // previous-submission-snapshot data this page never reads (see
+        // app/api/submissions/finance/route.ts). Finance Review's own
+        // requests never send this param, so its response is unaffected.
+        const res = await fetch(isOperationalRole ? '/api/submissions/finance?view=overview' : '/api/submissions/my', { method: 'GET', cache: 'no-store' });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json?.success) {
           throw new Error(json?.error || 'Failed to load overview data.');
@@ -1006,15 +1019,18 @@ export default function DashboardHomePage() {
           entry_type: item.entry_type || null,
           intake_line_items: item.intake_line_items || [],
         }));
+        setRowsError('');
         setRows(mapped);
       } catch (error) {
-        setRowsError(error instanceof Error ? error.message : 'Failed to load overview data.');
+        if (isInitialLoad) {
+          setRowsError(error instanceof Error ? error.message : 'Failed to load overview data.');
+        }
       } finally {
-        setRowsLoading(false);
+        if (isInitialLoad) setRowsLoading(false);
       }
     },
-    intervalMs: user?.role === 'team_lead' ? 30000 : user?.role === 'employee' ? 60000 : undefined,
-    refreshOnFocus: user?.role === 'team_lead' || user?.role === 'employee',
+    intervalMs: getPollingIntervalMs(user?.role),
+    refreshOnFocus: true,
   });
 
   useEffect(() => {
@@ -1027,9 +1043,12 @@ export default function DashboardHomePage() {
 
   useDashboardRefresh({
     enabled: user?.role === 'team_lead',
-    refresh: async () => {
-      setTeamLoading(true);
-      setTeamError('');
+    refresh: async (reason) => {
+      const isInitialLoad = reason === 'initial';
+      if (isInitialLoad) {
+        setTeamLoading(true);
+        setTeamError('');
+      }
 
       try {
         const [teamRes, membersRes] = await Promise.all([
@@ -1046,15 +1065,18 @@ export default function DashboardHomePage() {
           throw new Error(membersJson?.error || 'Failed to load team members.');
         }
 
+        setTeamError('');
         setTeamRows(((teamJson.submissions ?? []) as TeamLeadOverviewApiRow[]).map(mapTeamLeadOverviewRow));
         setTeamMembers(Array.isArray(membersJson.members) ? membersJson.members : []);
       } catch (error) {
-        setTeamError(error instanceof Error ? error.message : 'Failed to load team data.');
+        if (isInitialLoad) {
+          setTeamError(error instanceof Error ? error.message : 'Failed to load team data.');
+        }
       } finally {
-        setTeamLoading(false);
+        if (isInitialLoad) setTeamLoading(false);
       }
     },
-    intervalMs: 30000,
+    intervalMs: getPollingIntervalMs('team_lead'),
     refreshOnFocus: true,
   });
 
@@ -1068,9 +1090,12 @@ export default function DashboardHomePage() {
 
   useDashboardRefresh({
     enabled: user?.role === 'admin',
-    refresh: async () => {
-      setAdminLoading(true);
-      setAdminError('');
+    refresh: async (reason) => {
+      const isInitialLoad = reason === 'initial';
+      if (isInitialLoad) {
+        setAdminLoading(true);
+        setAdminError('');
+      }
 
       try {
         const [usersRes, reviewsRes] = await Promise.all([
@@ -1087,16 +1112,24 @@ export default function DashboardHomePage() {
           throw new Error(reviewsJson?.error || 'Failed to load master data summary.');
         }
 
+        setAdminError('');
         setAdminUsers(Array.isArray(usersJson.users) ? usersJson.users : []);
         setMasterDataSummary(
           reviewsJson.summary ?? { total: 0, pending: 0, approved: 0, rejected: 0 }
         );
       } catch (error) {
-        setAdminError(error instanceof Error ? error.message : 'Failed to load admin overview.');
+        if (isInitialLoad) {
+          setAdminError(error instanceof Error ? error.message : 'Failed to load admin overview.');
+        }
       } finally {
-        setAdminLoading(false);
+        if (isInitialLoad) setAdminLoading(false);
       }
     },
+    // Previously had no intervalMs, so Admin never polled the Overview page
+    // (Employee/Team Lead did). This activates the same established
+    // role-based polling for Admin on this already-existing refresh owner.
+    intervalMs: getPollingIntervalMs('admin'),
+    refreshOnFocus: true,
   });
 
   const visibleRows = useMemo(() => [...rows].sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()), [rows]);
