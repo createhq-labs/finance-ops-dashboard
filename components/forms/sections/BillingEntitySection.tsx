@@ -249,7 +249,7 @@ export function BillingEntitySection({
           ) : null}
 
           {isIndianClient ? (
-            <div className="intake-field">
+            <div className="intake-field" data-field="gstNumber" tabIndex={-1}>
               <span className="intake-label">GST Number</span>
               <GstNumberPicker
                 value={values.gstNumber}
@@ -265,7 +265,9 @@ export function BillingEntitySection({
                   onGstClear();
                 }}
               />
-              <div style={{ minHeight: 0 }} />
+              <div style={{ minHeight: 16 }}>
+                {errors.gstNumber ? <p className="text-danger intake-inline-error">{errors.gstNumber}</p> : null}
+              </div>
             </div>
           ) : null}
 
