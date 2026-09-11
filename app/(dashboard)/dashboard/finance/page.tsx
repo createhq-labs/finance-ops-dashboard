@@ -186,6 +186,10 @@ type FinanceEditableField =
 // Intentionally disabled until the finance read-only submission workflow is finalized.
 const ENABLE_FINANCE_VIEW_ACTION = false;
 
+// Agency/Brand/Creator searches are an existence check only: matches stay visible briefly,
+// then the table falls back to normal paginated results while the search text stays in the input.
+const TEMP_SEARCH_VISIBILITY_MS = 1500;
+
 const PAYMENT_RECEIVED_VALUES = PAYMENT_RECEIVED_STATUS_OPTIONS.map((option) => option.value);
 const PAYMENT_MADE_VALUES = PAYMENT_MADE_STATUS_OPTIONS.map((option) => option.value);
 const CLOSURE_VALUES = CLOSURE_STATUS_OPTIONS.map((option) => option.value);
@@ -251,6 +255,13 @@ function normalizeClosedStatus(value: string | null | undefined) {
   if (normalized === 'gst_left') return 'gst_left';
   if (normalized === 'cancelled' || normalized === 'canceled') return 'cancelled';
   return 'open';
+}
+
+// PI numbers are allocated as plain incrementing digit strings (see allocate_or_reuse_chain_pi),
+// so a purely numeric query reliably identifies a PI lookup; anything else is an Agency/Brand/Creator
+// existence check and gets the temporary-visibility treatment.
+function isPiLikeQuery(value: string) {
+  return /^\d+$/.test(value.trim());
 }
 
 function hasStartedLifecycleStatus(value: string | null | undefined) {
@@ -419,6 +430,10 @@ export default function FinanceReviewPage() {
   const isMountedRef = useRef(true);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadingMoreRef = useRef(false);
+  const financeRequestGenerationRef = useRef(0);
+  const financeRequestKeyRef = useRef('');
+  const appendRequestGenerationRef = useRef(0);
+  const searchVisibilityTimerRef = useRef<number | null>(null);
   const [rows, setRows] = useState<SubmissionRow[]>([]);
   const [masterDataReviewsBySubmission, setMasterDataReviewsBySubmission] = useState<MasterDataReviewMap>({});
   const [employeeDirectoryEntries, setEmployeeDirectoryEntries] = useState<FinanceEmployeeDirectoryEntry[]>([]);
@@ -433,6 +448,7 @@ export default function FinanceReviewPage() {
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [rowsError, setRowsError] = useState('');
   const [query, setQuery] = useState('');
+  const [activeSearchQuery, setActiveSearchQuery] = useState('');
   const [businessLineFilter, setBusinessLineFilter] = useState<'all' | 'TM' | 'IM'>('all');
   const [intakeStatusFilter, setIntakeStatusFilter] = useState<'all' | 'submitted' | 'accepted' | 'rejected' | 'declined'>('all');
   const [employeeFilter, setEmployeeFilter] = useState('all');
@@ -454,6 +470,10 @@ export default function FinanceReviewPage() {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      if (searchVisibilityTimerRef.current !== null) {
+        window.clearTimeout(searchVisibilityTimerRef.current);
+        searchVisibilityTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -469,12 +489,42 @@ export default function FinanceReviewPage() {
   const loadFinanceSubmissions = useCallback(async (offset = 0, append = false) => {
     if (!user) return;
 
+    const filterParams = new URLSearchParams();
+    if (activeSearchQuery.trim()) filterParams.set('query', activeSearchQuery.trim());
+    if (businessLineFilter !== 'all') filterParams.set('business_line', businessLineFilter);
+    if (intakeStatusFilter !== 'all') filterParams.set('intake_status', intakeStatusFilter);
+    if (employeeFilter !== 'all') filterParams.set('employee', employeeFilter);
+    if (invoiceStatusFilter !== 'all') filterParams.set('invoice_status', invoiceStatusFilter);
+    if (creatorInvoiceReceivedFilter !== 'all') filterParams.set('creator_invoice_received', creatorInvoiceReceivedFilter);
+    if (paymentReceivedFilter !== 'all') filterParams.set('payment_received', paymentReceivedFilter);
+    if (paymentMadeFilter !== 'all') filterParams.set('payment_made', paymentMadeFilter);
+    if (closedStatusFilter !== 'all') filterParams.set('closed_status', closedStatusFilter);
+    if (versionStatusFilter !== 'all') filterParams.set('version_status', versionStatusFilter);
+    if (dateFrom) filterParams.set('date_from', dateFrom);
+    if (dateTo) filterParams.set('date_to', dateTo);
+
+    const requestKey = filterParams.toString();
+    let requestGeneration = financeRequestGenerationRef.current;
+    let appendRequestGeneration = appendRequestGenerationRef.current;
+
+    if (!append) {
+      requestGeneration = financeRequestGenerationRef.current + 1;
+      appendRequestGeneration = appendRequestGenerationRef.current + 1;
+      financeRequestGenerationRef.current = requestGeneration;
+      financeRequestKeyRef.current = requestKey;
+      appendRequestGenerationRef.current = appendRequestGeneration;
+      loadingMoreRef.current = false;
+    }
+
     if (isMountedRef.current) {
       if (append) {
         if (loadingMoreRef.current) return;
+        appendRequestGeneration = appendRequestGenerationRef.current + 1;
+        appendRequestGenerationRef.current = appendRequestGeneration;
         loadingMoreRef.current = true;
         setLoadingMore(true);
       } else {
+        setLoadingMore(false);
         setRowsLoading(true);
         setRowsError('');
       }
@@ -484,18 +534,7 @@ export default function FinanceReviewPage() {
       limit: '50',
       offset: String(offset),
     });
-    if (query.trim()) params.set('query', query.trim());
-    if (businessLineFilter !== 'all') params.set('business_line', businessLineFilter);
-    if (intakeStatusFilter !== 'all') params.set('intake_status', intakeStatusFilter);
-    if (employeeFilter !== 'all') params.set('employee', employeeFilter);
-    if (invoiceStatusFilter !== 'all') params.set('invoice_status', invoiceStatusFilter);
-    if (creatorInvoiceReceivedFilter !== 'all') params.set('creator_invoice_received', creatorInvoiceReceivedFilter);
-    if (paymentReceivedFilter !== 'all') params.set('payment_received', paymentReceivedFilter);
-    if (paymentMadeFilter !== 'all') params.set('payment_made', paymentMadeFilter);
-    if (closedStatusFilter !== 'all') params.set('closed_status', closedStatusFilter);
-    if (versionStatusFilter !== 'all') params.set('version_status', versionStatusFilter);
-    if (dateFrom) params.set('date_from', dateFrom);
-    if (dateTo) params.set('date_to', dateTo);
+    filterParams.forEach((value, key) => params.set(key, value));
 
     const [res, masterDataReviewMap] = await Promise.all([
       fetch('/api/submissions/finance?' + params.toString(), { method: 'GET', cache: 'no-store' }),
@@ -515,8 +554,12 @@ export default function FinanceReviewPage() {
     }
 
     const mapped = ((json.submissions ?? []) as FinanceApiRow[]).map(mapFinanceSubmissionRow);
+    const isCurrentRequest =
+      financeRequestGenerationRef.current === requestGeneration &&
+      financeRequestKeyRef.current === requestKey &&
+      (!append || appendRequestGenerationRef.current === appendRequestGeneration);
 
-    if (isMountedRef.current) {
+    if (isMountedRef.current && isCurrentRequest) {
       setRows((current) => mergeSubmissionRows(append ? current : [], mapped));
       setAggregates({
         pending_review: Number(json.aggregates?.pending_review ?? 0),
@@ -535,12 +578,15 @@ export default function FinanceReviewPage() {
       }
     }
     if (append) {
-      loadingMoreRef.current = false;
-      if (isMountedRef.current) setLoadingMore(false);
-    } else if (isMountedRef.current) {
+      if (appendRequestGenerationRef.current === appendRequestGeneration) {
+        loadingMoreRef.current = false;
+        if (isMountedRef.current) setLoadingMore(false);
+      }
+    } else if (isMountedRef.current && financeRequestGenerationRef.current === requestGeneration && financeRequestKeyRef.current === requestKey) {
       setRowsLoading(false);
     }
   }, [
+    activeSearchQuery,
     businessLineFilter,
     closedStatusFilter,
     creatorInvoiceReceivedFilter,
@@ -552,7 +598,6 @@ export default function FinanceReviewPage() {
     loadMasterDataReviews,
     paymentMadeFilter,
     paymentReceivedFilter,
-    query,
     user,
     versionStatusFilter,
   ]);
@@ -911,8 +956,37 @@ export default function FinanceReviewPage() {
   const acceptedCount = aggregates.accepted;
   const rejectedCount = aggregates.resubmission_requested;
 
+  function clearSearchVisibilityTimer() {
+    if (searchVisibilityTimerRef.current !== null) {
+      window.clearTimeout(searchVisibilityTimerRef.current);
+      searchVisibilityTimerRef.current = null;
+    }
+  }
+
+  function handleSearch(value: string) {
+    setQuery(value);
+    clearSearchVisibilityTimer();
+
+    const trimmed = value.trim();
+    if (!trimmed || isPiLikeQuery(trimmed)) {
+      // PI search (or a cleared search) stays active until the user changes it again.
+      setActiveSearchQuery(trimmed);
+      return;
+    }
+
+    // Agency/Brand/Creator existence check: show matches briefly, then fall back to
+    // normal pagination while leaving the typed text in the search input.
+    setActiveSearchQuery(trimmed);
+    searchVisibilityTimerRef.current = window.setTimeout(() => {
+      searchVisibilityTimerRef.current = null;
+      setActiveSearchQuery((current) => (current === trimmed ? '' : current));
+    }, TEMP_SEARCH_VISIBILITY_MS);
+  }
+
   function resetAllFilters() {
+    clearSearchVisibilityTimer();
     setQuery('');
+    setActiveSearchQuery('');
     setBusinessLineFilter('all');
     setIntakeStatusFilter('all');
     setEmployeeFilter('all');
@@ -1038,7 +1112,7 @@ export default function FinanceReviewPage() {
               ],
             },
           ]}
-          onSearch={setQuery}
+          onSearch={handleSearch}
           onPrimaryChange={(key, value) => {
             if (key === 'businessLine') setBusinessLineFilter((value || 'all') as 'all' | 'TM' | 'IM');
             if (key === 'status') setIntakeStatusFilter((value || 'all') as 'all' | 'submitted' | 'accepted' | 'rejected' | 'declined');
