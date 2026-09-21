@@ -8,6 +8,7 @@ import {
   canAccessDashboardPath,
   canManageDeliverables,
   canViewAnalyticsPage,
+  canViewFinanceDashboard,
   canViewFollowUps,
   canViewNotifications,
   canViewTeamSubmissions,
@@ -16,6 +17,9 @@ import {
   getInvoiceIntakePath,
   getSubmissionsLabel,
 } from '../../lib/client/dashboard-access';
+import { FINANCE_NEW_RESUBMISSION_BADGE_CLASSES, FINANCE_NEW_SUBMISSION_BADGE_CLASSES } from '../../lib/client/finance-badge-colors';
+import { FINANCE_BADGE_REFRESH_EVENT } from '../../lib/client/finance-badge-refresh';
+import { PENDING_RESUBMISSION_BADGE_REFRESH_EVENT } from '../../lib/client/resubmission-badge-refresh';
 import { DashboardNavbar } from './dashboard-navbar';
 import { DashboardSessionProvider, useDashboardSession } from './dashboard-session';
 import { WorkspaceLoader } from './workspace-loader';
@@ -34,6 +38,9 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
   const { user, loading } = useDashboardSession();
   const [unreadCount, setUnreadCount] = useState(0);
   const [followUpCount, setFollowUpCount] = useState(0);
+  const [newSubmissionCount, setNewSubmissionCount] = useState(0);
+  const [newResubmissionCount, setNewResubmissionCount] = useState(0);
+  const [pendingResubmissionCount, setPendingResubmissionCount] = useState(0);
   const [collapsed, setCollapsed] = useState(true);
 
   useEffect(() => {
@@ -70,6 +77,71 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
     };
   }, [loading, user]);
 
+  useEffect(() => {
+    if (loading || !user || !canViewFinanceDashboard(user.role)) {
+      setNewSubmissionCount(0);
+      setNewResubmissionCount(0);
+      return;
+    }
+
+    let active = true;
+    const loadFinanceBadgeCounts = async () => {
+      try {
+        const response = await fetch('/api/submissions/finance/badge-counts', { method: 'GET', cache: 'no-store' });
+        const body = await response.json().catch(() => ({}));
+        if (active && response.ok && body?.success) {
+          setNewSubmissionCount(Number(body.newSubmissions) > 0 ? Number(body.newSubmissions) : 0);
+          setNewResubmissionCount(Number(body.newResubmissions) > 0 ? Number(body.newResubmissions) : 0);
+        }
+      } catch {
+        if (active) {
+          setNewSubmissionCount(0);
+          setNewResubmissionCount(0);
+        }
+      }
+    };
+
+    void loadFinanceBadgeCounts();
+    const timer = window.setInterval(loadFinanceBadgeCounts, 60000);
+    const handleRefreshRequest = () => void loadFinanceBadgeCounts();
+    window.addEventListener(FINANCE_BADGE_REFRESH_EVENT, handleRefreshRequest);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener(FINANCE_BADGE_REFRESH_EVENT, handleRefreshRequest);
+    };
+  }, [loading, user]);
+
+  useEffect(() => {
+    if (loading || !user || !(user.role === 'employee' || user.role === 'team_lead')) {
+      setPendingResubmissionCount(0);
+      return;
+    }
+
+    let active = true;
+    const loadPendingResubmissionCount = async () => {
+      try {
+        const response = await fetch('/api/submissions/pending-resubmission-count', { method: 'GET', cache: 'no-store' });
+        const body = await response.json().catch(() => ({}));
+        if (active && response.ok && body?.success) {
+          setPendingResubmissionCount(Number(body.count) > 0 ? Number(body.count) : 0);
+        }
+      } catch {
+        if (active) setPendingResubmissionCount(0);
+      }
+    };
+
+    void loadPendingResubmissionCount();
+    const timer = window.setInterval(loadPendingResubmissionCount, 60000);
+    const handleRefreshRequest = () => void loadPendingResubmissionCount();
+    window.addEventListener(PENDING_RESUBMISSION_BADGE_REFRESH_EVENT, handleRefreshRequest);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener(PENDING_RESUBMISSION_BADGE_REFRESH_EVENT, handleRefreshRequest);
+    };
+  }, [loading, user]);
+
   const items = useMemo(() => {
     const role = user?.role;
     const base = [
@@ -79,7 +151,13 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
         ? [{ href: getInvoiceIntakePath(), label: 'Submit Invoice', icon: FilePlus, group: 'operations' as const }]
         : []),
       ...(role && (role === 'employee' || role === 'team_lead')
-        ? [{ href: '/dashboard/submissions', label: getSubmissionsLabel(role), icon: ListChecks, group: 'operations' as const }]
+        ? [{
+            href: '/dashboard/submissions',
+            label: getSubmissionsLabel(role),
+            icon: ListChecks,
+            group: 'operations' as const,
+            badge: pendingResubmissionCount > 0 ? pendingResubmissionCount : undefined,
+          }]
         : []),
       ...(canViewTeamSubmissions(role ?? 'employee')
         ? [{ href: '/dashboard/team-submissions', label: 'Team Submissions', icon: ListChecks, group: 'operations' as const }]
@@ -92,7 +170,15 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
         : []),
       { href: '/dashboard/notifications', label: 'Notifications', icon: Bell, group: 'workspace', badge: unreadCount > 0 ? unreadCount : undefined },
       { href: '/dashboard/guide', label: 'Guide', icon: BookOpen, group: 'workspace' },
-      { href: '/dashboard/finance', label: 'Finance Review', icon: BriefcaseBusiness, group: 'operations' },
+      {
+        href: '/dashboard/finance',
+        label: 'Finance Review',
+        icon: BriefcaseBusiness,
+        group: 'operations' as const,
+        financeBadges: canViewFinanceDashboard(role ?? 'employee')
+          ? { newSubmissions: newSubmissionCount, newResubmissions: newResubmissionCount }
+          : undefined,
+      },
       { href: '/dashboard/master-data', label: 'Master Data', icon: Database, group: 'operations' },
       ...(canManageDeliverables(role ?? 'employee')
         ? [{ href: '/dashboard/deliverables', label: 'Deliverables', icon: ClipboardList, group: 'operations' as const }]
@@ -108,7 +194,7 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
       if (item.href === '/dashboard/transferred-submissions') return canViewTransferredSubmissions(role);
       return canAccessDashboardPath(role, item.href);
     });
-  }, [followUpCount, unreadCount, user?.role]);
+  }, [followUpCount, newResubmissionCount, newSubmissionCount, pendingResubmissionCount, unreadCount, user?.role]);
 
   const groupOrder = ['workspace', 'operations', 'admin'] as const;
   const groupLabels: Record<string, string> = {
@@ -204,6 +290,29 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
 
                         {!collapsed && 'badge' in item && item.badge ? (
                           <span className="nav-badge">{item.badge}</span>
+                        ) : null}
+
+                        {!collapsed && 'financeBadges' in item && item.financeBadges &&
+                        (item.financeBadges.newSubmissions > 0 || item.financeBadges.newResubmissions > 0) ? (
+                          <span className="inline-flex items-center" style={{ marginLeft: 'auto' }}>
+                            {item.financeBadges.newSubmissions > 0 ? (
+                              <span
+                                className={FINANCE_NEW_SUBMISSION_BADGE_CLASSES}
+                                title={`${item.financeBadges.newSubmissions} new submission${item.financeBadges.newSubmissions === 1 ? '' : 's'} waiting for Finance action`}
+                              >
+                                {item.financeBadges.newSubmissions}
+                              </span>
+                            ) : null}
+                            {item.financeBadges.newResubmissions > 0 ? (
+                              <span
+                                className={FINANCE_NEW_RESUBMISSION_BADGE_CLASSES}
+                                style={item.financeBadges.newSubmissions > 0 ? { marginLeft: -7 } : undefined}
+                                title={`${item.financeBadges.newResubmissions} new resubmission${item.financeBadges.newResubmissions === 1 ? '' : 's'} waiting for Finance action`}
+                              >
+                                {item.financeBadges.newResubmissions}
+                              </span>
+                            ) : null}
+                          </span>
                         ) : null}
                       </Link>
                     );

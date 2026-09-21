@@ -38,6 +38,49 @@ class ServerOnlyRealtimeTransport {
   }
 }
 
+// A single Finance Review page load fires many sequential Supabase REST calls
+// (across the finance list, master data reviews, follow-ups, and badge-count
+// routes) sharing Node's process-wide HTTP connection pool. Under load an
+// individual connection attempt can intermittently fail to establish
+// ("TypeError: fetch failed", wrapping a connect-level cause such as
+// ETIMEDOUT/ECONNRESET) even though the Supabase project itself is healthy
+// and an adjacent call on the same request just succeeded. This mirrors the
+// existing single-retry pattern already used for `auth.getUser` in
+// lib/server/auth.ts, generalized to every Supabase REST call made by these
+// server-side clients.
+// Deterministic for the exact same request - e.g. a request URL/headers that
+// are simply too large will fail identically on every attempt, so retrying
+// only adds latency without any chance of succeeding. Checked before the
+// generic retryable set so a batching bug can never be masked by a retry.
+const NON_RETRYABLE_CAUSE_CODES = new Set(['UND_ERR_HEADERS_OVERFLOW']);
+
+function isRetryableNetworkFetchError(error: unknown): boolean {
+  if (!(error instanceof TypeError)) return false;
+  const cause = (error as Error & { cause?: { code?: string } }).cause;
+  if (cause?.code && NON_RETRYABLE_CAUSE_CODES.has(cause.code)) return false;
+
+  const retryableCauseCodes = new Set([
+    'ETIMEDOUT',
+    'ECONNRESET',
+    'ECONNREFUSED',
+    'EPIPE',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_SOCKET',
+  ]);
+  if (cause?.code && retryableCauseCodes.has(cause.code)) return true;
+  if (cause?.code) return false;
+  return error.message === 'fetch failed';
+}
+
+const fetchWithSingleRetry: typeof fetch = async (input, init) => {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (!isRetryableNetworkFetchError(error)) throw error;
+    return fetch(input, init);
+  }
+};
+
 const SERVER_SUPABASE_OPTIONS = {
   auth: { persistSession: false, autoRefreshToken: false },
   realtime: { transport: ServerOnlyRealtimeTransport },
@@ -55,7 +98,7 @@ export function createUserScopedClient(token: string): SupabaseClient {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       ...SERVER_SUPABASE_OPTIONS,
-      global: { headers: { Authorization: `Bearer ${token}` } },
+      global: { headers: { Authorization: `Bearer ${token}` }, fetch: fetchWithSingleRetry },
     }
   );
 }
@@ -64,6 +107,9 @@ export function createServiceClient(): SupabaseClient {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    SERVER_SUPABASE_OPTIONS
+    {
+      ...SERVER_SUPABASE_OPTIONS,
+      global: { fetch: fetchWithSingleRetry },
+    }
   );
 }

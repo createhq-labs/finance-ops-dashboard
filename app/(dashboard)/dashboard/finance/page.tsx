@@ -9,6 +9,7 @@ import { SectionCard } from '../../../../components/dashboard/section-card';
 import { StatePanel } from '../../../../components/dashboard/state-panel';
 import { SearchableSelect } from '../../../../components/forms/searchable-select';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
+import { triggerFinanceBadgeRefresh } from '../../../../lib/client/finance-badge-refresh';
 import { SubmissionTable, type MasterDataCellKey, type MasterDataReviewSummary, type SubmissionRow } from '../../../../components/dashboard/submission-table';
 import { useDashboardSession } from '../../../../components/layout/dashboard-session';
 import { WorkspaceLoader } from '../../../../components/layout/workspace-loader';
@@ -930,6 +931,12 @@ export default function FinanceReviewPage() {
     }
     const updated = body?.submission || {};
     applyUpdatedSubmission(targetRow, updated);
+    if (field === 'intake_status' && body?.changed !== false) {
+      // Approve / reject / request_resubmission move a row out of `submitted`,
+      // which is exactly what the Finance Review sidebar badges count - ask
+      // the shell to refresh them now instead of waiting for its poll.
+      triggerFinanceBadgeRefresh();
+    }
     return {
       success: true,
       message: body?.message || (body?.changed === false ? 'No changes were needed.' : 'Saved'),

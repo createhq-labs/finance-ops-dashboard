@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AppRole, AppUser } from '../types/submissions';
+import { fetchRowsForIdsInBatches } from '../batch';
 import type { GstAddressReviewPayload } from './masterDataReviews';
 import { logActivityEvent } from './activityLog';
 
@@ -175,22 +176,23 @@ export async function listMasterDataReviews(userClient: SupabaseClient): Promise
   const userIds = Array.from(new Set(rows.flatMap((row) => [row.submitted_by, row.reviewed_by, row.last_edited_by]).filter(Boolean))) as string[];
   const submissionIds = Array.from(new Set(rows.map((row) => row.created_from_submission_id).filter(Boolean))) as string[];
 
-  const [usersRes, submissionsRes] = await Promise.all([
+  // `submissionIds` grows with total review history and can reach the
+  // hundreds, which as a single `.in(...)` filter can overflow PostgREST's
+  // request URL. `userIds` is bounded by distinct submitters/reviewers/
+  // editors and stays small, so only the submission lookup needs batching.
+  type SubmissionEnrichmentRow = { id: string; proforma_invoice: string | null };
+  const [usersRes, submissionRows] = await Promise.all([
     userIds.length > 0
       ? userClient.from('users').select('id, full_name, email').in('id', userIds)
-      : Promise.resolve({ data: [], error: null }),
-    submissionIds.length > 0
-      ? userClient.from('intake_submissions').select('id, proforma_invoice').in('id', submissionIds)
-      : Promise.resolve({ data: [], error: null }),
+      : Promise.resolve({ data: [] as unknown[], error: null }),
+    fetchRowsForIdsInBatches<SubmissionEnrichmentRow>(submissionIds, (batchIds) =>
+      userClient.from('intake_submissions').select('id, proforma_invoice').in('id', batchIds)
+    ),
   ]);
 
   if (usersRes.error) throw new Error(usersRes.error.message);
-  if (submissionsRes.error) throw new Error(submissionsRes.error.message);
-
   const userMap = asUserMap((usersRes.data ?? []) as UserSummary[]);
-  const submissionMap = new Map(
-    ((submissionsRes.data ?? []) as Array<{ id: string; proforma_invoice: string | null }>).map((row) => [String(row.id), row.proforma_invoice ?? null])
-  );
+  const submissionMap = new Map(submissionRows.map((row) => [String(row.id), row.proforma_invoice ?? null]));
 
   return rows.map((row) => mapReviewRow(row, userMap, submissionMap));
 }
