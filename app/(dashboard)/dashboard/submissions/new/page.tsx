@@ -13,6 +13,7 @@ import { getPiDisplayMeta } from '../../../../../lib/client/pi-display';
 import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../../lib/shared/submission-attachments';
 import { handleAuthTokenRecoveryMessage } from '../../../../../lib/client/auth-recovery';
 import { canSubmitInvoice, getDefaultDashboardPath } from '../../../../../lib/client/dashboard-access';
+import { triggerPendingResubmissionBadgeRefresh } from '../../../../../lib/client/resubmission-badge-refresh';
 import { inferAddressData, parseBillingAddress, type BillingAddressParts } from '../../../../../lib/shared/address-utils';
 
 export default function NewSubmissionPage() {
@@ -317,6 +318,12 @@ export default function NewSubmissionPage() {
     );
     setSubmitMessage('Your intake has been recorded and sent into the finance review workflow.');
     setSubmitSuccess(true);
+    if (resubmitId) {
+      // Both resubmission entry paths land here on success - ask the sidebar
+      // to refetch the pending-resubmission count now instead of waiting for
+      // its 60s poll. The endpoint remains the source of truth.
+      triggerPendingResubmissionBadgeRefresh();
+    }
     setTimeout(() => router.push('/dashboard/submissions'), 1800);
   }
 

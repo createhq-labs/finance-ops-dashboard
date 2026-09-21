@@ -13,7 +13,7 @@ import { WorkspaceLoader } from '../../../../components/layout/workspace-loader'
 import { PAYMENT_RECEIVED_STATUS_OPTIONS } from '../../../../lib/client/finance-status';
 import { pickProductReimbursementAttachment, pickReferencePoAttachment } from '../../../../lib/shared/submission-attachments';
 import { handleAuthTokenRecoveryMessage } from '../../../../lib/client/auth-recovery';
-import { canResubmitSubmission, canSubmitInvoice, getSubmissionsLabel } from '../../../../lib/client/dashboard-access';
+import { canSubmitInvoice, getSubmissionsLabel } from '../../../../lib/client/dashboard-access';
 
 type SubmissionAttachmentApiRow = {
   id: string;
@@ -165,6 +165,16 @@ function mapSubmissionRow(item: MySubmissionApiRow, userName?: string | null, us
     product_reimbursement_attachment: pickProductReimbursementAttachment(item.submission_attachments),
     reference_po_attachment: pickReferencePoAttachment(item.submission_attachments),
   };
+}
+
+// Presentation-only: whether this row is a genuine, currently outstanding
+// Finance resubmission request (not yet superseded by a later resubmission).
+// This is not a permission check - it only decides what the My Submissions
+// row shows/links to. Backend resubmission eligibility (create route) and
+// the view page's own Edit-button gating are unaffected by this and remain
+// the authoritative capability checks.
+function isDirectResubmitRow(row: Pick<SubmissionRow, 'intake_status' | 'version_status'>) {
+  return row.intake_status === 'rejected' && row.version_status !== 'superseded';
 }
 
 function mergeRows(current: SubmissionRow[], incoming: SubmissionRow[]) {
@@ -437,7 +447,7 @@ export default function EmployeeSubmissionsPage() {
           <SubmissionTable
             rows={rows}
             onOpen={(id, selectedRow) => {
-              if (user.role === 'employee' && selectedRow && canResubmitSubmission(user.role, selectedRow)) {
+              if (selectedRow && (user.role === 'employee' || user.role === 'team_lead') && isDirectResubmitRow(selectedRow)) {
                 router.push('/dashboard/submissions/new?resubmit_id=' + id);
                 return;
               }
@@ -445,7 +455,7 @@ export default function EmployeeSubmissionsPage() {
             }}
             columns={['pi', 'entity', 'amount', 'intake_status', 'invoice_status', 'submitted_at', 'rejection_note', 'actions']}
             emptyLabel="No submissions found yet."
-            getActionLabel={(currentRow) => (user.role === 'employee' && canResubmitSubmission(user.role, currentRow)) ? 'Resubmit' : 'View'}
+            getActionLabel={(currentRow) => ((user.role === 'employee' || user.role === 'team_lead') && isDirectResubmitRow(currentRow)) ? 'Resubmit' : 'View'}
             viewer={user.role}
             viewerBusinessLine={user.business_line}
             highlightedRowId={highlightedSubmissionId}

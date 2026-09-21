@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBearerToken, getCurrentAppUser } from '../../../../lib/server/auth';
+import { fetchRowsForIdsInBatches } from '../../../../lib/server/batch';
 import { assertSupabaseEnv, createServiceClient, createUserScopedClient } from '../../../../lib/server/supabase';
 import { getAccessTokenFromCookieHeader } from '../../../../lib/server/services/authCookies';
 import { deriveInvoiceStatusDbValue, normalizeInvoiceStatusMachine } from '../../../../lib/shared/invoice-status';
@@ -318,16 +319,27 @@ export async function GET(req: NextRequest) {
 
     const acceptedAtMap = new Map<string, string>();
     if (acceptedIds.length > 0) {
-      const { data: approvalRows, error: approvalError } = await userClient
-        .from('activity_log')
-        .select('submission_id, created_at')
-        .in('submission_id', acceptedIds)
-        .eq('action_type', 'submission_approved')
-        .order('created_at', { ascending: true });
-      if (approvalError) {
-        return NextResponse.json({ success: false, error: approvalError.message }, { status: 400 });
+      // `acceptedIds` scales with the full filtered queue (up to MAX_QUEUE_ROWS),
+      // so a single `.in(...)` filter here can overflow the request URL - batch it.
+      // Each submission's activity_log rows always land in exactly one batch, so
+      // per-batch ascending order still yields the earliest approval per submission
+      // once batches are merged below.
+      type ApprovalActivityRow = { submission_id: string; created_at: string };
+      let approvalRows: ApprovalActivityRow[];
+      try {
+        approvalRows = await fetchRowsForIdsInBatches<ApprovalActivityRow>(acceptedIds, (batchIds) =>
+          userClient
+            .from('activity_log')
+            .select('submission_id, created_at')
+            .in('submission_id', batchIds)
+            .eq('action_type', 'submission_approved')
+            .order('created_at', { ascending: true })
+        );
+      } catch (batchError) {
+        const message = batchError instanceof Error ? batchError.message : 'Failed to load accepted activity log.';
+        return NextResponse.json({ success: false, error: message }, { status: 400 });
       }
-      for (const logRow of approvalRows ?? []) {
+      for (const logRow of approvalRows) {
         const submissionId = String(logRow.submission_id ?? '');
         if (!submissionId || acceptedAtMap.has(submissionId)) continue;
         acceptedAtMap.set(submissionId, String(logRow.created_at));
