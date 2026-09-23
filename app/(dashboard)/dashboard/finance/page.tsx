@@ -187,10 +187,6 @@ type FinanceEditableField =
 // Intentionally disabled until the finance read-only submission workflow is finalized.
 const ENABLE_FINANCE_VIEW_ACTION = false;
 
-// Agency/Brand/Creator searches are an existence check only: matches stay visible briefly,
-// then the table falls back to normal paginated results while the search text stays in the input.
-const TEMP_SEARCH_VISIBILITY_MS = 1500;
-
 const PAYMENT_RECEIVED_VALUES = PAYMENT_RECEIVED_STATUS_OPTIONS.map((option) => option.value);
 const PAYMENT_MADE_VALUES = PAYMENT_MADE_STATUS_OPTIONS.map((option) => option.value);
 const CLOSURE_VALUES = CLOSURE_STATUS_OPTIONS.map((option) => option.value);
@@ -258,11 +254,15 @@ function normalizeClosedStatus(value: string | null | undefined) {
   return 'open';
 }
 
-// PI numbers are allocated as plain incrementing digit strings (see allocate_or_reuse_chain_pi),
-// so a purely numeric query reliably identifies a PI lookup; anything else is an Agency/Brand/Creator
-// existence check and gets the temporary-visibility treatment.
-function isPiLikeQuery(value: string) {
-  return /^\d+$/.test(value.trim());
+// Matches the full PI as displayed/copied from the UI, e.g. "PI/2026-27/000873"
+// (see lib/client/pi-display.ts's formatStoredPi, which is the only place this
+// format is produced). The database only stores the raw "PI-000873" form, so a
+// matched query is reduced to its digit sequence before being sent to the API.
+const FORMATTED_PI_PATTERN = /^PI\/\d{4}-\d{2}\/(\d+)$/i;
+
+function extractFormattedPiSequence(value: string): string | null {
+  const match = FORMATTED_PI_PATTERN.exec(value.trim());
+  return match ? match[1] : null;
 }
 
 function hasStartedLifecycleStatus(value: string | null | undefined) {
@@ -434,7 +434,6 @@ export default function FinanceReviewPage() {
   const financeRequestGenerationRef = useRef(0);
   const financeRequestKeyRef = useRef('');
   const appendRequestGenerationRef = useRef(0);
-  const searchVisibilityTimerRef = useRef<number | null>(null);
   const [rows, setRows] = useState<SubmissionRow[]>([]);
   const [masterDataReviewsBySubmission, setMasterDataReviewsBySubmission] = useState<MasterDataReviewMap>({});
   const [employeeDirectoryEntries, setEmployeeDirectoryEntries] = useState<FinanceEmployeeDirectoryEntry[]>([]);
@@ -471,10 +470,6 @@ export default function FinanceReviewPage() {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      if (searchVisibilityTimerRef.current !== null) {
-        window.clearTimeout(searchVisibilityTimerRef.current);
-        searchVisibilityTimerRef.current = null;
-      }
     };
   }, []);
 
@@ -963,35 +958,20 @@ export default function FinanceReviewPage() {
   const acceptedCount = aggregates.accepted;
   const rejectedCount = aggregates.resubmission_requested;
 
-  function clearSearchVisibilityTimer() {
-    if (searchVisibilityTimerRef.current !== null) {
-      window.clearTimeout(searchVisibilityTimerRef.current);
-      searchVisibilityTimerRef.current = null;
-    }
-  }
-
   function handleSearch(value: string) {
     setQuery(value);
-    clearSearchVisibilityTimer();
 
     const trimmed = value.trim();
-    if (!trimmed || isPiLikeQuery(trimmed)) {
-      // PI search (or a cleared search) stays active until the user changes it again.
-      setActiveSearchQuery(trimmed);
-      return;
-    }
-
-    // Agency/Brand/Creator existence check: show matches briefly, then fall back to
-    // normal pagination while leaving the typed text in the search input.
-    setActiveSearchQuery(trimmed);
-    searchVisibilityTimerRef.current = window.setTimeout(() => {
-      searchVisibilityTimerRef.current = null;
-      setActiveSearchQuery((current) => (current === trimmed ? '' : current));
-    }, TEMP_SEARCH_VISIBILITY_MS);
+    // A full formatted PI (e.g. "PI/2026-27/000873") is normalized to its digit
+    // sequence for the API, since the database stores "PI-000873"; the visible
+    // input (`query`) is left untouched. Everything else (including plain numeric
+    // PI queries) is searched as typed. The search stays active until the user
+    // changes or clears it - no automatic timer reverts it.
+    const formattedSequence = extractFormattedPiSequence(trimmed);
+    setActiveSearchQuery(formattedSequence ?? trimmed);
   }
 
   function resetAllFilters() {
-    clearSearchVisibilityTimer();
     setQuery('');
     setActiveSearchQuery('');
     setBusinessLineFilter('all');
@@ -1026,7 +1006,7 @@ export default function FinanceReviewPage() {
 
       <SectionCard padding={16} className="overflow-visible">
         <FilterBar
-          searchPlaceholder="Search PI, creator, agency, or brand"
+          searchPlaceholder="Search PI, creator, agency, brand or campaign - name, code"
           searchValue={query}
           primaryFilters={[
             {
