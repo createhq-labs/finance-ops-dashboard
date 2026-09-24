@@ -92,6 +92,8 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
         if (active && response.ok && body?.success) {
           setNewSubmissionCount(Number(body.newSubmissions) > 0 ? Number(body.newSubmissions) : 0);
           setNewResubmissionCount(Number(body.newResubmissions) > 0 ? Number(body.newResubmissions) : 0);
+        } else if (active && !(response.ok && body?.success)) {
+          console.warn(`Finance badge refresh failed: ${response.status} ${response.statusText}`.trim());
         }
       } catch {
         if (active) {
@@ -104,11 +106,18 @@ function DashboardShellFrame({ children }: { children: ReactNode }) {
     void loadFinanceBadgeCounts();
     const timer = window.setInterval(loadFinanceBadgeCounts, 60000);
     const handleRefreshRequest = () => void loadFinanceBadgeCounts();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void loadFinanceBadgeCounts();
+    };
     window.addEventListener(FINANCE_BADGE_REFRESH_EVENT, handleRefreshRequest);
+    window.addEventListener('focus', handleRefreshRequest);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       active = false;
       window.clearInterval(timer);
       window.removeEventListener(FINANCE_BADGE_REFRESH_EVENT, handleRefreshRequest);
+      window.removeEventListener('focus', handleRefreshRequest);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [loading, user]);
 
