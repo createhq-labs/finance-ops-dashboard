@@ -29,12 +29,14 @@ export async function GET(req: NextRequest) {
         .from('intake_submissions')
         .select('id', { count: 'exact', head: true })
         .eq('intake_status', 'submitted')
+        .eq('is_latest_version', true)
         .is('previous_submission_id', null)
         .gte('created_at', FINANCE_BADGE_TRACKING_SINCE),
       adminClient
         .from('intake_submissions')
         .select('id', { count: 'exact', head: true })
         .eq('intake_status', 'submitted')
+        .eq('is_latest_version', true)
         .not('previous_submission_id', 'is', null)
         .gte('created_at', FINANCE_BADGE_TRACKING_SINCE),
     ]);
